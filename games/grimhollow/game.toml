@@ -1,0 +1,14 @@
+[game]
+name = "Grimhollow"
+slug = "grimhollow"
+version = "1.0.0"
+author = "lazi"
+description = """
+Four companions descend beneath Greyharbor to quiet a bell that should be lost.
+Roll d20s, move through a tactical grid, spend spell uses, and bring the shard
+back to the river watch.
+"""
+tags = ["rpg", "tactical", "party"]
+entry = ["{python}", "main.py"]
+min_cols = 70
+min_rows = 20
