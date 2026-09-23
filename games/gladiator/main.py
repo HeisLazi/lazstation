@@ -141,9 +141,9 @@ class Arena:
     def present(self) -> None:
         """One blit: sparks over the picture, shaken if something just landed."""
         self.sparks.draw(self.canvas)
-        dx, dy = self.shake.update(1 / 30)
         self.s.erase()
-        self.canvas.blit(self.s, self.palette, dx, dy)
+        self.canvas.blit(self.s, self.palette,
+                         shake=self.shake.update(1 / 30))
         self.stdscr.noutrefresh()
         self.s.noutrefresh()
         curses.doupdate()

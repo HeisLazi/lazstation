@@ -251,19 +251,27 @@ class Canvas:
                 self.lit[i] = min(1.6, self.lit[i] + power * (1.0 - d / radius))
 
     # --- output
-    def blit(self, win, palette: Palette, ox: int = 0, oy: int = 0) -> None:
-        """Draw into a curses window. Light is applied here, not when drawing.
+    def blit(self, win, palette: Palette, ox: int = 0, oy: int = 0,
+             shake: tuple[int, int] = (0, 0)) -> None:
+        """Draw into a curses window at (ox, oy). Light is applied here.
 
-        Iterates the *window*, not the canvas, so an offset blit (screen
-        shake) still paints every cell it does not cover. Offsetting only the
-        canvas leaves a margin of whatever was on screen last frame.
+        Fills exactly the rectangle the canvas occupies -- every cell of it,
+        blanks included -- and never a cell outside. `shake` displaces the
+        *content* within that rectangle rather than the rectangle itself, so
+        a shaking game cannot scrub the bezel drawn around it.
         """
         h, w = win.getmaxyx()
+        sx, sy = shake
         blank = palette.pair(WHITE, -1)
-        for ty in range(h):
-            y = ty - oy
-            for tx in range(w - 1):
-                x = tx - ox
+        for row in range(self.h):
+            ty = oy + row
+            if ty < 0 or ty >= h:
+                continue
+            for col in range(self.w):
+                tx = ox + col
+                if tx < 0 or tx >= w - 1:
+                    continue
+                x, y = col - sx, row - sy
                 if 0 <= x < self.w and 0 <= y < self.h:
                     i = y * self.w + x
                     glyph = self.ch[i]
