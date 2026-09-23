@@ -115,7 +115,8 @@ def cmd_play(args) -> int:
 def cmd_new(args) -> int:
     target = paths.USER_GAMES if args.user else paths.BUNDLED_GAMES
     try:
-        directory = scaffold.create(args.name, target=target, author=args.author)
+        directory = scaffold.create(args.name, target=target, author=args.author,
+                                    curses_game=args.curses)
     except FileExistsError as exc:
         print(_c(f"  {exc}", "red"))
         return 1
@@ -201,6 +202,8 @@ def build_parser() -> argparse.ArgumentParser:
     pn = sub.add_parser("new", help="scaffold a new game")
     pn.add_argument("name")
     pn.add_argument("--author", default="")
+    pn.add_argument("--curses", action="store_true",
+                    help="full-screen curses template instead of the line-based one")
     pn.add_argument("--user", action="store_true",
                     help="create under ~/.local/share/termstation/games instead")
     pn.set_defaults(func=cmd_new)

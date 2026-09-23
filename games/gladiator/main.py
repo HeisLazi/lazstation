@@ -217,6 +217,7 @@ class Arena:
 
     def fight(self, you: Fighter, foe: Fighter, bout: int) -> bool:
         """One bout. Returns True if the player survives it."""
+        self.s.clear()
         self.log.clear()
         self.say(f"{foe.name} enters the sand.", P_WARN)
         self.say(f"He {OPPONENTS[bout - 1][3]}.", P_DIM)
@@ -266,7 +267,7 @@ class Arena:
         return self.s.getch() in (ord("y"), ord("Y"))
 
     def between_bouts(self, you: Fighter, gold: int) -> None:
-        self.s.erase()
+        self.s.clear()
         rows, cols = self.s.getmaxyx()
         lines = [
             ("The gate closes behind you.", P_DIM),
