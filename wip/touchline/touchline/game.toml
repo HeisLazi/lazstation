@@ -1,0 +1,14 @@
+[game]
+name = "Touchline"
+slug = "touchline"
+version = "1.0.0"
+author = "lazi"
+description = """
+Run one of six original clubs through a full league season. Train the squad,
+set a formation and style, manage the transfer fund, and play every matchday
+alongside the rest of the table.
+"""
+tags = ["football", "management", "season"]
+entry = ["{python}", "main.py"]
+min_cols = 70
+min_rows = 20
