@@ -43,41 +43,12 @@ class Action:
 
 
 def accent_for(game: Game) -> int:
-    """A stable colour per game, so selecting one re-tints the dashboard.
-
-    Declared in game.toml as `accent = [r, g, b]`, otherwise derived from the
-    slug -- every game gets its own identity without anyone authoring one.
-    """
-    raw = getattr(game, "accent", None)
-    if isinstance(raw, (list, tuple)) and len(raw) == 3:
-        return fx.rgb(*[int(v) for v in raw])
-    h = sum(ord(c) * (i + 7) for i, c in enumerate(game.slug)) % 360
-    # A warm, desaturated ramp -- keeps everything in the same retro family.
-    import colorsys
-    r, g, b = colorsys.hsv_to_rgb(h / 360.0, 0.55, 1.0)
-    return fx.rgb(int(r * 255), int(g * 255), int(b * 255))
+    """The game's accent as an xterm-256 index."""
+    return fx.rgb(*library.accent_for(game))
 
 
 def load_cover(game: Game) -> list[str]:
-    """A game's cover art, or a generated one if it ships none."""
-    path = game.root / "cover.txt"
-    try:
-        lines = path.read_text(encoding="utf-8").rstrip("\n").splitlines()
-        if lines:
-            return lines[:8]
-    except OSError:
-        pass
-    # Procedural fallback: a stable pattern from the slug, so a game without
-    # art still gets something of its own rather than a blank square.
-    seed = sum(ord(c) * (i + 3) for i, c in enumerate(game.slug))
-    glyphs = "░▒▓█▚▞"
-    rows = []
-    for y in range(6):
-        row = ""
-        for x in range(11):
-            row += glyphs[(seed + x * 7 + y * 13) % len(glyphs)]
-        rows.append(row)
-    return rows
+    return library.load_cover(game)
 
 
 class Console:
@@ -107,7 +78,9 @@ class Console:
                        random.uniform(0.6, 2.2), random.random()]
                       for _ in range(max(8, width // 6))]
 
-    def drift(self, canvas: fx.Canvas, dt: float) -> None:
+    def drift(self, canvas: fx.Canvas, dt: float, floor: int | None = None) -> None:
+        """Embers rise through the upper picture. `floor` keeps them out of
+        the information band, where they would read as noise in the text."""
         if not self.motes:
             self.seed_motes(canvas.w, canvas.h)
         for m in self.motes:
@@ -117,6 +90,8 @@ class Console:
                 m[1] = canvas.h - 0.01
                 m[0] = random.uniform(0, canvas.w)
             x, y = int(m[0]), int(m[1])
+            if floor is not None and y >= floor:
+                continue
             if canvas.inside(x, y) and canvas.ch[y * canvas.w + x] == " ":
                 glyph = "·" if m[2] < 1.4 else "∙"
                 canvas.put(x, y, glyph, fx.scale(AMBER_DIM, 0.35 + 0.3 * m[3]))
@@ -125,9 +100,21 @@ class Console:
     def refresh_library(self) -> None:
         self.all_games, self.problems = library.discover()
         self.stats = library.load_stats()
+        self.awards = self.load_awards()
         self.covers = {g.slug: load_cover(g) for g in self.all_games}
         self.index = min(self.index, max(0, len(self.visible) - 1))
         self.scroll = float(self.index)
+
+    @staticmethod
+    def load_awards() -> dict:
+        try:
+            import json
+            return json.loads(paths.ACHIEVEMENTS.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {}
+
+    def award_count(self, slug: str) -> int:
+        return len(self.awards.get(slug, {}))
 
     @property
     def visible(self) -> list[Game]:
@@ -189,13 +176,14 @@ class Console:
         canvas = fx.Canvas(width, height, ambient=0.92)
         games = self.visible
         pulse = 0.5 + 0.5 * math.sin(t * 1.9)
-        self.drift(canvas, dt)
+        self.drift(canvas, dt, floor=12)
         game_now = self.current
         tone = accent_for(game_now) if game_now else AMBER
 
         head = f"{brand.NAME}"
         canvas.text(1, 0, head, fx.scale(tone, 0.85 + 0.15 * pulse))
-        meta = f"{self.profile}   {len(self.all_games)} games"
+        total_awards = sum(len(v) for v in self.awards.values())
+        meta = f"{self.profile}   {len(self.all_games)} games   ★ {total_awards}"
         canvas.text(max(1, width - len(meta) - 1), 0, meta, INK)
 
         row_y = 7
@@ -227,7 +215,12 @@ class Console:
                 if len(tag) > room:
                     tag = tag[:room - 1].rsplit(" ", 1)[0] + "…"
                 canvas.text(max(1, (width - len(tag)) // 2), 14, tag, PAPER)
-                bits = []
+                # row 15: awards, playtime, recency -- the at-a-glance row
+                got = self.award_count(game.slug)
+                total = game.awards or got
+                stars = ("★" * got) + ("☆" * max(0, total - got))
+                label = f"{got}/{total}" if total else str(got)
+                bits = [f"{stars} {label} award" + ("" if total == 1 else "s")]
                 if st.get("launches"):
                     n = st["launches"]
                     bits.append(f"{n} play" + ("" if n == 1 else "s"))
@@ -235,10 +228,14 @@ class Console:
                     bits.append(library.format_last_played(st.get("last_played")))
                 else:
                     bits.append("never played")
+                line = "     ".join(bits)
+                canvas.text(max(1, (width - len(line)) // 2), 15, line,
+                            fx.scale(tone, 0.75) if got else INK)
+
+                # row 16: tags, so the band reads as a card rather than a list
                 if game.tags:
-                    bits.append(" ".join(f"·{t}" for t in game.tags))
-                line = "    ".join(bits)
-                canvas.text(max(1, (width - len(line)) // 2), 15, line, INK)
+                    tags = "   ".join(f"·{t}" for t in game.tags)
+                    canvas.text(max(1, (width - len(tags)) // 2), 16, tags, INK)
 
                 chosen = self.slots.get(game.slug, 1)
                 used = paths.slots_used(self.profile, game.slug)
@@ -247,13 +244,13 @@ class Console:
                     glyph = "▣" if taken else "▢"
                     marks.append(f"{glyph}{n}" if n != chosen else f"[{glyph}{n}]")
                 slot_line = "slot  " + " ".join(marks)
-                canvas.text(max(1, (width - len(slot_line)) // 2), 16,
+                canvas.text(max(1, (width - len(slot_line)) // 2), 17,
                             slot_line, AMBER if chosen != 1 else INK)
 
                 # position dots, like a console dashboard
                 dots = "".join("◆" if i == self.index else "◇"
                                for i in range(len(games)))
-                canvas.text(max(1, (width - len(dots)) // 2), 17, dots,
+                canvas.text(max(1, (width - len(dots)) // 2), 18, dots,
                             fx.scale(tone, 0.6))
 
         if self.searching:

@@ -10,6 +10,7 @@ Start with ten cards and pick up more as you climb — but every card
 you add makes the deck slower. Enemies tell you what they will do
 before you commit, so every turn is a real decision."""
 tags = ["roguelike", "cards", "deckbuilder"]
+awards = 3
 entry = ["{python}", "main.py"]
 min_cols = 66
 min_rows = 20

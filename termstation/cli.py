@@ -44,9 +44,11 @@ def post_game(game, result: runner.Result) -> None:
         pass
 
 
-def run_console(profile: str) -> int:
+def run_console(profile: str, skip_boot: bool = False) -> int:
     """Boot the console. Curses is fully torn down around every launch."""
     paths.ensure_dirs()
+    if not skip_boot and sys.stdout.isatty():
+        boot.console_boot()
     console = Console(profile)
     while True:
         try:
@@ -61,7 +63,7 @@ def run_console(profile: str) -> int:
             return 0
 
         if action.kind == "launch" and action.game:
-            boot.power_on(action.game.name, fast=console.fast_boot)
+            boot.power_on(action.game, fast=console.fast_boot)
             result = runner.launch(action.game, action.profile, action.slot)
             post_game(action.game, result)
             console.refresh_library()
@@ -104,7 +106,7 @@ def cmd_play(args) -> int:
         return 1
     game = matches[0]
     if sys.stdout.isatty() and not args.no_boot:
-        boot.power_on(game.name)
+        boot.power_on(game)
     result = runner.launch(game, args.profile)
     if not (result.ok or result.interrupted):
         print(_c(f"\n  {game.name} exited {result.exit_code} — {result.log}", "red"))
@@ -189,6 +191,8 @@ def build_parser() -> argparse.ArgumentParser:
     sub = p.add_subparsers(dest="command")
 
     sub.add_parser("boot", help="open the console (default)")
+    p.add_argument("--no-boot", action="store_true",
+                   help="skip the power-on sequence")
 
     pl = sub.add_parser("list", help="list installed games")
     pl.add_argument("--json", action="store_true")
@@ -224,7 +228,7 @@ def main(argv: list[str] | None = None) -> int:
     if not sys.stdout.isatty():
         print(f"{brand.NAME} needs a terminal. try:  lazstation list")
         return 1
-    return run_console(args.profile)
+    return run_console(args.profile, skip_boot=getattr(args, "no_boot", False))
 
 
 if __name__ == "__main__":

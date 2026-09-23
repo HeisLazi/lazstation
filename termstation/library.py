@@ -39,6 +39,8 @@ class Game:
     min_cols: int = 80
     min_rows: int = 24
     bundled: bool = True
+    accent: list[int] | None = None
+    awards: int = 0
 
     @property
     def tagline(self) -> str:
@@ -87,6 +89,8 @@ def load_manifest(directory: Path, bundled: bool = True) -> Game:
         version=str(game.get("version", "0.1.0")),
         author=str(game.get("author", "")),
         tags=[str(t) for t in game.get("tags", [])],
+        accent=game.get("accent"),
+        awards=int(game.get("awards", 0)),
         min_cols=int(game.get("min_cols", 80)),
         min_rows=int(game.get("min_rows", 24)),
         bundled=bundled,
@@ -158,6 +162,36 @@ def format_playtime(seconds: float) -> str:
     if seconds < 3600:
         return f"{seconds // 60}m"
     return f"{seconds // 3600}h {(seconds % 3600) // 60}m"
+
+
+def load_cover(game: "Game") -> list[str]:
+    """A game's cover art, or a generated one if it ships none.
+
+    Looks for boot.txt first so a game can show something larger on its
+    loading screen than the small tile it uses on the shelf.
+    """
+    for name in ("boot.txt", "cover.txt"):
+        try:
+            lines = (game.root / name).read_text(encoding="utf-8").rstrip("\n").splitlines()
+            if lines:
+                return lines[:14]
+        except OSError:
+            continue
+    seed = sum(ord(c) * (i + 3) for i, c in enumerate(game.slug))
+    glyphs = "░▒▓█▚▞"
+    return ["".join(glyphs[(seed + x * 7 + y * 13) % len(glyphs)]
+                    for x in range(11)) for y in range(6)]
+
+
+def accent_for(game: "Game") -> tuple[int, int, int]:
+    """A stable RGB accent per game: declared in game.toml, else from the slug."""
+    raw = getattr(game, "accent", None)
+    if isinstance(raw, (list, tuple)) and len(raw) == 3:
+        return tuple(int(v) for v in raw)
+    import colorsys
+    h = sum(ord(c) * (i + 7) for i, c in enumerate(game.slug)) % 360
+    r, g, b = colorsys.hsv_to_rgb(h / 360.0, 0.55, 1.0)
+    return int(r * 255), int(g * 255), int(b * 255)
 
 
 def format_last_played(iso: str | None) -> str:
