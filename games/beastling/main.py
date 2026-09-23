@@ -142,7 +142,10 @@ def damage(attacker: Beast, defender: Beast, move: str) -> tuple[int, float, boo
     mult = effectiveness(m_type, defender.type)
     if m_type == attacker.type:
         mult *= 1.25                      # it suits them
-    base = ((2 * attacker.level / 5 + 2) * power * attacker.atk / max(1, defender.dfn)) / 50
+    # The divisor is tuned against these stat sizes: a neutral hit between
+    # equal levels should take about five exchanges, so a super-effective
+    # choice (two or three) is a real decision rather than a rounding error.
+    base = ((2 * attacker.level / 5 + 2) * power * attacker.atk / max(1, defender.dfn)) / 26
     dealt = int((base + 2) * mult * random.uniform(0.85, 1.0))
     return max(1, dealt), mult, True
 

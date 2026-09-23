@@ -5,7 +5,7 @@ Read this before writing any game for this console. It is the whole contract.
 ## Where things are
 
 ```
-~/projects/termstation/
+~/Projects/personal/heisprojects/termstation/
   games/<slug>/game.toml   the manifest the console reads
   games/<slug>/main.py     your game
   games/<slug>/*.py        your data files
