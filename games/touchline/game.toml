@@ -1,0 +1,29 @@
+[game]
+name = "Ekse Slaan Ball"
+slug = "touchline"
+version = "0.1.0"
+author = "lazi"
+description = """
+Build a club's identity across tactics, people, recruitment and a living
+season. Read the match as a chain of decisions, then live with what it changes.
+"""
+tags = ["football", "management", "career", "tactics"]
+entry = ["{python}", "main.py"]
+min_cols = 70
+min_rows = 18
+accent = [225, 144, 62]
+
+[[awards]]
+key = "first-signing"
+title = "New Boots"
+description = "Bring your first player into the club."
+
+[[awards]]
+key = "derby-win"
+title = "Salt and Glass"
+description = "Win the Brineport–Glasswind derby."
+
+[[awards]]
+key = "season-finished"
+title = "Final Whistle"
+description = "Complete a full league season."
