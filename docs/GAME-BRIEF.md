@@ -85,13 +85,19 @@ There is no interactive terminal here, so render the game in a pseudo-terminal
 and read the screen. Helpers already exist:
 
 ```
-$CLAUDE_JOB_DIR/tmp/ptytest.py   run a game in a PTY of a given size, send keys
-$CLAUDE_JOB_DIR/tmp/vt.py        replay the output onto a grid as plain text
+tools/ptytest.py   run a game in a PTY of a given size, send keystrokes
+tools/vt.py        replay the output onto a grid as plain text
 ```
 
-If those are not present, write the equivalent: `pty.fork()`, set the window
-size with `TIOCSWINSZ`, write keystrokes, then replay the output handling
-cursor-position, erase and colour escapes.
+```bash
+cd games/<slug>
+TERMSTATION=1 TERMSTATION_NAME="My Game" TERMSTATION_SAVE_DIR=/tmp/t \
+  PYTHONPATH=../../sdk python3 ../../tools/ptytest.py 80 24 $'\nddd'
+```
+
+They replay what the program sent and accumulate frames, so a moving sprite
+leaves a trail that is not on a real terminal. Judge layout and borders from
+them, not motion.
 
 Check, at minimum:
 - the game renders correctly at **80x24** and at a wide size such as **110x30**
