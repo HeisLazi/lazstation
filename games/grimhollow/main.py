@@ -367,7 +367,7 @@ def combat(save: dict[str, Any], encounter_key: str = "cinder_vault",
     for index, member in enumerate(party):
         member["pos"] = list([(0, 0), (0, 2), (0, 4), (1, 3)][index])
         member["guard"] = 0
-    note = "The vault doors seal behind you. Choose an action for each ally."
+    note = content.ENCOUNTERS[encounter_key]["battle_start"]
     round_no = 1
     rng = rng or random
     while living_party(party) and active_enemies(enemies):
@@ -455,13 +455,13 @@ def combat(save: dict[str, Any], encounter_key: str = "cinder_vault",
         save["quest_status"] = "complete"
         quest = content.QUESTS["bell_below"]
         save["gold"] += quest["reward_gold"]
-        award_xp(party, quest["reward_xp"])
+        award_xp(party, quest["reward_xp"] + sum(enemy.get("xp", 0) for enemy in enemies))
     ts.save(save)
+    encounter = content.ENCOUNTERS[encounter_key]
     page("VICTORY" if won else "WITHDRAWAL",
-         ["The Ashbound Hound falls. The bell-mote gutters out." if won else
-          "The companions drag one another back into the rain.",
+         [encounter["victory"] if won else encounter["defeat"],
           f"Gold: {save['gold']}   Bell Shards: {save['inventory'].get('Bell Shard', 0)}",
-          "Quest complete: The Bell Below" if won else "Rest at camp before returning."])
+          content.QUESTS["bell_below"]["complete"] if won else encounter["defeat_hint"]])
     ts.tv_pause("press enter to return to Greyharbor")
     return won
 
@@ -474,13 +474,13 @@ def show_dialogue(save: dict[str, Any]) -> None:
     _, reply, action = dialogue["choices"][selected]
     if action == "accept":
         save["quest_status"] = "active"
-        response = "Fenna presses a brass token into your palm."
+        response = dialogue["accept_response"]
     elif action == "ask":
         result = resolve_check(2, 12)
         save["quest_clue"] = bool(result["success"])
         response = (f"Insight {result['roll']}+2: " +
-                    ("You notice the route marked behind the kiln." if result["success"]
-                     else "Fenna has no more to add."))
+                    (dialogue["insight_success"] if result["success"]
+                     else dialogue["insight_failure"]))
     else:
         response = "Fenna turns back to the river map."
     page(dialogue["speaker"], [reply, response])
@@ -507,8 +507,7 @@ def party_screen(save: dict[str, Any]) -> None:
             status = save["quest_status"]
             quest = content.QUESTS["bell_below"]
             desc = (quest["summary"] if status == "active" else
-                    quest["complete"] if status == "complete" else
-                    "Speak with Captain Fenna to learn what the river has lost.")
+                    quest["complete"] if status == "complete" else quest["rumour"])
             page(quest["title"], [f"Status: {status.replace('_', ' ')}", desc])
             ts.tv_pause()
         else:
@@ -519,7 +518,7 @@ def camp(save: dict[str, Any]) -> None:
     rations = save["inventory"].get("Ration", 0)
     options = ["Long rest" if rations else "Rest by the fire"]
     options.append("Back")
-    selected = choose("CAMP", ["A dry fire and a watch rota make the dark feel smaller.",
+    selected = choose("CAMP", [content.CAMP_TEXT,
                                 f"Rations: {rations}  |  Spell uses return after a rest."], options)
     if selected == 1:
         return
@@ -539,17 +538,15 @@ def camp(save: dict[str, Any]) -> None:
 
 def venture(save: dict[str, Any]) -> None:
     if save["encounter_done"]:
-        page("CINDER VAULT", [content.QUESTS["bell_below"]["complete"],
-                               "The vault is quiet now."])
+        page(content.ENCOUNTERS["cinder_vault"]["name"], [content.QUESTS["bell_below"]["complete"],
+                                                           content.VAULT_QUIET])
         ts.tv_pause("press enter to return")
         return
     if save["quest_status"] != "active":
-        page("CINDER VAULT", ["The kiln door is sealed with a river-watch mark.",
-                               "Captain Fenna may know how to open it."])
+        page(content.ENCOUNTERS["cinder_vault"]["name"], content.VAULT_LOCKED)
         ts.tv_pause("press enter to return")
         return
-    page("CINDER VAULT", ["A narrow stair descends beneath the kiln.",
-                           "The map is cramped, the stone warm beneath your boots."])
+    page(content.ENCOUNTERS["cinder_vault"]["name"], content.ENCOUNTERS["cinder_vault"]["intro"])
     ts.tv_pause("enter the vault")
     combat(save)
 
@@ -584,7 +581,7 @@ def main() -> int:
             camp(save)
         else:
             ts.save(save)
-            page("SAVE COMPLETE", ["The river keeps its secrets for another night."])
+            page("SAVE COMPLETE", [content.GREYHARBOR_EXIT])
             return 0
 
 

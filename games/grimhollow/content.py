@@ -43,6 +43,14 @@ ENCOUNTERS = {
         gold=16,
         reward_item="Draught",
         reward_count=1,
+        intro=[
+            "A narrow stair descends beneath the kiln.",
+            "The map is cramped, the stone warm beneath your boots.",
+        ],
+        battle_start="The vault doors seal behind you. Choose an action for each ally.",
+        victory="The Ashbound Hound falls. The bell-mote gutters out.",
+        defeat="The companions drag one another back into the rain.",
+        defeat_hint="Rest at camp before returning.",
     ),
 }
 
@@ -84,6 +92,9 @@ DIALOGUE = {
             ("Ask about the ferries", "Three boats are tied up. No bodies, no tracks. Just silence.", "ask"),
             ("Leave the conversation", "Fenna turns back to the river map.", "leave"),
         ],
+        accept_response="Fenna presses a brass token into your palm.",
+        insight_success="You notice the route marked behind the kiln.",
+        insight_failure="Fenna has no more to add.",
     ),
 }
 
@@ -92,10 +103,17 @@ QUESTS = {
         title="The Bell Below",
         summary="Enter the Cinder Vault and recover its warm bell shard.",
         complete="The shard is quiet now. Fenna can send the ferries again.",
+        rumour="Speak with Captain Fenna to learn what the river has lost.",
         reward_xp=30,
         reward_gold=20,
     ),
 }
+
+CAMP_TEXT = "A dry fire and a watch rota make the dark feel smaller."
+VAULT_LOCKED = ["The kiln door is sealed with a river-watch mark.",
+                "Captain Fenna may know how to open it."]
+VAULT_QUIET = "The vault is quiet now."
+GREYHARBOR_EXIT = "The river keeps its secrets for another night."
 
 HUB_TEXT = [
     "Greyharbor sits where the river forgets its name.",
