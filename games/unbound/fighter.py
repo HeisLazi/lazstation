@@ -93,3 +93,39 @@ class Fighter:
 
     def worst_location(self):
         return max(LOCATIONS, key=lambda l: self.ledger[l])
+
+    # ------------------------------------------------------ between fights
+    def reset_for_bout(self):
+        """A new fight. Your stamina and footing reset -- your body doesn't.
+
+        HP represents what you can absorb in THIS bout before going down; it
+        is not a running life total, so it resets. The ledger is the actual
+        injury and is the one thing this does NOT touch -- that persistence
+        is the entire point of the system.
+        """
+        self.hp = self.max_hp
+        self.stamina = self.max_stamina
+        self.pending = None
+        self.landed = 0
+        self.taken = 0
+        self.strikes = 0
+        self.down = False
+
+    def rest(self, days=1):
+        """Time off heals, slowly, and unevenly -- a bad break lingers."""
+        for loc in LOCATIONS:
+            heal_rate = 3 if condition(self.ledger[loc], loc) == "light" else 2
+            self.ledger[loc] = max(0, self.ledger[loc] - heal_rate * days)
+
+    def fight_hurt_wear(self):
+        """Fighting hurt doesn't heal you -- old wounds take fresh damage
+        worse than clean tissue does, which is handled naturally by hurt()
+        already stacking onto whatever total is already there. This exists
+        only as a documented hook for the ladder stage: sitting out heals,
+        fighting doesn't, and that asymmetry is the whole decision."""
+        return None
+
+    def hurt_summary(self):
+        bad = [(l, condition(self.ledger[l], l)) for l in LOCATIONS
+               if self.ledger[l] > 0]
+        return bad

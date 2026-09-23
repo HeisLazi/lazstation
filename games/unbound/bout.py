@@ -41,20 +41,31 @@ class Bout:
 
     # ---------------------------------------------------------------- turn
     def step(self, action_a, action_b):
-        """One round. Both fighters act; both may be mid-strike already."""
+        """One round. Both fighters act; both may be mid-strike already.
+
+        A real bug lived here: the pass that resolves a fighter's IN-FLIGHT
+        strike was handed that same fighter's own action for this round,
+        instead of the opponent's -- which is the one thing that actually
+        determines whether a block or dodge lands. It went uncaught by the
+        Stage 0 proof because the punish path happened to clear `pending`
+        before the buggy branch ran in every test that exercised it. Fixed
+        by resolving each fighter's pending strike against the OPPONENT's
+        action explicitly, never its own.
+        """
         self.round += 1
-        for f, act, foe in ((self.a, action_a, self.b), (self.b, action_b, self.a)):
-            self._move(f, act, foe)
+        self._move(self.a, action_a, self.b)
+        self._move(self.b, action_b, self.a)
+
         punished = set()
-        for f, act, foe in ((self.a, action_a, self.b), (self.b, action_b, self.a)):
-            if self._maybe_punish(f, act, foe):
-                punished.add(f)          # this action was spent on the punish --
-                                          # it does not also commit a fresh strike
-        for f, foe, act in ((self.a, self.b, action_a), (self.b, self.a, action_b)):
-            if f not in punished:
-                self._commit_or_resolve(f, foe, act)
-            elif f.pending is not None:
-                self._commit_or_resolve(f, foe, "wait")   # still resolve any OLD pending
+        if self._maybe_punish(self.a, action_a, self.b):
+            punished.add(self.a)
+        if self._maybe_punish(self.b, action_b, self.a):
+            punished.add(self.b)
+
+        if self.a not in punished:
+            self._advance(self.a, self.b, action_a, action_b)
+        if self.b not in punished:
+            self._advance(self.b, self.a, action_b, action_a)
         if self.a.down or self.b.down:
             if self.a.down and self.b.down:
                 self.over = "draw"
@@ -101,18 +112,20 @@ class Bout:
         foe.pending = None
         return True
 
-    def _commit_or_resolve(self, f, foe, act):
-        # a strike already in flight resolves now, against THIS round's action
+    def _advance(self, f, foe, f_act, foe_act):
+        """f may commit a new strike (reads f_act) or have one resolve now
+        (reads foe_act -- the DEFENDER's choice, which is what a block or a
+        dodge actually is)."""
         if f.pending is not None:
             f.pending["turns"] -= 1
             if f.pending["turns"] <= 0:
-                self._resolve_strike(f, foe, act)
+                self._resolve_strike(f, foe, foe_act)
             return
-        if act in ATTACKS and foe.pending is None:
-            spec = ATTACKS[act]
+        if f_act in ATTACKS and foe.pending is None:
+            spec = ATTACKS[f_act]
             lo, hi = spec["rng"]
             if lo <= self.gap() <= hi:
-                f.pending = dict(loc=spec["loc"], power=spec["power"], turns=1, kind=act)
+                f.pending = dict(loc=spec["loc"], power=spec["power"], turns=1, kind=f_act)
 
     def _resolve_strike(self, f, foe, foe_act):
         spec = ATTACKS[f.pending["kind"]]
