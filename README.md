@@ -143,3 +143,9 @@ re-clone a game without losing progress.
 
 - **Blackjack** — six decks, split/double/insurance, chips shared across games.
 - **Gladiator** — full-screen arena combat, stamina and crowd favour.
+- **Pipe Jumper** — real-time side-scrolling platformer, 30fps, variable jump.
+- **Beastling** — creature collecting: 20 species, 6 types, evolution, 5 champions.
+- **Emberlight** — top-down action adventure: sword combat, keys, a barrow, a boss.
+
+Writing your own? Read `docs/GAME-BRIEF.md` — it is the whole contract — and
+use `tools/ptytest.py` to see your game without an interactive terminal.
