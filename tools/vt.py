@@ -30,6 +30,25 @@ def render(data: str, cols=80, rows=24) -> str:
             elif cmd == "D": cx = max(0, cx - (nums[0] if nums else 1))
             elif cmd == "d": cy = (nums[0] - 1) if nums else 0
             elif cmd == "G": cx = (nums[0] - 1) if nums else 0
+            elif cmd == "X":      # ECH: erase n chars at the cursor, no move
+                n = nums[0] if nums else 1
+                for x in range(cx, min(cols, cx + n)): grid[cy][x] = " "
+            elif cmd == "P":      # DCH: delete n chars, shifting left
+                n = nums[0] if nums else 1
+                row = grid[cy][:cx] + grid[cy][cx+n:] + [" "] * n
+                grid[cy] = row[:cols]
+            elif cmd == "@":      # ICH: insert n blanks, shifting right
+                n = nums[0] if nums else 1
+                row = grid[cy][:cx] + [" "] * n + grid[cy][cx:]
+                grid[cy] = row[:cols]
+            elif cmd == "L":      # IL: insert n blank lines
+                n = nums[0] if nums else 1
+                for _ in range(n):
+                    grid.insert(cy, [" "] * cols); grid.pop()
+            elif cmd == "M":      # DL: delete n lines
+                n = nums[0] if nums else 1
+                for _ in range(n):
+                    grid.pop(cy); grid.append([" "] * cols)
             elif cmd == "K":
                 for x in range(cx, cols): grid[cy][x] = " "
             i += m.end(); continue

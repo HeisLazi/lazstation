@@ -8,7 +8,7 @@ import sys
 import time
 
 from . import boot, brand, library, paths, runner, scaffold
-from .launcher import Console
+from .carousel import Console
 
 VERSION = "1.0.0"
 _C = {"cyan": "\x1b[36m", "grey": "\x1b[90m", "red": "\x1b[31m",

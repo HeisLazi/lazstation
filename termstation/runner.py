@@ -76,10 +76,20 @@ def resolve_argv(game: Game) -> list[str]:
     elif not os.path.isabs(program) and shutil.which(program) is None:
         raise FileNotFoundError(f"cannot find '{program}' for {game.name}")
     # A script path given relative to the game root resolves against it.
+    found_script = False
     for i, arg in enumerate(argv[1:], start=1):
         rel = game.root / arg
-        if arg.endswith(".py") and rel.exists():
-            argv[i] = str(rel)
+        if arg.endswith(".py"):
+            if rel.exists():
+                argv[i] = str(rel)
+                found_script = True
+            elif Path(arg).is_absolute() and Path(arg).exists():
+                found_script = True
+            else:
+                raise FileNotFoundError(
+                    f"{game.name}: entry script '{arg}' does not exist")
+    if not found_script and argv[0].endswith(("python", "python3")):
+        raise FileNotFoundError(f"{game.name}: entry names no script to run")
     return argv
 
 
