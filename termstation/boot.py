@@ -12,7 +12,8 @@ import time
 from . import brand, paths
 
 sys.path.insert(0, str(paths.SDK_DIR))
-from termstation_bezel import frame_lines, geometry, side_runs  # noqa: E402
+import termstation_fx as fx                                      # noqa: E402
+from termstation_bezel import frame_lines, geometry, side_runs   # noqa: E402
 
 DIM, CYAN, WHITE, GOLD, RESET = "\x1b[90m", "\x1b[96m", "\x1b[97m", "\x1b[93m", "\x1b[0m"
 
@@ -42,52 +43,54 @@ def draw_cabinet(title: str = "", power: bool = True, color: str = CYAN,
 
 
 def power_on(game_name: str, fast: bool = False) -> None:
-    """Scanline sweep, logo, then the loading line. ~1.4s, skippable."""
+    """A cathode tube warming up: a hairline of light widens into a picture,
+    the logo burns in, then the game loads. About 1.5s, skippable."""
     step = 0.0 if fast else 1.0
-    sys.stdout.write("\x1b[?25l")  # hide cursor for the animation
+    screen = geometry()
+    sys.stdout.write("\x1b[?25l")
     try:
-        screen = draw_cabinet("", power=False, color=DIM)
-        time.sleep(0.10 * step)
-
-        # scanline sweep down the picture
-        blank = " " * screen.width
-        for i in range(screen.height):
-            _w([DIM, _at(screen.y + i, screen.x, "▔" * screen.width), RESET])
-            if i:
-                _w([_at(screen.y + i - 1, screen.x, blank)])
-            time.sleep(0.012 * step)
-        _w([_at(screen.y + screen.height - 1, screen.x, blank)])
-
-        # cabinet comes alive
-        draw_cabinet(game_name, power=True, color=CYAN)
-
-        # logo, centred as a block -- centring each line would shear it
         art = brand.logo(screen.width)
-        top = screen.y + max(1, (screen.height - len(art)) // 2 - 2)
+        canvas = fx.Canvas(screen.width, screen.height, ambient=0.0)
         art_w = max(len(line) for line in art)
-        lx = screen.x + max(0, (screen.width - art_w) // 2)
+        lx = max(0, (screen.width - art_w) // 2)
+        ly = max(0, screen.height // 2 - len(art) // 2 - 2)
         for i, line in enumerate(art):
-            _w([CYAN, _at(top + i, lx, line), RESET])
-            time.sleep(0.05 * step)
-
+            canvas.text(lx, ly + i, line, fx.rgb(120, 220, 235))
         tag = brand.TAGLINE
-        _w([DIM, _at(top + len(art) + 1,
-                     screen.x + max(0, (screen.width - len(tag)) // 2), tag), RESET])
-        time.sleep(0.25 * step)
+        canvas.text(max(0, (screen.width - len(tag)) // 2), ly + len(art) + 1,
+                    tag, fx.rgb(150, 150, 160))
 
-        # loading line
+        # 1. the tube strikes: a bright line across the middle, widening
+        mid = screen.height // 2
+        draw_cabinet("", power=False, color=DIM)
+        for i in range(mid + 1):
+            band = fx.Canvas(screen.width, screen.height, ambient=0.0)
+            for y in range(max(0, mid - i), min(screen.height, mid + i + 1)):
+                closeness = 1.0 - abs(y - mid) / max(1, i)
+                for x in range(screen.width):
+                    band.put(x, y, "─" if i < 2 else " ", fx.rgb(200, 240, 255))
+                    band.lit[y * screen.width + x] = closeness
+            _w([band.to_ansi(screen.x + 1, screen.y + 1)])
+            time.sleep(0.012 * step)
+
+        # 2. the logo burns in
+        draw_cabinet(game_name, power=True, color=CYAN)
+        for f in range(14):
+            lit = fx.fade_to(canvas, 1.0 - (f + 1) / 14)
+            _w([lit.to_ansi(screen.x + 1, screen.y + 1)])
+            time.sleep(0.02 * step)
+
+        # 3. loading
         label = f"LOADING  {game_name.upper()}"[: screen.width - 2]
-        ly = top + len(art) + 3
-        lx = screen.x + max(0, (screen.width - len(label)) // 2)
-        _w([GOLD, _at(ly, lx, label), RESET])
-
+        ly2 = ly + len(art) + 3
+        _w([GOLD, _at(screen.y + ly2, screen.x + max(0, (screen.width - len(label)) // 2),
+                      label), RESET])
         width = min(30, screen.width - 4)
         bx = screen.x + max(0, (screen.width - width) // 2)
-        _w([DIM, _at(ly + 2, bx, "░" * width), RESET])
         for i in range(width + 1):
-            _w([CYAN, _at(ly + 2, bx, "█" * i), RESET])
+            _w([CYAN, _at(screen.y + ly2 + 2, bx, "█" * i), RESET])
             time.sleep(0.010 * step)
-        time.sleep(0.15 * step)
+        time.sleep(0.12 * step)
     finally:
         sys.stdout.write("\x1b[?25h")
         sys.stdout.flush()

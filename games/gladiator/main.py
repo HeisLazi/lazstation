@@ -12,9 +12,18 @@ import random
 import sys
 import time
 
+import termstation_fx as fx
 import termstation_sdk as ts
 
-P_HP, P_STAM, P_CROWD, P_WARN, P_GOOD, P_DIM, P_GOLD = 1, 2, 3, 4, 5, 6, 7
+P_HP = fx.rgb(110, 210, 110)
+P_STAM = fx.rgb(90, 160, 240)
+P_CROWD = fx.rgb(210, 120, 220)
+P_WARN = fx.rgb(230, 80, 70)
+P_GOOD = fx.rgb(120, 220, 230)
+P_DIM = fx.rgb(150, 145, 135)
+P_GOLD = fx.rgb(240, 200, 90)
+DIM_ = fx.rgb(95, 90, 85)
+SAND = fx.rgb(190, 165, 120)
 
 OPPONENTS = [
     ("Straw Dummy",     18, 3, "flails wildly"),
@@ -54,6 +63,11 @@ class Arena:
         self.stdscr = stdscr
         self.s, self.screen = ts.tv_curses(stdscr, "Gladiator")
         self.save = save
+        self.palette = fx.Palette(curses)
+        self.canvas = fx.Canvas(self.screen.width, self.screen.height)
+        self.sparks = fx.Particles()
+        self.bout = 1
+        self.shake = fx.Shake()
         self.log: list[tuple[str, int]] = []
         self.crowd = 50
         self.stamina = 100
@@ -64,23 +78,18 @@ class Arena:
         """Redraw the cabinet and re-inset the picture after a resize."""
         self.s, self.screen = ts.tv_curses(self.stdscr, "Gladiator")
 
-    def put(self, y: int, x: int, text: str, attr: int = curses.A_NORMAL) -> None:
-        rows, cols = self.s.getmaxyx()
-        if 0 <= y < rows and x < cols:
-            try:
-                self.s.addnstr(y, x, text, max(0, cols - x - 1), attr)
-            except curses.error:
-                pass
+    def put(self, y: int, x: int, text: str, color: int = SAND) -> None:
+        self.canvas.text(x, y, text, color)
 
     def bar(self, y: int, x: int, label: str, value: int, maximum: int,
-            width: int, pair: int) -> None:
+            width: int, color: int) -> None:
         value = max(0, value)
         filled = int(width * value / maximum) if maximum else 0
-        self.put(y, x, f"{label:<8}", curses.A_BOLD)
-        self.put(y, x + 8, "[", curses.A_DIM)
-        self.put(y, x + 9, "█" * filled, curses.color_pair(pair) | curses.A_BOLD)
-        self.put(y, x + 9 + filled, "░" * (width - filled), curses.A_DIM)
-        self.put(y, x + 9 + width, f"] {value}/{maximum}", curses.A_DIM)
+        self.put(y, x, f"{label:<8}", fx.PAPER)
+        self.put(y, x + 8, "[", DIM_)
+        self.put(y, x + 9, "█" * filled, color)
+        self.put(y, x + 9 + filled, "░" * (width - filled), DIM_)
+        self.put(y, x + 9 + width, f"] {value}/{maximum}", DIM_)
 
     def say(self, text: str, pair: int = P_DIM) -> None:
         self.log.append((text, pair))
@@ -89,30 +98,30 @@ class Arena:
     def draw(self, you: Fighter, foe: Fighter, bout: int) -> None:
         """Laid out for the picture area, not the terminal: at 80x24 the
         bezel leaves 76x20, so every row below is budgeted."""
-        self.s.erase()
         rows, cols = self.s.getmaxyx()
         width = cols - 2
+        self.canvas = fx.Canvas(cols, rows, ambient=1.0)
         bar_w = max(10, min(22, width - 34))
 
         head = "T H E   A R E N A"
-        self.put(0, 1, head, curses.color_pair(P_GOLD) | curses.A_BOLD)
+        self.put(0, 1, head, P_GOLD)
         right = f"bout {bout}/{len(OPPONENTS)}"
-        self.put(0, max(len(head) + 3, width - len(right)), right, curses.A_DIM)
+        self.put(0, max(len(head) + 3, width - len(right)), right, DIM_)
 
         self.bar(1, 1, "YOU", you.hp, you.max_hp, bar_w, P_HP)
         self.bar(2, 1, "stamina", self.stamina, self.max_stamina, bar_w, P_STAM)
         self.bar(3, 1, foe.name[:8].upper(), foe.hp, foe.max_hp, bar_w, P_WARN)
         self.put(4, 10, f"{foe.stance}: {STANCES[foe.stance][0]}"[:width - 10],
-                 curses.A_DIM)
+                 DIM_)
         self.bar(5, 1, "crowd", self.crowd, 100, bar_w, P_CROWD)
         mood = ("silent", "restless", "warming", "roaring")[min(3, self.crowd // 26)]
         self.put(5, min(width - 20, bar_w + 24), f"crowd {mood}",
-                 curses.color_pair(P_CROWD))
+                 P_CROWD)
 
         log_top, log_rows = 7, max(3, rows - 14)
-        self.put(6, 0, "─" * width, curses.A_DIM)
+        self.put(6, 0, "─" * width, DIM_)
         for i, (line, pair) in enumerate(self.log[-log_rows:]):
-            self.put(log_top + i, 1, line[:width - 1], curses.color_pair(pair))
+            self.put(log_top + i, 1, line[:width - 1], pair)
 
         actions = [
             ("a", "attack", "solid strike, 12 stamina"),
@@ -122,23 +131,55 @@ class Arena:
             ("t", "taunt", "crowd favour, no defence"),
         ]
         base = rows - len(actions)
-        self.put(base - 1, 0, "─" * width, curses.A_DIM)
+        self.put(base - 1, 0, "─" * width, DIM_)
         for i, (key, name, hint) in enumerate(actions):
-            self.put(base + i, 1, f" {key} ", curses.color_pair(P_GOOD) | curses.A_BOLD)
-            self.put(base + i, 5, f"{name:<8}", curses.A_BOLD)
-            self.put(base + i, 14, hint[:width - 15], curses.A_DIM)
+            self.put(base + i, 1, f" {key} ", P_GOOD)
+            self.put(base + i, 5, f"{name:<8}", SAND)
+            self.put(base + i, 14, hint[:width - 15], DIM_)
+        self.present()
+
+    def present(self) -> None:
+        """One blit: sparks over the picture, shaken if something just landed."""
+        self.sparks.draw(self.canvas)
+        dx, dy = self.shake.update(1 / 30)
+        self.s.erase()
+        self.canvas.blit(self.s, self.palette, dx, dy)
         self.stdscr.noutrefresh()
         self.s.noutrefresh()
         curses.doupdate()
 
+    def impact(self, x: int, y: int, color: int, power: float = 1.6,
+               frames: int = 9) -> None:
+        """Play a hit: sparks, a shake, and a few animated frames so the blow
+        is something you see rather than only read in the log."""
+        # Thrown upward and outward, then pulled down: sparks that arc read
+        # as an impact, sparks that drift read as smoke.
+        # Speed and gravity are tuned so the arc peaks under a cell: sparks
+        # that climb into the header read as a rendering fault, not an impact.
+        self.sparks.emit(x, y, 12, speed=10, life=0.38, glyphs="*∙·",
+                         color=color, angle=-1.57, spread=2.2, gravity=44)
+        self.shake.kick(power)
+        for _ in range(frames):
+            self.sparks.update(1 / 30)
+            self.present()
+            time.sleep(1 / 45)
+
     def flash(self, text: str, pair: int = P_WARN) -> None:
+        """A banner that fades up, holds, and fades away."""
         rows, cols = self.s.getmaxyx()
         y = rows // 2
-        pad = " " * 2
-        self.put(y, max(0, (cols - len(text)) // 2 - 2), pad + text + pad,
-                 curses.color_pair(pair) | curses.A_BOLD | curses.A_REVERSE)
-        self.s.refresh()
-        time.sleep(0.55)
+        x = max(0, (cols - len(text)) // 2)
+        base = self.canvas
+        for step in range(10):
+            self.canvas = fx.Canvas(cols, rows, ambient=1.0)
+            self.canvas.ch = list(base.ch)
+            self.canvas.fg = list(base.fg)
+            self.canvas.bg = list(base.bg)
+            glow = fx.scale(pair, 0.35 + 0.65 * min(1.0, step / 4))
+            self.canvas.text(x, y, text, glow)
+            self.present()
+            time.sleep(0.035)
+        time.sleep(0.3)
 
     # ------------------------------------------------------------- combat
     def player_turn(self, you: Fighter, foe: Fighter, key: int) -> bool:
@@ -189,6 +230,9 @@ class Arena:
                 damage = int(damage * 0.6)
             foe.hp -= damage
             self.say(f"you strike for {damage}", P_GOOD)
+            self.draw(you, foe, self.bout)
+            self.impact(34, 4, P_GOLD if damage > 14 else P_GOOD,
+                        power=2.4 if damage > 14 else 1.4)
         return True
 
     def foe_turn(self, you: Fighter, foe: Fighter) -> None:
@@ -214,9 +258,12 @@ class Arena:
         else:
             you.hp -= damage
             self.say(f"{foe.name} hits you for {damage}", P_WARN)
+            self.draw(you, foe, self.bout)
+            self.impact(12, 2, P_WARN, power=2.0)
 
     def fight(self, you: Fighter, foe: Fighter, bout: int) -> bool:
         """One bout. Returns True if the player survives it."""
+        self.bout = bout
         self.s.clear()
         self.log.clear()
         self.say(f"{foe.name} enters the sand.", P_WARN)
@@ -262,13 +309,13 @@ class Arena:
 
     def confirm(self, question: str) -> bool:
         rows, cols = self.s.getmaxyx()
-        self.put(rows - 1, 2, question + " ", curses.color_pair(P_WARN) | curses.A_BOLD)
-        self.s.refresh()
+        self.put(rows - 1, 2, question + " ", P_WARN)
+        self.present()
         return self.s.getch() in (ord("y"), ord("Y"))
 
     def between_bouts(self, you: Fighter, gold: int) -> None:
-        self.s.clear()
         rows, cols = self.s.getmaxyx()
+        self.canvas = fx.Canvas(cols, rows, ambient=1.0)
         lines = [
             ("The gate closes behind you.", P_DIM),
             ("", P_DIM),
@@ -282,28 +329,14 @@ class Arena:
             ("  enter        back to the sand", P_DIM),
         ]
         for i, (line, pair) in enumerate(lines):
-            self.put(1 + i, 3, line, curses.color_pair(pair))
-        self.stdscr.noutrefresh()
-        self.s.noutrefresh()
-        curses.doupdate()
+            self.put(1 + i, 3, line, pair)
+        self.present()
         return None
 
 
 def run(stdscr, save: dict) -> dict:
     curses.curs_set(0)
     stdscr.keypad(True)
-    if curses.has_colors():
-        curses.start_color()
-        try:
-            curses.use_default_colors()
-            bg = -1
-        except curses.error:
-            bg = curses.COLOR_BLACK
-        for pair, fg in ((P_HP, curses.COLOR_GREEN), (P_STAM, curses.COLOR_BLUE),
-                         (P_CROWD, curses.COLOR_MAGENTA), (P_WARN, curses.COLOR_RED),
-                         (P_GOOD, curses.COLOR_CYAN), (P_DIM, curses.COLOR_WHITE),
-                         (P_GOLD, curses.COLOR_YELLOW)):
-            curses.init_pair(pair, fg, bg)
 
     arena = Arena(stdscr, save)
     you = Fighter("You", 60 + save.get("training", 0) * 6, 10)

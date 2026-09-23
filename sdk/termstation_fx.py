@@ -102,6 +102,9 @@ MOSS = rgb(90, 150, 80)
 WATER = rgb(60, 120, 210)
 GOLD = rgb(240, 200, 80)
 SHADOW = rgb(40, 40, 60)
+PAPER = rgb(236, 226, 205)   # warm off-white, easy on a dark terminal
+INK = rgb(120, 112, 100)     # muted text
+AMBER = rgb(255, 176, 64)    # the retro accent
 
 
 # ---------------------------------------------------------------- palette
