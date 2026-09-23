@@ -166,6 +166,7 @@ class Arena:
 
     def flash(self, text: str, pair: int = P_WARN) -> None:
         """A banner that fades up, holds, and fades away."""
+        self.s.clear()
         rows, cols = self.s.getmaxyx()
         y = rows // 2
         x = max(0, (cols - len(text)) // 2)
@@ -314,6 +315,9 @@ class Arena:
         return self.s.getch() in (ord("y"), ord("Y"))
 
     def between_bouts(self, you: Fighter, gold: int) -> None:
+        # A screen transition needs a forced repaint: erase() only queues the
+        # change, and curses may leave the previous screen's text standing.
+        self.s.clear()
         rows, cols = self.s.getmaxyx()
         self.canvas = fx.Canvas(cols, rows, ambient=1.0)
         lines = [

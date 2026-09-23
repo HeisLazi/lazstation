@@ -252,27 +252,29 @@ class Canvas:
 
     # --- output
     def blit(self, win, palette: Palette, ox: int = 0, oy: int = 0) -> None:
-        """Draw into a curses window. Light is applied here, not when drawing."""
+        """Draw into a curses window. Light is applied here, not when drawing.
+
+        Iterates the *window*, not the canvas, so an offset blit (screen
+        shake) still paints every cell it does not cover. Offsetting only the
+        canvas leaves a margin of whatever was on screen last frame.
+        """
         h, w = win.getmaxyx()
-        for y in range(self.h):
-            ty = y + oy
-            if ty < 0 or ty >= h:
-                continue
-            row = y * self.w
-            for x in range(self.w):
-                tx = x + ox
-                if tx < 0 or tx >= w - 1:
-                    continue
-                i = row + x
-                glyph = self.ch[i]
-                light = self.lit[i]
-                # Every cell is painted, blanks included. Skipping blanks as an
-                # optimisation leaves whatever was underneath showing through
-                # on the next frame; a full 76x20 repaint costs about a
-                # millisecond, so there is nothing to win by being clever.
-                fg = self.fg[i] if light >= 0.99 else scale(self.fg[i], max(0.05, light))
+        blank = palette.pair(WHITE, -1)
+        for ty in range(h):
+            y = ty - oy
+            for tx in range(w - 1):
+                x = tx - ox
+                if 0 <= x < self.w and 0 <= y < self.h:
+                    i = y * self.w + x
+                    glyph = self.ch[i]
+                    light = self.lit[i]
+                    fg = (self.fg[i] if light >= 0.99
+                          else scale(self.fg[i], max(0.05, light)))
+                    attr = palette.pair(fg, self.bg[i])
+                else:
+                    glyph, attr = " ", blank
                 try:
-                    win.addstr(ty, tx, glyph, palette.pair(fg, self.bg[i]))
+                    win.addstr(ty, tx, glyph, attr)
                 except Exception:
                     pass
 

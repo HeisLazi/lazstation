@@ -37,6 +37,15 @@ PY
   else bad "console at $1x$2"; fi
 done
 
+echo "awards screen"
+out=$(cd "$ROOT" && timeout 25 python3 - <<'PY' 2>&1
+import sys; sys.path.insert(0,"tools")
+from ptytest import run; from vt import render
+print(render(run(["python3","-m","termstation"], 80, 24, ["a"], settle=0.9), 80, 24))
+PY
+)
+if grep -q "AWARDS" <<<"$out"; then pass "awards screen renders"; else bad "awards screen"; fi
+
 echo "games"
 for dir in games/*/; do
   slug=$(basename "$dir")
