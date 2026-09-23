@@ -17,6 +17,11 @@ cd ~/projects/termstation
 
 Python 3.11+ and a terminal. No dependencies.
 
+**WSL:** WSL has its own home directory, so if you want `lazstation` there
+too, clone the repo inside WSL and run `./install.sh` again from that shell.
+The install is just a symlink into `~/.local/bin`, so doing it in both places
+is harmless.
+
 ## Using it
 
 | command | what it does |
@@ -112,6 +117,12 @@ moment a curses game cleared the screen. Instead the launcher and the SDK
 share one geometry module (`sdk/termstation_bezel.py`), so the cabinet the
 boot screen draws and the cabinet the game draws land on the same cells and
 the picture changes without the frame blinking.
+
+The cabinet is capped at 100x34 and centred, rather than stretched across the
+whole terminal — a screen stretched over an ultrawide window leaves the
+picture stranded in a corner. Game output sits on a centred "stage" no wider
+than 78 columns for the same reason, and `ts.tv_clear(page=N)` centres a page
+of N lines vertically.
 
 A game that ignores the bezel simply runs full screen.
 
