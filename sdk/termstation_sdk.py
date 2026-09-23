@@ -125,7 +125,7 @@ def size() -> tuple[int, int]:
     terminal, so box(), title() and rule() fit the frame automatically."""
     if _tv_state.get("active"):
         screen = _tv_state["screen"]
-        return screen.width, screen.height
+        return _tv_state["stage"] or screen.width, screen.height
     cols, rows = shutil.get_terminal_size((80, 24))
     return cols, rows
 
@@ -183,7 +183,8 @@ def _seat_cursor() -> None:
     screen = state["screen"]
     if state["row"] >= screen.height - 2:
         tv_clear()
-    sys.stdout.write(f"\x1b[{screen.y + state['row'] + 1};{screen.x + 1}H")
+    col = screen.x + state["indent"] + 1
+    sys.stdout.write(f"\x1b[{screen.y + state['row'] + 1};{col}H")
     sys.stdout.flush()
     state["row"] += 1
 
@@ -267,7 +268,12 @@ def menu(heading: str, options: list[str], back: str | None = "Back") -> int:
 
 from termstation_bezel import geometry as _geometry, frame_lines, side_runs  # noqa: E402
 
-_tv_state = {"active": False, "row": 0, "title": "", "screen": None}
+_tv_state = {"active": False, "row": 0, "title": "", "screen": None,
+             "stage": 0, "indent": 0}
+
+#: Text is hard to read in very long lines, so the playfield is capped and
+#: centred inside the picture rather than stretched across it.
+STAGE_MAX = 78
 
 
 def tv(title: str = "") -> "object":
@@ -279,7 +285,9 @@ def tv(title: str = "") -> "object":
     """
     title = title or os.environ.get("TERMSTATION_NAME", "")
     screen = _geometry()
-    _tv_state.update(active=True, row=0, title=title, screen=screen)
+    stage = min(screen.width, STAGE_MAX)
+    _tv_state.update(active=True, row=0, title=title, screen=screen,
+                     stage=stage, indent=(screen.width - stage) // 2)
     _repaint_frame(screen, title)
     return screen
 
@@ -298,8 +306,12 @@ def _repaint_frame(screen, title: str) -> None:
     sys.stdout.flush()
 
 
-def tv_clear() -> None:
-    """Wipe the picture but leave the cabinet standing."""
+def tv_clear(page: int = 0) -> None:
+    """Wipe the picture but leave the cabinet standing.
+
+    `page` is the height of the screen you are about to draw; give it and the
+    page is centred vertically instead of hugging the top of the picture.
+    """
     screen = _tv_state.get("screen")
     if not screen or not _tty():
         clear()
@@ -311,7 +323,7 @@ def tv_clear() -> None:
     out.append(f"\x1b[{screen.y + 1};{screen.x + 1}H")
     sys.stdout.write("".join(out))
     sys.stdout.flush()
-    _tv_state["row"] = 0
+    _tv_state["row"] = max(0, (screen.height - page) // 2) if page else 0
 
 
 def _visible_len(text: str) -> int:
@@ -344,11 +356,12 @@ def tv_print(*parts: object, sep: str = " ") -> None:
         if _tv_state["row"] >= screen.height - 1:
             tv_pause()
             tv_clear()
-        if _visible_len(line) > screen.width:
-            line = line[: screen.width + (len(line) - _visible_len(line))]
+        if _visible_len(line) > _tv_state["stage"]:
+            line = line[: _tv_state["stage"] + (len(line) - _visible_len(line))]
         if _tty():
+            col = screen.x + _tv_state["indent"] + 1
             sys.stdout.write(
-                f"\x1b[{screen.y + _tv_state['row'] + 1};{screen.x + 1}H{line}\x1b[0m")
+                f"\x1b[{screen.y + _tv_state['row'] + 1};{col}H{line}\x1b[0m")
         else:
             sys.stdout.write(line + "\n")
         _tv_state["row"] += 1

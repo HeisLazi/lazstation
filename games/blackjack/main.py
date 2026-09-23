@@ -81,8 +81,18 @@ def show(cards: list[Card], hidden: bool = False) -> str:
     return " ".join(str(c) for c in cards)
 
 
+PAGE = 17  # rows a hand screen uses, so the page sits centred in the picture
+
+MOVES = {
+    "hit": "take another card",
+    "stand": "keep what you have",
+    "double": "double your bet, take exactly one more card",
+    "split": "split the pair into two hands",
+}
+
+
 def header(chips: int, bet: int | None = None) -> None:
-    ts.tv_clear()
+    ts.tv_clear(page=PAGE)
     ts.tv_print(ts.title("B L A C K J A C K"))
     line = f"  chips: {ts.color(str(chips), 'bright_yellow', bold=True)}"
     if bet:
@@ -140,6 +150,12 @@ def play_hand(shoe: Shoe, cards: list[Card], bet: int, chips: int,
                 and cards[0].value == cards[1].value):
             options.append("split")
 
+        ts.tv_print(ts.color("  your options", "bright_yellow", bold=True))
+        for i, opt in enumerate(options, 1):
+            ts.tv_print(f"   {ts.color(str(i), 'bright_cyan')}  "
+                        f"{ts.color(opt.ljust(7), 'white', bold=True)} {MOVES[opt]}")
+        ts.tv_print(ts.color("   type the word or its number, then enter", "grey"))
+        ts.tv_print()
         move = ts.ask_choice("your move", options)
 
         if move == "hit":
@@ -190,10 +206,19 @@ def main() -> int:
     chips = load_chips()
     shoe = Shoe()
 
-    header(chips)
+    ts.tv_clear(page=17)
+    ts.tv_print(ts.title("B L A C K J A C K"))
+    ts.tv_print()
     ts.tv_print(ts.box([
-        "  Six decks. Dealer stands on soft 17. Blackjack pays 3:2.",
+        "  HOW TO PLAY",
         "",
+        "  Beat the dealer by getting closer to 21 without going over.",
+        "  Cards are face value, pictures are 10, an ace is 11 or 1.",
+        "",
+        "  Bet, then choose: hit, stand, double or split.",
+        "  Type the word or the number beside it, then press enter.",
+        "",
+        "  Six decks. Dealer stands on soft 17. Blackjack pays 3:2.",
         f"  You sit down with {chips} chips.",
     ]))
     ts.tv_pause("press enter to play")
@@ -209,6 +234,13 @@ def main() -> int:
 
         header(chips)
         ts.tv_print(f"  hands played {save['hands']}   won {save['wins']}")
+        ts.tv_print()
+        ts.tv_print(ts.color("  place your bet for the next hand", "bright_yellow",
+                             bold=True))
+        ts.tv_print(ts.color("  type a number and press enter, or 0 to cash out",
+                             "grey"))
+        ts.tv_print(ts.color("  (just press enter to bet the amount in brackets)",
+                             "grey"))
         ts.tv_print()
         bet = ts.ask_int(f"bet (1-{chips}, 0 to leave)", 0, chips, min(25, chips))
         if bet == 0:

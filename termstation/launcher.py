@@ -113,13 +113,17 @@ class Console:
         attr = self.attr(C_TITLE, bold=True)
 
         def edge(y: int, x: int, text: str) -> None:
+            """Draw a bezel run, using insstr only for the terminal's very
+            last cell -- addnstr there would scroll the screen."""
             if y >= rows or x >= cols:
                 return
-            head, tail = text[: cols - x - 1], text[cols - x - 1 : cols - x]
             try:
+                if x + len(text) < cols:
+                    stdscr.addnstr(y, x, text, len(text), attr)
+                    return
+                head, tail = text[: cols - x - 1], text[cols - x - 1 : cols - x]
                 if head:
                     stdscr.addnstr(y, x, head, len(head), attr)
-                # insstr reaches the final column without advancing the cursor
                 if tail:
                     stdscr.insstr(y, cols - 1, tail, attr)
             except curses.error:

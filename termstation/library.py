@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import sys
 import tomllib
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -9,17 +10,14 @@ from pathlib import Path
 
 from . import paths
 
+sys.path.insert(0, str(paths.SDK_DIR))
+from termstation_bezel import geometry as _geometry  # noqa: E402
+
 
 def _inner(cols: int, rows: int) -> tuple[int, int]:
     """Usable size inside the bezel; falls back to raw size if unframed."""
-    import sys as _sys
-    _sys.path.insert(0, str(paths.SDK_DIR))
-    try:
-        from termstation_bezel import geometry
-        g = geometry(cols, rows)
-        return g.width, g.height
-    except Exception:
-        return cols, rows
+    g = _geometry(cols, rows)
+    return g.width, g.height
 
 MANIFEST_NAME = "game.toml"
 
