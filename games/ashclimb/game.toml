@@ -1,0 +1,15 @@
+[game]
+name = "Ashclimb"
+slug = "ashclimb"
+version = "1.0.0"
+author = "lazi"
+description = """
+A short roguelike deckbuilder. Twelve floors, one deck, no second chances.
+
+Start with ten cards and pick up more as you climb — but every card
+you add makes the deck slower. Enemies tell you what they will do
+before you commit, so every turn is a real decision."""
+tags = ["roguelike", "cards", "deckbuilder"]
+entry = ["{python}", "main.py"]
+min_cols = 66
+min_rows = 20
