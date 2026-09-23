@@ -12,6 +12,8 @@ so this never fights a child process for the terminal.
 from __future__ import annotations
 
 import curses
+import math
+import random
 import sys
 import time
 
@@ -38,6 +40,22 @@ class Action:
     def __init__(self, kind: str, game: Game | None = None,
                  profile: str = "default", slot: int = 1) -> None:
         self.kind, self.game, self.profile, self.slot = kind, game, profile, slot
+
+
+def accent_for(game: Game) -> int:
+    """A stable colour per game, so selecting one re-tints the dashboard.
+
+    Declared in game.toml as `accent = [r, g, b]`, otherwise derived from the
+    slug -- every game gets its own identity without anyone authoring one.
+    """
+    raw = getattr(game, "accent", None)
+    if isinstance(raw, (list, tuple)) and len(raw) == 3:
+        return fx.rgb(*[int(v) for v in raw])
+    h = sum(ord(c) * (i + 7) for i, c in enumerate(game.slug)) % 360
+    # A warm, desaturated ramp -- keeps everything in the same retro family.
+    import colorsys
+    r, g, b = colorsys.hsv_to_rgb(h / 360.0, 0.55, 1.0)
+    return fx.rgb(int(r * 255), int(g * 255), int(b * 255))
 
 
 def load_cover(game: Game) -> list[str]:
@@ -75,7 +93,33 @@ class Console:
         self.covers: dict[str, list[str]] = {}
         self.flicker = 1.0
         self.slots: dict[str, int] = {}
+        self.motes: list[list[float]] = []
+        self.born = time.monotonic()
+        self.prev_game: Game | None = None
+        self.change_at = 0.0
         self.refresh_library()
+
+    # ------------------------------------------------------------- ambience
+    def seed_motes(self, width: int, height: int) -> None:
+        """Slow embers drifting up the screen. The dashboard is never still,
+        which is most of what separates 'alive' from 'a menu'."""
+        self.motes = [[random.uniform(0, width), random.uniform(0, height),
+                       random.uniform(0.6, 2.2), random.random()]
+                      for _ in range(max(8, width // 6))]
+
+    def drift(self, canvas: fx.Canvas, dt: float) -> None:
+        if not self.motes:
+            self.seed_motes(canvas.w, canvas.h)
+        for m in self.motes:
+            m[1] -= dt * m[2] * 0.6
+            m[0] += math.sin(m[1] * 0.6 + m[3] * 6) * dt * 1.2
+            if m[1] < 0:
+                m[1] = canvas.h - 0.01
+                m[0] = random.uniform(0, canvas.w)
+            x, y = int(m[0]), int(m[1])
+            if canvas.inside(x, y) and canvas.ch[y * canvas.w + x] == " ":
+                glyph = "·" if m[2] < 1.4 else "∙"
+                canvas.put(x, y, glyph, fx.scale(AMBER_DIM, 0.35 + 0.3 * m[3]))
 
     # ------------------------------------------------------------- data
     def refresh_library(self) -> None:
@@ -105,7 +149,7 @@ class Console:
 
     # ------------------------------------------------------------- drawing
     def cover_tile(self, canvas: fx.Canvas, game: Game, cx: int, cy: int,
-                   closeness: float) -> None:
+                   closeness: float, pulse: float = 0.0) -> None:
         """One cover. `closeness` is 1 at the centre and 0 far out."""
         w = int(14 + 8 * closeness)
         h = int(7 + 4 * closeness)
@@ -115,7 +159,8 @@ class Console:
             return
 
         bright = 0.35 + 0.65 * closeness
-        edge = fx.scale(AMBER if closeness > 0.55 else AMBER_DIM, bright)
+        tone = accent_for(game)
+        edge = fx.scale(tone if closeness > 0.55 else AMBER_DIM, bright)
         canvas.fill(x + 1, y + 1, w - 2, h - 2, " ", PAPER)
         canvas.box(x, y, w, h, edge)
 
@@ -123,7 +168,7 @@ class Console:
         art_w = max((len(a) for a in art), default=0)
         ax = x + (w - art_w) // 2
         ay = y + (h - len(art)) // 2
-        tint = fx.mix(INK, AMBER, closeness * 0.7)
+        tint = fx.mix(INK, tone, closeness * 0.75)
         for row, line in enumerate(art):
             if y < ay + row < y + h - 1:
                 canvas.text(ax, ay + row, line[:w - 2], fx.scale(tint, bright))
@@ -136,14 +181,20 @@ class Console:
                         fx.scale(INK, 0.5 + 0.5 * closeness))
 
         if closeness > 0.9:
-            canvas.add_light(cx, cy, max(w, h) * 0.8, 0.55)
+            # The selected cover breathes: a slow swell of light around it.
+            canvas.add_light(cx, cy, max(w, h) * 0.85, 0.42 + 0.16 * pulse)
 
-    def compose(self, width: int, height: int) -> fx.Canvas:
+    def compose(self, width: int, height: int, t: float = 0.0,
+                dt: float = 0.0) -> fx.Canvas:
         canvas = fx.Canvas(width, height, ambient=0.92)
         games = self.visible
+        pulse = 0.5 + 0.5 * math.sin(t * 1.9)
+        self.drift(canvas, dt)
+        game_now = self.current
+        tone = accent_for(game_now) if game_now else AMBER
 
         head = f"{brand.NAME}"
-        canvas.text(1, 0, head, AMBER)
+        canvas.text(1, 0, head, fx.scale(tone, 0.85 + 0.15 * pulse))
         meta = f"{self.profile}   {len(self.all_games)} games"
         canvas.text(max(1, width - len(meta) - 1), 0, meta, INK)
 
@@ -161,14 +212,16 @@ class Console:
                     continue
                 closeness = max(0.0, 1.0 - dist)
                 cx = int(centre + (i - self.scroll) * PITCH)
-                self.cover_tile(canvas, game, cx, row_y, closeness)
+                self.cover_tile(canvas, game, cx, row_y, closeness, pulse)
 
             game = self.current
             if game:
                 st = self.stats.get(game.slug, {})
                 name = game.name.upper()
+                settle = min(1.0, (t - self.change_at) / 0.28)
+                title_col = fx.mix(fx.scale(tone, 0.25), GLOW, settle)
                 canvas.text(max(1, (width - len(name)) // 2), 13,
-                            name, GLOW)
+                            name, title_col)
                 room = width - 6
                 tag = game.tagline
                 if len(tag) > room:
@@ -200,7 +253,8 @@ class Console:
                 # position dots, like a console dashboard
                 dots = "".join("◆" if i == self.index else "◇"
                                for i in range(len(games)))
-                canvas.text(max(1, (width - len(dots)) // 2), 17, dots, AMBER_DIM)
+                canvas.text(max(1, (width - len(dots)) // 2), 17, dots,
+                            fx.scale(tone, 0.6))
 
         if self.searching:
             bar = f"search: {self.filter}_"
@@ -213,25 +267,33 @@ class Console:
             canvas.text(max(1, (width - len(hint)) // 2), height - 1, hint, INK)
         return canvas
 
-    def crt(self, canvas: fx.Canvas) -> None:
-        """Scanlines, vignette and a little flicker -- applied to light only,
-        so it dims the picture without touching what is drawn."""
+    def crt(self, canvas: fx.Canvas, t: float = 0.0) -> None:
+        """Scanlines, vignette, a slow rolling band and a little flicker --
+        applied to the light channel only, so the picture dims without
+        anything drawn being altered."""
+        roll = (t * 7.0) % (canvas.h + 8) - 4
+        flick = 1.0 - 0.015 * (1 + math.sin(t * 31.0))
         for y in range(canvas.h):
             scan = 0.80 if y % 2 else 1.0
+            band = 1.0 + 0.18 * max(0.0, 1.0 - abs(y - roll) / 2.5)
             for x in range(canvas.w):
                 i = y * canvas.w + x
                 edge = 1.0 - 0.22 * abs(x - canvas.w / 2) / (canvas.w / 2)
-                canvas.lit[i] *= scan * edge * self.flicker
+                canvas.lit[i] *= scan * edge * band * flick
 
     # ------------------------------------------------------------- frame
-    def render(self, stdscr) -> None:
+    def render(self, stdscr, t: float = 0.0, dt: float = 0.0) -> None:
         rows, cols = stdscr.getmaxyx()
-        self.screen = geometry(cols, rows)
+        screen = geometry(cols, rows)
+        if screen.width != getattr(self, "_last_w", -1):
+            self.motes = []          # reseed drift for the new width
+            self._last_w = screen.width
+        self.screen = screen
         stdscr.erase()
         self.draw_cabinet(stdscr)
-        canvas = self.compose(self.screen.width, self.screen.height)
-        self.crt(canvas)
-        canvas.blit(stdscr, self.palette, self.screen.x, self.screen.y)
+        canvas = self.compose(screen.width, screen.height, t, dt)
+        self.crt(canvas, t)
+        canvas.blit(stdscr, self.palette, screen.x, screen.y)
         stdscr.noutrefresh()
         curses.doupdate()
 
@@ -261,37 +323,39 @@ class Console:
         for y, x, text in side_runs(self.screen):
             edge(y, x, text)
 
-    def slide_to(self, stdscr, target: int) -> None:
-        """Animate the carousel rather than snapping: the motion is what
-        tells you which way you moved."""
-        tween = fx.Tween(self.scroll, float(target), SLIDE_TIME, fx.ease_out)
-        last = time.monotonic()
-        stdscr.nodelay(True)
-        while not tween.done:
-            now = time.monotonic()
-            dt = min(0.05, now - last)
-            last = now
-            self.scroll = tween.update(dt)
-            self.render(stdscr)
-            time.sleep(1 / FPS)
-        stdscr.nodelay(False)
-        self.scroll = float(target)
+    def select(self, target: int) -> None:
+        """Aim the carousel. The loop eases toward it; nothing blocks."""
         self.index = target
+        self.change_at = time.monotonic()
 
     # ------------------------------------------------------------- loop
     def loop(self, stdscr) -> Action:
         curses.curs_set(0)
         stdscr.keypad(True)
+        stdscr.nodelay(True)          # never block: the dashboard keeps moving
         self.palette = fx.Palette(curses)
         self.screen = geometry(*reversed(stdscr.getmaxyx()))
+        last = time.monotonic()
+        self.change_at = last
 
         while True:
-            self.render(stdscr)
-            try:
-                key = stdscr.getch()
-            except KeyboardInterrupt:
-                return Action("quit")
+            now = time.monotonic()
+            dt = min(0.1, now - last)
+            last = now
 
+            # Ease the carousel toward whatever is selected.
+            gap = self.index - self.scroll
+            if abs(gap) < 0.002:
+                self.scroll = float(self.index)
+            else:
+                self.scroll += gap * min(1.0, dt * 11.0)
+
+            self.render(stdscr, now - self.born, dt)
+
+            key = stdscr.getch()
+            if key == -1:
+                time.sleep(max(0.0, 1 / FPS - (time.monotonic() - now)))
+                continue
             if key == curses.KEY_RESIZE:
                 continue
 
@@ -300,30 +364,31 @@ class Console:
                     self.searching = False
                     if key == 27:
                         self.filter = ""
-                    self.index = 0
+                    self.select(0)
                     self.scroll = 0.0
                 elif key in (curses.KEY_BACKSPACE, 127, 8):
                     self.filter = self.filter[:-1]
                 elif 32 <= key < 127:
                     self.filter += chr(key)
-                    self.index = 0
+                    self.select(0)
                     self.scroll = 0.0
                 continue
 
             games = self.visible
             if key in (ord("q"), ord("Q")):
                 return Action("quit")
-            if key in (curses.KEY_LEFT, ord("h"), ord("a")) and games:
-                self.slide_to(stdscr, (self.index - 1) % len(games))
-            elif key in (curses.KEY_RIGHT, ord("l"), ord("d")) and games:
-                self.slide_to(stdscr, (self.index + 1) % len(games))
+            if key in (curses.KEY_LEFT, ord("h")) and games:
+                self.select((self.index - 1) % len(games))
+            elif key in (curses.KEY_RIGHT, ord("l")) and games:
+                self.select((self.index + 1) % len(games))
             elif key in (curses.KEY_HOME, ord("g")) and games:
-                self.slide_to(stdscr, 0)
+                self.select(0)
             elif key in (curses.KEY_END, ord("G")) and games:
-                self.slide_to(stdscr, len(games) - 1)
+                self.select(len(games) - 1)
             elif key in (10, 13, curses.KEY_ENTER, ord(" ")):
                 game = self.current
                 if game:
+                    stdscr.nodelay(False)
                     return Action("launch", game, self.profile,
                                   self.slots.get(game.slug, 1))
             elif key == ord("/"):
@@ -336,16 +401,22 @@ class Console:
                 self.fast_boot = not self.fast_boot
                 self.say("boot animation " + ("off" if self.fast_boot else "on"))
             elif key in (ord("p"), ord("P")):
+                stdscr.nodelay(False)
                 self.profile = self.ask_profile(stdscr)
+                stdscr.nodelay(True)
             elif key in (ord("1"), ord("2"), ord("3")) and games:
                 game = self.current
                 if game:
                     self.slots[game.slug] = key - ord("0")
                     self.say(f"slot {key - ord('0')} selected")
             elif key in (ord("a"), ord("A")):
+                stdscr.nodelay(False)
                 self.achievements_screen(stdscr)
+                stdscr.nodelay(True)
             elif key == ord("?"):
+                stdscr.nodelay(False)
                 self.help_screen(stdscr)
+                stdscr.nodelay(True)
 
     # ------------------------------------------------------------- screens
     def ask_profile(self, stdscr) -> str:
@@ -399,7 +470,7 @@ class Console:
         canvas = fx.Canvas(self.screen.width, self.screen.height, ambient=0.95)
         for i, (text, color) in enumerate(lines[: self.screen.height - 1]):
             canvas.text(3, i + 1, text[: self.screen.width - 4], color)
-        self.crt(canvas)
+        self.crt(canvas, 0.0)
         stdscr.erase()
         self.draw_cabinet(stdscr)
         canvas.blit(stdscr, self.palette, self.screen.x, self.screen.y)
@@ -428,7 +499,7 @@ class Console:
         canvas = fx.Canvas(self.screen.width, self.screen.height, ambient=0.95)
         for i, line in enumerate(lines):
             canvas.text(3, i + 2, line, GLOW if i == 0 else PAPER)
-        self.crt(canvas)
+        self.crt(canvas, 0.0)
         stdscr.erase()
         self.draw_cabinet(stdscr)
         canvas.blit(stdscr, self.palette, self.screen.x, self.screen.y)

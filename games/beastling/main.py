@@ -345,6 +345,11 @@ class Game:
 
     def capture(self, foe: Beast) -> None:
         self.caught.add(foe.slug)
+        ts.unlock("first-catch", "Something Followed You Home",
+                  "Caught your first beast")
+        if len(self.caught) >= len(SPECIES) // 2:
+            ts.unlock("half-journal", "Half the Journal",
+                      "Caught half of everything in the Vale")
         foe.hp = foe.max_hp
         if len(self.party) < PARTY_MAX:
             self.party.append(foe)
@@ -434,6 +439,10 @@ class Game:
                 return
 
         self.badges += 1
+        ts.unlock("first-badge", "First Badge", "Beat a champion of the roads")
+        if self.badges >= len(CHAMPIONS):
+            ts.unlock("all-badges", "Keeper of the Roads",
+                      "Beat every champion in the Hollow Vale")
         self.money += 200 + self.badges * 100
         self.lures += 5
         self.heal_all()

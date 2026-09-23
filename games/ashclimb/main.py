@@ -513,6 +513,12 @@ def main() -> int:
     save["best_floor"] = max(save.get("best_floor", 0), run.floor)
     if outcome == "won":
         save["wins"] = save.get("wins", 0) + 1
+        ts.unlock("cinder-king", "Kingslayer", "Cleared the spire")
+        if len(run.deck) <= 12:
+            ts.unlock("lean-deck", "Nothing Spare",
+                      f"Cleared it with only {len(run.deck)} cards")
+    if run.floor >= 6:
+        ts.unlock("halfway", "Halfway Up", "Reached floor 6")
     run.clear_run()
 
     ts.tv_clear(page=16)

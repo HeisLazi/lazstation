@@ -111,12 +111,35 @@ def slots() -> list[str]:
 # ---------------------------------------------------------------- presentation
 
 RESET, BOLD, DIM = "\x1b[0m", "\x1b[1m", "\x1b[2m"
-_COLORS = {
+
+#: The console's palette, as xterm-256 indices. Games keep calling
+#: ts.color(text, "bright_green") exactly as before -- the names now resolve
+#: into one warm, consistent scheme instead of raw terminal primaries, so
+#: every game matches the dashboard without changing a line of game code.
+_THEME = {
+    "black": 233, "white": 223, "paper": 223,
+    "grey": 244, "gray": 244, "ink": 244,
+    "red": 167, "bright_red": 203,
+    "green": 108, "bright_green": 150,
+    "yellow": 179, "bright_yellow": 221, "amber": 214,
+    "blue": 68, "bright_blue": 111,
+    "magenta": 176, "bright_magenta": 212,
+    "cyan": 109, "bright_cyan": 152,
+}
+#: Fallback for terminals without 256 colours.
+_BASIC = {
     "black": 30, "red": 31, "green": 32, "yellow": 33, "blue": 34,
     "magenta": 35, "cyan": 36, "white": 37, "grey": 90, "gray": 90,
+    "ink": 90, "paper": 37, "amber": 33,
     "bright_red": 91, "bright_green": 92, "bright_yellow": 93,
     "bright_blue": 94, "bright_magenta": 95, "bright_cyan": 96,
 }
+
+
+def _rich() -> bool:
+    """Does this terminal do 256 colours?"""
+    term = os.environ.get("TERM", "")
+    return "256" in term or bool(os.environ.get("COLORTERM"))
 
 
 def _tty() -> bool:
@@ -126,7 +149,10 @@ def _tty() -> bool:
 def color(text: str, name: str = "white", bold: bool = False) -> str:
     if not _tty():
         return text
-    code = _COLORS.get(name, 37)
+    if _rich():
+        code = _THEME.get(name, _THEME["paper"])
+        return f"\x1b[{'1;' if bold else ''}38;5;{code}m{text}{RESET}"
+    code = _BASIC.get(name, 37)
     return f"\x1b[{'1;' if bold else ''}{code}m{text}{RESET}"
 
 
@@ -151,26 +177,29 @@ def center(text: str, width: int | None = None) -> str:
     return text.center(width)
 
 
-def rule(char: str = "─", width: int | None = None, fg: str = "grey") -> str:
+def rule(char: str = "─", width: int | None = None, fg: str = "ink") -> str:
     return color(char * (width or size()[0]), fg)
 
 
-def box(lines: list[str], width: int | None = None, fg: str = "cyan") -> str:
+def box(lines: list[str], width: int | None = None, fg: str = "amber") -> str:
     """A bordered panel. Lines longer than the box are truncated, not wrapped."""
     width = width or min(size()[0], 78)
     inner = width - 2
-    out = [color("┌" + "─" * inner + "┐", fg)]
+    out = [color("╭" + "─" * inner + "╮", fg)]
     for line in lines:
-        visible = line[:inner]
-        out.append(color("│", fg) + visible.ljust(inner) + color("│", fg))
-    out.append(color("└" + "─" * inner + "┘", fg))
+        keep = inner + (len(line) - _visible_len(line))
+        out.append(color("│", fg) + line[:keep].ljust(inner) + color("│", fg))
+    out.append(color("╰" + "─" * inner + "╯", fg))
     return "\n".join(out)
 
 
-def title(text: str, fg: str = "bright_cyan") -> str:
+def title(text: str, fg: str = "amber") -> str:
+    """A heading band, matching the console's own chrome."""
     width = min(size()[0], 78)
-    return "\n".join([rule("═", width, fg), color(text.center(width), fg, bold=True),
-                      rule("═", width, fg)])
+    bar = "━" * width
+    return "\n".join([color(bar, fg),
+                       color(text.center(width), "bright_yellow", bold=True),
+                       color(bar, fg)])
 
 
 # ---------------------------------------------------------------- input
@@ -209,7 +238,8 @@ def prompt(message: str, default: str = "") -> str:
     suffix = f" [{default}]" if default else ""
     _seat_cursor()
     try:
-        answer = input(f"{color('>', 'bright_green')} {message}{suffix}: ").strip()
+        answer = input(f"{color('▸', 'amber')} {color(message + suffix, 'paper')}"
+                       f"{color(':', 'ink')} ").strip()
     except EOFError:
         print()
         raise SystemExit(0) from None
@@ -266,10 +296,11 @@ def menu(heading: str, options: list[str], back: str | None = "Back") -> int:
     """Numbered menu. Returns the chosen index, or -1 for the back option."""
     entries = list(options) + ([back] if back else [])
     _out()
-    _out(color(heading, "bright_yellow", bold=True))
+    _out(color(f"┤ {heading} ├", "amber", bold=True))
     for i, opt in enumerate(entries, 1):
-        label = color(f"{i:>2}", "bright_cyan")
-        _out(f"  {label}. {opt}")
+        marker = color(f"[{i}]", "bright_yellow")
+        text = color(opt, "ink" if back and i == len(entries) else "paper")
+        _out(f"   {marker} {text}")
     choice = ask_int("choose", 1, len(entries))
     return -1 if back and choice == len(entries) else choice - 1
 

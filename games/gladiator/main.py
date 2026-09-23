@@ -351,6 +351,11 @@ def run(stdscr, save: dict) -> dict:
             save["gold"] = gold
             return {"won": False, "bout": bout, "gold": gold}
 
+        if bout == 1:
+            ts.unlock("first-blood", "First Blood", "Survived your first bout")
+        if arena.crowd >= 90:
+            ts.unlock("crowd-darling", "They Chant Your Name",
+                      "Won the crowd almost completely over")
         purse = 20 + bout * 15 + arena.crowd // 5
         gold += purse
         save["wins"] = save.get("wins", 0) + 1
@@ -384,6 +389,7 @@ def run(stdscr, save: dict) -> dict:
     save["gold"] = gold
     save["best_bout"] = len(OPPONENTS)
     save["rudis"] = True
+    ts.unlock("rudis", "The Wooden Sword", "Won your freedom in the arena")
     return {"won": True, "bout": len(OPPONENTS), "gold": gold}
 
 

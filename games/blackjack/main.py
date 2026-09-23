@@ -286,6 +286,11 @@ def main() -> int:
         if total_delta > 0:
             save["wins"] += 1
             save["biggest_win"] = max(save["biggest_win"], total_delta)
+            ts.unlock("first-win", "House Money", "Won a hand")
+            if any(is_blackjack(c) for c, _ in results):
+                ts.unlock("natural", "Natural", "Was dealt twenty-one")
+        if chips >= 1000:
+            ts.unlock("high-roller", "High Roller", "Sat on a thousand chips")
 
         ts.tv_print()
         sign = "+" if total_delta > 0 else ""
