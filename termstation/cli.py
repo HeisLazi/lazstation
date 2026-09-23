@@ -62,7 +62,7 @@ def run_console(profile: str) -> int:
 
         if action.kind == "launch" and action.game:
             boot.power_on(action.game.name, fast=console.fast_boot)
-            result = runner.launch(action.game, action.profile)
+            result = runner.launch(action.game, action.profile, action.slot)
             post_game(action.game, result)
             console.refresh_library()
 

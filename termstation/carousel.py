@@ -36,8 +36,8 @@ GLOW = fx.rgb(255, 210, 120)
 
 class Action:
     def __init__(self, kind: str, game: Game | None = None,
-                 profile: str = "default") -> None:
-        self.kind, self.game, self.profile = kind, game, profile
+                 profile: str = "default", slot: int = 1) -> None:
+        self.kind, self.game, self.profile, self.slot = kind, game, profile, slot
 
 
 def load_cover(game: Game) -> list[str]:
@@ -74,6 +74,7 @@ class Console:
         self.fast_boot = False
         self.covers: dict[str, list[str]] = {}
         self.flicker = 1.0
+        self.slots: dict[str, int] = {}
         self.refresh_library()
 
     # ------------------------------------------------------------- data
@@ -175,7 +176,8 @@ class Console:
                 canvas.text(max(1, (width - len(tag)) // 2), 14, tag, PAPER)
                 bits = []
                 if st.get("launches"):
-                    bits.append(f"{st['launches']} plays")
+                    n = st["launches"]
+                    bits.append(f"{n} play" + ("" if n == 1 else "s"))
                     bits.append(library.format_playtime(st.get("seconds", 0)))
                     bits.append(library.format_last_played(st.get("last_played")))
                 else:
@@ -184,6 +186,16 @@ class Console:
                     bits.append(" ".join(f"·{t}" for t in game.tags))
                 line = "    ".join(bits)
                 canvas.text(max(1, (width - len(line)) // 2), 15, line, INK)
+
+                chosen = self.slots.get(game.slug, 1)
+                used = paths.slots_used(self.profile, game.slug)
+                marks = []
+                for n, taken in enumerate(used, 1):
+                    glyph = "▣" if taken else "▢"
+                    marks.append(f"{glyph}{n}" if n != chosen else f"[{glyph}{n}]")
+                slot_line = "slot  " + " ".join(marks)
+                canvas.text(max(1, (width - len(slot_line)) // 2), 16,
+                            slot_line, AMBER if chosen != 1 else INK)
 
                 # position dots, like a console dashboard
                 dots = "".join("◆" if i == self.index else "◇"
@@ -196,7 +208,8 @@ class Console:
         elif self.message and time.monotonic() < self.msg_until:
             canvas.text(1, height - 1, self.message[:width - 2], CYAN)
         else:
-            hint = "← →  select    ⏎ play    / search    p profile    ? help    q off"
+            hint = ("← →  select   ⏎ play   1-3 slot   a awards   "
+                    "/ find   p profile   ? help   q off")
             canvas.text(max(1, (width - len(hint)) // 2), height - 1, hint, INK)
         return canvas
 
@@ -311,7 +324,8 @@ class Console:
             elif key in (10, 13, curses.KEY_ENTER, ord(" ")):
                 game = self.current
                 if game:
-                    return Action("launch", game, self.profile)
+                    return Action("launch", game, self.profile,
+                                  self.slots.get(game.slug, 1))
             elif key == ord("/"):
                 self.searching = True
                 self.filter = ""
@@ -323,6 +337,13 @@ class Console:
                 self.say("boot animation " + ("off" if self.fast_boot else "on"))
             elif key in (ord("p"), ord("P")):
                 self.profile = self.ask_profile(stdscr)
+            elif key in (ord("1"), ord("2"), ord("3")) and games:
+                game = self.current
+                if game:
+                    self.slots[game.slug] = key - ord("0")
+                    self.say(f"slot {key - ord('0')} selected")
+            elif key in (ord("a"), ord("A")):
+                self.achievements_screen(stdscr)
             elif key == ord("?"):
                 self.help_screen(stdscr)
 
@@ -348,11 +369,51 @@ class Console:
         self.say(f"profile: {name}")
         return name
 
+    def achievements_screen(self, stdscr) -> None:
+        """Everything unlocked, across every game."""
+        import json
+        try:
+            data = json.loads(paths.ACHIEVEMENTS.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            data = {}
+        names = {g.slug: g.name for g in self.all_games}
+
+        lines: list[tuple[str, int]] = [("AWARDS", GLOW), ("", INK)]
+        total = sum(len(v) for v in data.values())
+        if not total:
+            lines += [("  Nothing unlocked yet.", PAPER), ("", INK),
+                      ("  Games award these as you play.", INK)]
+        else:
+            lines.append((f"  {total} unlocked", INK))
+            lines.append(("", INK))
+            for slug, got in sorted(data.items()):
+                lines.append((f"  {names.get(slug, slug)}", AMBER))
+                for key, meta in sorted(got.items(),
+                                        key=lambda kv: kv[1].get("at", "")):
+                    title = meta.get("title", key)
+                    desc = meta.get("description", "")
+                    lines.append((f"    ★ {title}" + (f" — {desc}" if desc else ""),
+                                  PAPER))
+        lines += [("", INK), ("  any key to go back", INK)]
+
+        canvas = fx.Canvas(self.screen.width, self.screen.height, ambient=0.95)
+        for i, (text, color) in enumerate(lines[: self.screen.height - 1]):
+            canvas.text(3, i + 1, text[: self.screen.width - 4], color)
+        self.crt(canvas)
+        stdscr.erase()
+        self.draw_cabinet(stdscr)
+        canvas.blit(stdscr, self.palette, self.screen.x, self.screen.y)
+        stdscr.noutrefresh()
+        curses.doupdate()
+        stdscr.getch()
+
     def help_screen(self, stdscr) -> None:
         lines = [
             brand.NAME, "",
             "  ← →        move along the shelf",
             "  enter      play",
+            "  1 2 3      choose a save slot for this game",
+            "  a          awards you have unlocked",
             "  /          search by name or tag      esc clears",
             "  p          switch save profile",
             "  r          rescan for new games",

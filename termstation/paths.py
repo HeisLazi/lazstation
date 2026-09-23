@@ -34,6 +34,7 @@ USER_GAMES = DATA_HOME / "games"
 SAVES = DATA_HOME / "saves"
 LOGS = STATE_HOME / "logs"
 LIBRARY_DB = STATE_HOME / "library.json"
+ACHIEVEMENTS = STATE_HOME / "achievements.json"
 CONFIG_FILE = CONFIG_HOME / "config.json"
 
 
@@ -45,8 +46,24 @@ def game_search_paths() -> list[Path]:
     return paths
 
 
-def save_dir(profile: str, slug: str) -> Path:
-    return SAVES / profile / slug
+def save_dir(profile: str, slug: str, slot: int = 1) -> Path:
+    """Where a game keeps its saves.
+
+    Slot 1 is the original location, so existing saves keep loading; further
+    slots nest beneath it. Games need no knowledge of slots at all -- the
+    launcher simply points them at a different directory.
+    """
+    base = SAVES / profile / slug
+    return base if slot <= 1 else base / f"slot{slot}"
+
+
+def slots_used(profile: str, slug: str, count: int = 3) -> list[bool]:
+    """Which slots hold anything, for the launcher's picker."""
+    out = []
+    for n in range(1, count + 1):
+        d = save_dir(profile, slug, n)
+        out.append(d.is_dir() and any(d.glob("*.json")))
+    return out
 
 
 def log_file(slug: str) -> Path:

@@ -38,15 +38,16 @@ class Result:
         return self.exit_code in (130, -2)
 
 
-def build_env(game: Game, profile: str) -> dict[str, str]:
+def build_env(game: Game, profile: str, slot: int = 1) -> dict[str, str]:
     """The TermStation contract, passed as environment variables.
 
     A game that ignores every one of these still runs -- the contract is
     opt-in, which is what lets a forty-line blackjack work on day one.
     """
     env = os.environ.copy()
-    saves = paths.save_dir(profile, game.slug)
+    saves = paths.save_dir(profile, game.slug, slot)
     saves.mkdir(parents=True, exist_ok=True)
+    paths.ACHIEVEMENTS.parent.mkdir(parents=True, exist_ok=True)
 
     env["TERMSTATION"] = "1"
     env["TERMSTATION_VERSION"] = "1.0"
@@ -56,6 +57,8 @@ def build_env(game: Game, profile: str) -> dict[str, str]:
     env["TERMSTATION_SAVE_DIR"] = str(saves)
     env["TERMSTATION_DATA_DIR"] = str(game.root)
     env["TERMSTATION_SHARED_DIR"] = str(paths.SAVES / profile / "_shared")
+    env["TERMSTATION_SLOT"] = str(slot)
+    env["TERMSTATION_ACHIEVEMENTS"] = str(paths.ACHIEVEMENTS)
 
     # Make `import termstation_sdk` work in the child without installing it.
     sdk = str(paths.SDK_DIR)
@@ -108,11 +111,11 @@ def restore_terminal() -> None:
             pass
 
 
-def launch(game: Game, profile: str = "default") -> Result:
+def launch(game: Game, profile: str = "default", slot: int = 1) -> Result:
     """Run a game with the terminal fully handed over. Never raises."""
     paths.ensure_dirs()
     log = paths.log_file(game.slug)
-    env = build_env(game, profile)
+    env = build_env(game, profile, slot)
     started = time.monotonic()
     code = 0
 

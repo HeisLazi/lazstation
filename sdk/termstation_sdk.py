@@ -536,3 +536,80 @@ class Loop:
 
 
 __all__ += ["Loop"]
+
+
+# ---------------------------------------------------------------- slots
+
+def slot() -> int:
+    """Which save slot the console launched this game into (1 by default).
+
+    Games rarely need this -- the launcher already points TERMSTATION_SAVE_DIR
+    at the right folder -- but it is here for showing "Slot 2" in a menu.
+    """
+    try:
+        return max(1, int(os.environ.get("TERMSTATION_SLOT", "1")))
+    except ValueError:
+        return 1
+
+
+# ---------------------------------------------------------------- achievements
+
+def _achievements_path() -> Path | None:
+    raw = os.environ.get("TERMSTATION_ACHIEVEMENTS")
+    return Path(raw) if raw else None
+
+
+def achievements(slug: str | None = None) -> dict:
+    """Everything unlocked so far, for this game unless told otherwise."""
+    path = _achievements_path()
+    if path is None:
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    if slug is None:
+        slug = globals()["slug"]()
+    return data.get(slug, {}) if slug else data
+
+
+def unlock(key: str, title: str = "", description: str = "") -> bool:
+    """Record an achievement. Returns True only the first time.
+
+    Use the return value to decide whether to show the player a banner, so a
+    re-earned achievement stays quiet:
+
+        if ts.unlock("first-boss", "Kingslayer", "Beat the Cinder King"):
+            show_banner("Kingslayer")
+    """
+    path = _achievements_path()
+    if path is None:
+        return False
+    mine = globals()["slug"]()
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        data = {}
+    if not isinstance(data, dict):
+        data = {}
+    game = data.setdefault(mine, {})
+    if key in game:
+        return False
+    game[key] = {"title": title or key, "description": description,
+                 "at": _now_iso()}
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        tmp.replace(path)
+    except OSError:
+        return False
+    return True
+
+
+def _now_iso() -> str:
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+__all__ += ["slot", "unlock", "achievements"]
