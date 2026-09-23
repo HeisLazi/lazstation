@@ -1,0 +1,14 @@
+[game]
+name = "Hollow"
+slug = "hollow"
+version = "0.1.0"
+author = ""
+description = """
+Hollow -- a TermStation game.
+
+Edit games/hollow/main.py and this description, then press r in the
+console to see your changes."""
+tags = ["wip"]
+entry = ["{python}", "main.py"]
+min_cols = 80
+min_rows = 24

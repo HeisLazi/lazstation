@@ -2,6 +2,41 @@
 
 **Status: planning only. Research refreshed 23 September 2026.** This records the proposed direction before gameplay code is written. Planning and seed files currently live under `wip/touchline/touchline/`; no registered game exists under `games/touchline/`. The existing `content.py`, `game.toml`, and `cover.txt` are seed material, not a finished game.
 
+## Concept
+
+Touchline is a living fictional football pyramid. You choose a club and inherit more than a squad: its tactical habits, finances, supporters, board expectations, and people. Every match is a readable contest of plans, and every season changes the league around you. The existing Brineport, Glasswind, Lantern Vale, Copperworks, Red Dune, and Breakwater seeds suggest a coastal-industrial football culture; keep that as candidate canon in editable data so it can still be redirected.
+
+The terminal is part of the fantasy. You do not need a 3D pitch to feel a match. A structured event feed tells you what the sides tried, what happened, and why the next decision matters. The same events drive statistics, player reactions, match reports, news, and career history; Touchline's equivalent of a highlight reel is a story you can explain.
+
+## The pillars
+
+1. **Read the match.** Tactics change where players occupy space, which actions are available, and what risks appear. The manager sees causes and trade-offs before and during the match.
+2. **Manage the people behind the numbers.** Minutes, promises, training, form, injuries, relationships, contracts, and morale combine into selection and recruitment decisions.
+3. **The football world remembers.** Clubs, players, managers, rivalries, and finances persist across seasons. News is generated from events the player can inspect, not from unrelated pop-ups.
+
+**Depth test:** a system must create a decision and affect at least two other systems. Complexity that cannot be seen, explained, or acted on does not count as depth.
+
+## A week in the seat
+
+Brineport Rovers host Glasswind Athletic after a short rest. The calendar shows two starters carrying fatigue; a scout's medium-confidence report says Glasswind's Lio Fenner repeatedly attacks the space behind a high line. Brineport's board expects a result in the derby, but its supporters value front-foot football. The manager must choose whether to preserve the press, lower the line, or rotate a tired player before kickoff.
+
+The first half produces both sides of the trade-off: Brineport win a dangerous turnover high up the pitch, then Glasswind play through the line once. The broadcast describes the occupied zones and the player decisions behind each event. At the break the manager can change the out-of-possession shape, substitute, or trust the plan. The result remains uncertain. At full time, the review separates chance creation from conversion, then reconciles workload, form, trust, morale, the table, and club expectations. If an academy player made a real impact, the news and development report can carry that story into the next week.
+
+This is an example to test the design, not a scripted match. It combines research-backed patterns—phase-specific tactics, opponent scouting, and match-state adaptation—with original clubs and players. [FM26's tactical system](https://www.footballmanager.com/fm26/features/possession-out-possession-fm26s-new-tactical-evolution) and [football tactics research](https://arxiv.org/abs/2003.10294) inform the proposed shape; the actual result and story come from Touchline's simulation.
+
+## What makes the world feel alive
+
+| System | On-screen expression | What it remembers or changes |
+|---|---|---|
+| Named club and manager identities | Distinct tactical tendencies, expectations, press tone, and home-ground character. | Rival plans adapt from observed matches; appointments change squad needs and club behavior. |
+| Player voice | Short, state-triggered reactions to minutes, roles, form, selection, injury, and contract promises. | Trust, morale, and relationship changes follow decisions and shared history. |
+| Match commentary | Highlights use the actual event ledger, including actors, zone, tactic, outcome, and threat change. | The same event drives match stats, player ratings, post-match advice, news, and history. |
+| Rivalries | Match previews and news recall previous derbies, cup knockouts, promotion races, and transfer conflicts. | Rivalry grows from repeated outcomes; no fixed script grants arbitrary bonuses. |
+| League life | Other fixtures, signings, injuries, manager moves, and board decisions appear in a concise weekly digest. | All clubs use the same world rules and keep their own records and constraints. |
+| Career chronicle | Season reviews call out major turning points, key signings, academy breakthroughs, and derbies. | Multi-season history preserves the people and events that made the save distinctive. |
+
+The high-value anchor is a named rival manager whose tactics, transfer targets, and job history the player can follow. That rivalry should emerge from the same league, scouting, and manager-market systems as the rest of the world. Use state-triggered commentary and digests to make the world feel present without interrupting every week with a modal.
+
 ## Product promise
 
 Touchline is a keyboard-first football management career in an original football world. The player should remember a late winner, an academy player earned through patient minutes, a tactical gamble that exposed the back line, or a board meeting after overspending. The save should create those stories from systems interacting, rather than rely on a stream of unrelated scripted events.
@@ -10,23 +45,26 @@ Touchline is a keyboard-first football management career in an original football
 
 ## Research and design lessons
 
-FM26 is the latest released Football Manager feature set at the time of this research. Sports Interactive has confirmed FM27 will launch in November 2026, but has not yet published its launch date or feature set. Recheck official FM27 material before implementation rather than guessing what it will add.
+FM26 is the latest released Football Manager edition at this research refresh (23 September 2026). Sports Interactive has confirmed FM27 will launch in November 2026. Its first feature deep dive, published 22 September, covers navigation and interface changes; match-engine, management-system, and detailed calendar changes remain unannounced in the official material reviewed here. Recheck the next official feature drops before implementation.
 
 | Reference | Observed system | Touchline adaptation |
 |---|---|---|
 | [FM26 tactics](https://www.footballmanager.com/fm26/features/possession-out-possession-fm26s-new-tactical-evolution) and [matchday](https://www.footballmanager.com/fm26/features/where-storytelling-evolves-fm26s-match-day-experience) | Separate phase shapes and roles, a 3-by-3 pitch visualiser, revised pass-risk decisions, contextual xG/xA advice, and highlight frequency that responds to match drama. | Show how a tactic changes occupation and action options by phase/zone. Feed the same event history into concise causal highlights, a match report, and player stats. |
 | [FM26 recruitment](https://www.footballmanager.com/fm26/features/powered-transferroom-fm26s-recruitment-revamp) | Recruitment links squad depth, board expectations, contracts, role, age, deal type, and expected playing time; clubs can publish incoming needs and view other clubs' needs. | Start from a squad-planner need. Let clubs advertise a role/age/playing-time requirement, match it to available players, and explain tactical fit, cost, role, and likely playing time before an offer. AI clubs use the same market. |
-| [EA FC 26 career](https://www.ea.com/es/games/ea-sports-fc/fc-26/news/pitch-notes-fc26-career-mode-deep-dive) | A manager market where managers can be sacked, poached, or move; selectable leagues to simulate; scout reports consider potential; board dismissal logic includes warnings; youth minutes and form influence growth. | Simulate a connected manager market and whole playable pyramid. Give scouts uncertain potential ranges. Warn on deteriorating board confidence, and make youth minutes, form, and development connect visibly. |
+| [EA FC 26 career](https://www.ea.com/games/ea-sports-fc/fc-26/news/pitch-notes-fc26-career-mode-deep-dive) | A manager market where managers can be sacked, poached, or move; selectable leagues to simulate; scout reports consider potential; board dismissal logic includes warnings; youth minutes and form influence growth. | Simulate a connected manager market and whole playable pyramid. Give scouts uncertain potential ranges. Warn on deteriorating board confidence, and make youth minutes, form, and development connect visibly. |
+| [FM27 navigation deep dive, 22 September 2026](https://www.footballmanager.com/fm27/features/fm27-clearer-interface-smoother-navigation) | FM27's first feature deep dive focuses on fewer clicks, clear primary/secondary navigation, direct task screens, visible area-level actions, and adaptive/customizable layouts. SI says it is responding to internal review and player feedback. | Treat navigation as a core management system: go straight to Squad, Tactics, Training, Recruitment, or Club; expose relevant actions and reasons on that screen; keep news and summary cards informational rather than turning them into nested menus. The terminal adaptation is an inference from the announced goals. |
 | [FM26 Mobile](https://www.footballmanager.com/fm26/features/football-manager-26-mobile-new-features-showcase) | Training readiness, staff feedback, finances, budgets, penalties, and player happiness interact. | Make weekly preparation a trade-off; repeated financial trouble affects recruitment, happiness, and club status. |
+| [FM26 match preparation and recovery](https://www.footballmanager.com/the-dugout/mastering-end-season-run-fm26) | The official end-of-season guidance connects opponent reports, training changes, player load, rest, rotation, medical risk, morale, and the run-in. | Tie preparation and recovery to the next fixture's stakes and days available. Present rotation as a trade-off among readiness, fatigue, form, and player trust. |
 | [Madden NFL 26 Franchise](https://www.ea.com/games/madden-nfl/madden-nfl-26/news/madden-26-gridiron-notes-franchise-deep-dive) | Weekly staff/playbook loadouts are paired with opponent scouting cards for injuries, positional matchups, key players, and staff tendencies; approval is tracked across stakeholder groups. | Produce a one-screen opponent briefing and a small number of weekly staff assignments. Track board, squad, staff, and supporter trust separately, with reasons and trends. |
 | [NBA 2K27 MyNBA](https://newsroom.2k.com/news/nbar-2k27-mynba-answers-the-community-with-a-back-to-basics-franchise-overhaul-and-modern-cba-rules) | Teammate friendships, rivalries, and shared history feed team dynamics; GM trust changes how believable promises are and affects morale. Contracts express incentives with confidence categories; league history can span 100 years. | Keep a small relationship graph from shared minutes, leadership, mentorship, broken promises, and recurring competition. Track manager credibility; promises must be explicit, inspectable, and resolved. Use incentive clauses and career archives only where the UI can explain them. |
 | [OOTP 26 development](https://www.ootpdevelopments.com/out-of-the-park-baseball-26/) and [developer scouting notes](https://forums.ootpdevelopments.com/showthread.php?p=5215803) | Scouting has report accuracy, budget, scout specialties, and uncertainty about player development paths; development-lab progress is tracked over time. | Hide exact potential from the player. Scouts can disagree for understandable reasons; repeated observation narrows uncertainty. Report development trajectory and the evidence behind it. |
 | [F1 Manager 24](https://corp.formula1.com/f1-manager-2024-to-launch-23-july-including-new-create-a-team-mode/) | Staff mentality and ambitions shape team culture; an affiliates program gives young drivers a development pathway; sponsorship funds the operation. | Give staff personalities and career motives, a loan/academy pathway for prospects, and meaningful short-term versus long-term investment choices. |
 | [Football tactics research](https://arxiv.org/abs/2003.10294) | Models pre-match decisions under uncertainty separately from in-match decisions that respond to changing score and game state. | Give each AI club a tactical identity and imperfect opponent read; let managers adapt to score, fatigue, cards, and observed patterns rather than run one static bonus all match. |
+| [Fixture-congestion systematic review](https://link.springer.com/article/10.1007/s40279-022-01799-5) | Its review of eight studies found match injury incidence generally increased in congested periods, while training/overall injury findings were inconsistent and layoff duration was often shorter. | Treat short recovery as risk exposure shaped by minutes, fatigue, medical status, and training load—not a guaranteed injury or flat penalty. Rotation and recovery mitigate risk while carrying selection and development costs. |
 | [Dixon–Coles score model](https://rss.onlinelibrary.wiley.com/doi/abs/10.1111/1467-9876.00065) | Models team attack and defence strength over time, with special treatment for low-scoring results. | Use score models as a league-level calibration check, not as the match engine. Generate scores from chances and action sequences. |
 | [Soccer expected-possession-value research](https://pmc.ncbi.nlm.nih.gov/articles/PMC8570314/) and [2026 xT model-quality study](https://arxiv.org/abs/2604.21087) | Values possession as a changing sequence using location, pressure, team shape, action choice, and likely outcomes; model quality must be quantified before using the values to rank players. | Track a lightweight, interpretable threat value through each possession. Use it to explain progression and defensive disruption, then validate it before using it to rate players. |
 
-Reviews expose the main risks. FM26 reviewers praised its tactical feedback while reporting that familiar information became harder to find in the redesigned UI ([PC Gamer](https://www.pcgamer.com/games/sports/football-manager-26-review/), [The Guardian](https://www.theguardian.com/games/2025/nov/04/football-manager-26-review-sports-interactive-sega)). FC 26's review criticized off-pitch management as slow and transfer bargaining as guesswork ([PC Gamer](https://www.pcgamer.com/games/sports/ea-sports-fc-26-review/)). SEGA's own report says FM25's UI/graphics overhaul took longer than expected to meet its quality bar ([SEGA report, p. 15](https://www.segasammy.co.jp/cms/wp-content/uploads/pdf/en/ir/20250207_q3_presentation_e.pdf)). Touchline should prioritize predictable keyboard navigation, explainable market decisions, and proof gates before adding breadth.
+Reviews expose the main risks. FM26 reviewers praised its tactical feedback while reporting that familiar information became harder to find in the redesigned UI ([PC Gamer](https://www.pcgamer.com/games/sports/football-manager-26-review/), [The Guardian](https://www.theguardian.com/games/2025/nov/04/football-manager-26-review-sports-interactive-sega)). SI's September 2026 FM27 deep dive says its response is fewer clicks, direct task screens, clear next actions, and configurable layouts. That suggests a Touchline acceptance test: reach the next relevant decision from the current page and inspect its evidence without a chain of modal cards. FC 26's review criticized off-pitch management as slow and transfer bargaining as guesswork ([PC Gamer](https://www.pcgamer.com/games/sports/ea-sports-fc-26-review/)). SEGA's own report says FM25's UI/graphics overhaul took longer than expected to meet its quality bar ([SEGA report, p. 15](https://www.segasammy.co.jp/cms/wp-content/uploads/pdf/en/ir/20250207_q3_presentation_e.pdf)). Touchline should prioritize predictable keyboard navigation, explainable market decisions, and proof gates before adding breadth.
 
 ## Proposed high-depth world
 
@@ -93,6 +131,10 @@ News/events are caused by state: a player losing promised minutes, a contract ne
 
 AI clubs use tactics, squad planners, and transfer constraints. A manager appointment changes a club’s tactical vision; its roster needs then change. Player sales, loans, expiring deals, wage pressure, and promotions create movement across the world. Archive results, table positions, awards, and player statistics by season so the world remembers past outcomes.
 
+Each club needs a profile beyond its budget and current squad: board patience and targets, supporter identity, stadium capacity, facilities and academy, wage policy, regional recruiting reach, history, and rivalries. Those fields should change concrete choices—what the board funds, what style the supporters tolerate, which prospects appear locally, how much a win matters to attendance, and where job security sits. The existing six club styles are a starting point for distinct identities, not six stat templates with different names.
+
+Managers are named characters with a tactical philosophy, risk appetite, preferred roles/age profile, reputation, contract, and career record. Their scouting is incomplete and their choices are constrained by the club's actual squad and finances. One manager can become a recurring rival through shared title races, derbies, cup ties, or transfer conflicts. That rivalry is remembered in records and state-based news; it does not grant hidden bonuses or force a scripted feud.
+
 Manager changes need visible causes and a warning period: board objectives, trend, finances, promises, and dressing-room trust feed job security. This draws on FC 26's evolving manager market, while its revised formal-warning behavior is a useful guard against abrupt, arbitrary punishment. The player should be able to inspect the board's confidence trend and remaining patience before a decision becomes terminal.
 
 ### Weekly operating loop and decision quality
@@ -137,6 +179,33 @@ At the minimum 76×20 picture, reserve rows 0–1 for the club/date header and r
 
 The page map is Home → Match Prep → Match, with independent Squad, Tactics, Training, Recruitment, Table/Calendar, Club/Staff/Finance, and History pages. Important tasks should be reachable in one navigation step from Home. Match Prep uses a readable 3×3 zone sketch, likely matchup notes, fitness, and role-fit flags; Match uses an event feed plus score, tactical changes, and a short phase recap. Keyboard hints remain visible on every page, and the in-game `manual.md` explains the same controls.
 
+The interval screen is the main terminal-native match artifact. At 80×24 it must make the next choice clear without hiding the match's causes:
+
+```text
+BRINEPORT ROVERS | W09       GLASSWIND ATHLETIC | DERBY | PERIOD 5/6
+----------------------------------------------------------------------------
+BRP 1-1 GLA | 61' | ROUND 9
+Shots 7-5  xG 0.92-0.74  Corners 3-2  Possession 47-53
+KEY EVENTS THIS PERIOD
+58' Fenner runs behind the high line; his cross is blocked.
+62' Ndem wins it high; Jarden shoots under pressure (0.11 xG).
+............................................................................
+SCOUT: Fenner inside carries 4x | confidence: MED
+YOUR PLAN: IP 4-3-3 | OOP 4-4-2 | press HIGH | line HIGH
+PATTERN: right channel exposed; the press creates high regains.
+LOAD: 3 starters tired | Oren 46% | Dira 51%
+EXPECTED IF YOU CHANGE
+Lower line: less space behind, more room between lines.
+Mid-block: conserve effort, invite possession, protect center.
+----------------------------------------------------------------------------
+[1] Hold  [2] Lower line  [3] Mid-block  [4] Subs
+[5] Instructions  [6] Data  [Q] Quick-sim from here
+Message: High-line risk confirmed twice this half.
+Keys: choose 1-6 | Enter = hold | ? help | q menu
+```
+
+This is a content/layout sketch, not literal match output. The scout's confidence and workload numbers come from state; the event lines come from the match log. At 110×30, use the extra space for an expanded event timeline and zone view, not a different ruleset.
+
 The live console supports game manifests with descriptions, tags, minimum picture dimensions, and `[[awards]]`; it automatically exposes `manual.md` from the carousel. The SDK supplies the active save directory/slot, version-tolerant load/save, game data path, and award unlock/drain hooks. The game should declare career awards and keep a concise `_summary` such as `S2 4th / CUP` so Continue communicates useful state; the console currently truncates summaries to 15 characters.
 
 When implementation is approved, keep the code boundaries explicit: data-only modules own all authored names, descriptions, club identities, player seeds/archetypes, role and formation definitions, fixture rules, and narrative templates, with a comment explaining how to edit each module. `main.py` owns and orchestrates the game rules, as the current GAME-BRIEF requires; keep its systems separated into clear functions and data structures rather than moving rules into the content tables. The simulation accepts explicit state and random seeds and returns updated state plus structured events, so scenarios can be tested without a terminal or save file.
@@ -146,7 +215,7 @@ The career save stores a schema version, world seed, current calendar, club/play
 ## Build and proof gates
 
 1. **Model proof:** build a seeded match engine before a large world. Prove determinism, action/stat consistency, chance-quality monotonicity, and understandable tactical trade-offs over fixed matchup matrices. Compare season distributions against calibrated scoring and low-score targets; no tactic may dominate every matchup. Test counterfactuals: changing only the defensive line should change ball-in-behind frequency; changing only finishing should change conversion more than chance creation.
-2. **Weekly vertical slice:** choose a club, inspect the squad, select an XI, set both shapes and instructions, prepare training, manage an interactive match, and reconcile the result into player statistics and the table.
+2. **Living weekly slice:** build one complete fixture week to final-quality presentation. Choose Brineport or Glasswind, inspect the squad and a named rival manager, read one imperfect scouting report, choose XI/training/both shapes, manage one interactive match, and see the same events update stats, a player relationship, the table, and a concise news/debrief item. The rival manager and at least one stateful player belong in this first playable slice, not a later content pass.
 3. **Management loop:** add contracts, scouting, offers/counteroffers, budgets, training progression, injuries, morale, board confidence, and explainable rival AI. Each gets headless invariants and scenario tests.
 4. **Career world:** expand to four divisions and the cup; prove every team has a balanced schedule, promotions/relegations are correct, fixtures resolve once, finances and contracts roll forward, and save/reload retains history.
 5. **Terminal fit:** update against the current game-facing contract, then test complete play paths, borders, and layouts at 80×24 and 110×30, seeded season simulation, and lazstation doctor.
