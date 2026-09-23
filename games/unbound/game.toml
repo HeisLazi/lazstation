@@ -1,0 +1,14 @@
+[game]
+name = "Unbound"
+slug = "unbound"
+version = "0.1.0"
+author = ""
+description = """
+Unbound -- a TermStation game.
+
+Edit games/unbound/main.py and this description, then press r in the
+console to see your changes."""
+tags = ["wip"]
+entry = ["{python}", "main.py"]
+min_cols = 80
+min_rows = 24

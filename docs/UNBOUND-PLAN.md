@@ -60,8 +60,10 @@ today for Wildreach's charges — one resource, two jobs, and the right answer
 depends on how the last fight went.*
 
 1. **Fight** — tactical grid combat, telegraphed, read-and-punish, and every
-   defensive option has a body part attached. A win adds to your record and
-   your price. A loss (or a bad location) risks the wound outliving the bout.
+   defensive option has a body part attached. The result (win/loss) and the
+   damage ledger (what got hit, how hard) are tracked separately — a win
+   raises your record and price; the ledger, regardless of the result,
+   becomes whatever wound you carry out of the ring.
 2. **Fight hurt, or sit out** — a wound doesn't force a choice by itself. The
    ladder doesn't wait: sit out to heal and your price decays and your slot
    goes to someone else; fight hurt and you're paid, but you're fighting on
@@ -83,6 +85,16 @@ enough opponents, that some damage is coming — the decision is never "do I
 get hit," it's **where**. Blocking, taking a hit on your guard arm, eating
 it on the ribs to protect your legs — every option has a body part attached,
 and standing there doing nothing costs stamina you need for the punish.
+
+**Correction from the owner: injury is not tied to winning or losing at
+all.** It comes purely from how much you got hit and how hard — the same
+fight in UFC where the winner walks out more marked up than the loser,
+because winning on points after fifteen hard minutes still means you took
+fifteen hard minutes. There is no branch for "you lost, so you're hurt" —
+there is only a running ledger of every shot that landed on you, its power,
+and where, and that ledger is what a wound is made of. Winning correlates
+with less injury only because a dominant fighter usually gets hit less —
+it's a consequence of the fight, not a rule about the outcome.
 
 Wounds land on a body part and *change what you can do*, and outlive the fight:
 
@@ -124,6 +136,17 @@ a surprise, and it falls out of the injury system for free.*
 **Floor, so attrition can't end a career in four unlucky fights:** the slave
 league guarantees a minimum run of fights before a contract can be ended by
 your owner. Bad luck early doesn't end the game before it's taught anything.
+
+## The doc is not abandoned
+
+The owner's framing: this is an ideas doc, salvaged from an earlier attempt,
+and the terminal version exists precisely because web/React attempts at this
+game keep collapsing under their own weight. The intent is to build this as
+*true to the doc's world as the medium allows*, not to permanently discard
+everything past the gladiator opening. Factions, the Colosseum's politics,
+named characters, the gods, the city — all real, all still wanted, all
+layered in once the fighting core (this stage) is proven. Deferred, staged,
+not cut.
 
 ## Row budget
 
