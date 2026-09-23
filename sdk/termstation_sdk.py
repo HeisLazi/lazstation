@@ -69,12 +69,22 @@ def data_dir() -> Path:
 # ---------------------------------------------------------------- persistence
 
 def load(default: dict | None = None, name: str = "save") -> dict:
-    """Read a save slot, returning `default` if it is missing or corrupt."""
+    """Read a save slot, filling in anything `default` has that it lacks.
+
+    Merging rather than replacing means adding a field to your game does not
+    break saves written before that field existed -- which matters, because
+    you will keep editing a game people are already playing.
+    """
     path = save_dir() / f"{name}.json"
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return dict(default) if default else {}
+    if not isinstance(data, dict):
+        return dict(default) if default else {}
+    for key, value in (default or {}).items():
+        data.setdefault(key, value)
+    return data
 
 
 def save(data: dict, name: str = "save") -> Path:
@@ -421,3 +431,78 @@ def tv_size() -> tuple[int, int]:
     """Inner picture size -- what a game should lay out against."""
     screen = _tv_state.get("screen") or _geometry()
     return screen.width, screen.height
+
+
+# ---------------------------------------------------------------- real time
+
+class Loop:
+    """A fixed-timestep loop with held-key tracking, for action games.
+
+    Terminals report key presses but never releases, so "is the player holding
+    jump?" cannot be read directly. Every press refreshes a timestamp and a
+    key counts as held for `hold` seconds afterwards -- long enough to bridge
+    the gap between auto-repeats, short enough to feel like a release.
+    """
+
+    def __init__(self, win, fps: int = 30, hold: float = 0.14) -> None:
+        import time as _time
+        self.win = win
+        self.dt = 1.0 / fps
+        self.hold = hold
+        self._time = _time
+        self._pressed: dict[int, float] = {}
+        self._fresh: set[int] = set()
+        self._last = _time.monotonic()
+        win.nodelay(True)
+        win.keypad(True)
+
+    def poll(self) -> set[int]:
+        """Drain every key waiting this frame. Returns keys newly pressed."""
+        now = self._time.monotonic()
+        self._fresh = set()
+        while True:
+            key = self.win.getch()
+            if key == -1:
+                break
+            self._fresh.add(key)
+            self._pressed[key] = now
+        return self._fresh
+
+    def pressed(self, *keys: int) -> bool:
+        """True only on the frame a key arrived -- for jumps, menus, firing."""
+        return any(k in self._fresh for k in keys)
+
+    def held(self, *keys: int) -> bool:
+        """True while a key keeps repeating -- for walking, steering."""
+        now = self._time.monotonic()
+        return any(now - self._pressed.get(k, -99) < self.hold for k in keys)
+
+    def release(self, *keys: int) -> None:
+        """Forget a key, so one press cannot count twice."""
+        for k in keys:
+            self._pressed.pop(k, None)
+            self._fresh.discard(k)
+
+    def resume(self) -> None:
+        """Restart the clock after a blocking screen (a menu, a pause).
+
+        Without this the time spent blocked arrives as a single huge frame,
+        and anything moving fast enough can pass straight through a wall.
+        """
+        self._last = self._time.monotonic()
+        self._pressed.clear()
+        self._fresh = set()
+
+    def tick(self) -> float:
+        """Sleep out the rest of the frame. Returns elapsed seconds."""
+        now = self._time.monotonic()
+        elapsed = now - self._last
+        remaining = self.dt - elapsed
+        if remaining > 0:
+            self._time.sleep(remaining)
+            elapsed = self.dt
+        self._last = self._time.monotonic()
+        return min(elapsed, self.dt * 2)
+
+
+__all__ += ["Loop"]
