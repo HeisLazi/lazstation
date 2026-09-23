@@ -37,6 +37,8 @@ Reviews expose the main risks. FM26 reviewers praised its tactical feedback whil
 
 This is a scope recommendation, not a requirement to author 800-plus player rows before testing the engine. Early proof datasets can be smaller, but the finished career should grow beyond the seed six-team league rather than make the seed league its ceiling. The 40-club pyramid gives manager movement and a genuine prospect-to-first-team route somewhere to go while remaining small enough to simulate every match cheaply.
 
+Each 10-club division has 18 home-and-away rounds, or 90 league fixtures; the four divisions therefore produce 360 league matches per season. A 40-club single-elimination cup adds 39 fixtures, with byes in the opening draw. That scale is modest for a seeded event engine, so every club can use the same match rules and world simulation without asking the player to toggle leagues on and off. Competition rules, calendar, schedule templates, and opening-season fixture data belong in editable data modules. Later pairings are generated deterministically from promoted/relegated clubs, stored in the career save, and validated so every league opponent is met home and away exactly once.
+
 ## System design
 
 ### Match and tactics
@@ -103,6 +105,12 @@ Manager changes need visible causes and a warning period: board objectives, tren
 
 Every recommendation should answer: what is being recommended, what evidence supports it, what it costs, and what uncertainty remains. A pre-match card might say that the opponent's left winger is dangerous in transition because the selected scout observed several fast carries; a transfer card might say a target fits the role but has only a low-confidence report. This brings Madden's matchup briefing and OOTP's scout uncertainty into a football-manager workflow without turning every week into a modal-event queue.
 
+### Walkthroughs that prove the design connects
+
+**Press, adapt, and trust:** Brineport Rovers face Glasswind Athletic after a short rest. The weekly plan shows that another high-intensity press session could improve tactical familiarity but leave two starters tired. A scout report flags Glasswind's wide transition threat with medium confidence. Brineport starts aggressively, wins the ball high, and creates a strong chance; the same high line also gives Glasswind a through-ball chance. The event feed explains both from role occupation and line height. At the interval, the manager can lower the line, switch to a mid-block, or stay aggressive, then make a substitution. The full-time report explains chance quality separately from the score, and minutes, fatigue, form, development, morale, and the table update from the match. A generated news item may note the tactical adjustment or academy cameo only if the event history supports it. The result is not predetermined; the test is whether the causal chain is visible whichever team wins.
+
+**Promise, contract, and market:** a starter has less than a year on their deal, wants a larger role, and has been scouted by another club seeking that exact role. The squad planner shows the replacement gap and estimated wage cost. The manager can renew with a playing-time promise, negotiate a sale, or keep the player and risk the contract running down. Each option shows known ranges and unknowns. Later selection, offers, and results update the player's trust and morale; the board sees the financial and squad-planning consequences. These walkthroughs should become integration-test scenarios after implementation, not scripted cutscenes.
+
 ### System interaction contract
 
 | Decision/state | Immediate consequence | Downstream consequences |
@@ -122,7 +130,7 @@ This is the feature test for depth. If a proposed feature cannot change at least
 - Stable keyboard navigation keeps Squad, Tactics, Training, Recruitment, Matchday, Club, and History close. Common tasks are shortcuts; deeper lists and player reports are explicit drill-down screens.
 - Each screen shows a compact recommendation/forecast and a clear reason; the user can inspect the underlying numbers. Help and a manual teach controls.
 - Layout starts at the 80×24 terminal's 76×20 picture and expands at 110×30. Color never carries meaning by itself.
-- A pure deterministic simulation layer supports headless tests. Data modules hold editable clubs, players, staff, tactics, events, and competition formats. The terminal entry point is a thin keyboard/render adapter. Saves are versioned and slot-aware, with a useful console summary and declared awards.
+- A pure deterministic simulation supports headless tests. Data modules hold editable clubs, players, staff, tactics, events, and competition formats. `main.py` receives keyboard input, calls the game rules, and renders their state. Saves are versioned and slot-aware, with a useful console summary and declared awards.
 - Shared SDK/console files remain untouched by this game task. The current GAME-BRIEF does not describe every new dashboard hook, so the renderer must be checked against the settled contract before it is built.
 
 At the minimum 76×20 picture, reserve rows 0–1 for the club/date header and rule, rows 2–17 for page content, row 18 for messages, and row 19 for controls. Lists scroll; a player dossier and a full table are separate screens rather than tiny unreadable columns. At 110×30, use the extra six inner rows for more fixtures, history, and match events. Build every layout from the dimensions returned by `ts.tv_curses`, then recalculate after `KEY_RESIZE`.
@@ -137,11 +145,21 @@ The career save stores a schema version, world seed, current calendar, club/play
 
 ## Build and proof gates
 
-1. **Model proof:** build a seeded match engine before a large world. Headless tests prove that pressing, line height, width, directness, roles, fitness, and player quality produce understandable trade-offs across many seeds. Compare season distributions against league-calibration targets and low-score behavior; no tactic may dominate every matchup. Add counterfactuals: changing only the defensive line should change ball-in-behind frequency; changing only finishing should change conversion more than chance creation.
+1. **Model proof:** build a seeded match engine before a large world. Prove determinism, action/stat consistency, chance-quality monotonicity, and understandable tactical trade-offs over fixed matchup matrices. Compare season distributions against calibrated scoring and low-score targets; no tactic may dominate every matchup. Test counterfactuals: changing only the defensive line should change ball-in-behind frequency; changing only finishing should change conversion more than chance creation.
 2. **Weekly vertical slice:** choose a club, inspect the squad, select an XI, set both shapes and instructions, prepare training, manage an interactive match, and reconcile the result into player statistics and the table.
 3. **Management loop:** add contracts, scouting, offers/counteroffers, budgets, training progression, injuries, morale, board confidence, and explainable rival AI. Each gets headless invariants and scenario tests.
 4. **Career world:** expand to four divisions and the cup; prove every team has a balanced schedule, promotions/relegations are correct, fixtures resolve once, finances and contracts roll forward, and save/reload retains history.
 5. **Terminal fit:** update against the current game-facing contract, then test complete play paths, borders, and layouts at 80×24 and 110×30, seeded season simulation, and lazstation doctor.
+
+### Headless proof matrix
+
+- **Match engine:** identical state + seed reproduces the same score, event log, and statistics; a seed bank produces outcome variation without changing the team's plan. Event-derived totals must equal the match summary. Better chance locations and less pressure must raise xG, while keeper skill changes conversion rather than xG. Attribute and tactic effects are tested across many matched seeds and reported as distributions, not demanded in every individual match.
+- **Tactics and AI:** high press changes regain location and workload; direct play is more likely to exploit a high line; width changes lane use; player role/familiarity changes action selection. Rival managers use only observed/scouted information, adapt to score/time/cards, and remain within budget and squad rules. No one setup should win every style matchup.
+- **Player life cycle:** controlled cohorts verify that training, minutes, coaching, facilities, injury interruptions, and age affect development in the intended directions. Workload and recovery affect readiness and injury exposure without guaranteeing an injury. Minutes, goals, assists, keeper stats, bookings, and availability reconcile exactly across player, fixture, and season records.
+- **Recruitment and people:** scouting reports remain uncertain, improve with evidence, and differ by scout specialty; offers/counteroffers obey budgets, contracts, squad need, and expected playing time. Promise deadlines resolve once. Trust, morale, relationships, and board confidence remain bounded and explainable, and AI clubs face the same constraints as the player.
+- **Competition and career:** for every season, each division has the expected home/away pairings and no club has two fixtures in one round; each cup entrant is eliminated at most once and exactly one champion remains. Tables use a documented stable tiebreak order. Promotion, relegation, job changes, contract rollover, finance settlement, and generated players preserve IDs and history across multiple seasons.
+- **Persistence and console hooks:** save/load roundtrips preserve state and random-seed continuity; older versioned saves merge/migrate safely. `_summary` stays within the console's 15-character display, awards unlock once, the manifest passes `lazstation doctor`, and `manual.md` renders in the carousel manual screen.
+- **Terminal path:** scripted PTY play completes a season and at least one managed match at both required sizes. Inspect rendered frames for intact bezel, no writes outside the 76×20 minimum picture, readable controls, resize handling, and no traceback; verify the current outer console with `lazstation doctor`.
 
 For model calibration, keep scoreline realism, tactical responsiveness, and explainability as separate acceptance checks. A realistic league table alone can hide a tactically inert engine; tactical effects alone can produce implausible goals. Run fixed-seed matchup matrices and larger seeded league simulations, inspect average goals/shots/chances/cards/injuries and draw/low-score rates, and retain regression baselines whenever formulas change.
 
@@ -149,6 +167,12 @@ Do not add a feature because a competing game has it. Add it only when it change
 
 ## Decisions to lock before gameplay implementation
 
-1. Confirm the recommended six-period interactive broadcast with quick sim available, or choose different matchday pacing.
-2. Confirm the recommended four 10-club divisions plus a cup, or choose a smaller/larger pyramid.
-3. Confirm whether the manager can move between clubs and be dismissed. The proposal assumes yes, because board pressure and rival manager changes otherwise have nowhere to lead.
+These are recommendations to review, not decisions treated as already approved. Keep gameplay implementation paused until the direction is accepted.
+
+| Decision | Recommended default | Why it fits Touchline | Alternative cost |
+|---|---|---|---|
+| Match pacing | Six 15-minute control windows, with quick sim using the identical engine. | Gives real tactical intervention without a real-time animation system; every mode produces the same statistics and stories. | A full 90-minute action-by-action interface gives more control but makes the terminal session slower and denser. |
+| World scale | 40 clubs in four 10-team tiers, 18 league rounds per tier, plus the 40-club cup. | Provides a multi-step managerial climb and 400-ish fixture decisions per season, still modest for a complete seeded sim. | Fewer clubs reduce career movement, player pathways, and market options; many more clubs add authoring and UI burden without automatically improving depth. |
+| Manager career | The manager can resign, be dismissed after visible warnings, and apply for other jobs; dismissal never silently deletes the save. | Makes board trust and the manager market meaningful while preserving player control over the career. | One-club-only mode removes most of the point of rival manager movement and makes dismissal an abrupt end state. |
+
+Once these defaults are accepted, still settle one implementation detail: whether lower-tier promotion is two automatic places or two automatic plus a playoff. The league rules and UI should make the consequences clear before the save begins.
