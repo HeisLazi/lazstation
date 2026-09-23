@@ -408,6 +408,7 @@ def main() -> int:
         return 130
 
     save.pop("_spared_this_run", None)
+    save["_summary"] = f"bout {save['best_bout']}/{len(OPPONENTS)}"
     ts.save(save)
 
     ts.tv("Gladiator")

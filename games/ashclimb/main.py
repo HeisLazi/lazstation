@@ -101,6 +101,9 @@ class Run:
         self.save["run"] = dict(deck=self.deck, max_hp=self.max_hp, hp=self.hp,
                                 gold=self.gold, floor=self.floor,
                                 relics=self.relics, active=self.active)
+        # Shown on the console's game hub, so the shelf knows where you are.
+        self.save["_summary"] = (f"floor {self.floor} · {len(self.deck)} cards"
+                                 if self.active else "")
         ts.save(self.save)
 
     def clear_run(self) -> None:

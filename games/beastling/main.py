@@ -204,6 +204,7 @@ class Game:
             box=[b.to_dict() for b in self.box],
             badges=self.badges, seen=sorted(self.seen), caught=sorted(self.caught),
             lures=self.lures, money=self.money)
+        self.save["_summary"] = (f"{self.badges} badges · {len(self.caught)} caught")
         ts.save(self.save)
 
     # --- helpers

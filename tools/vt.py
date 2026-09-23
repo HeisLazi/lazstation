@@ -5,6 +5,7 @@ import re, sys
 def render(data: str, cols=80, rows=24) -> str:
     grid = [[" "] * cols for _ in range(rows)]
     cy = cx = 0
+    last = " "   # for REP (CSI n b), which ncurses uses to repeat a run
     i = 0
     while i < len(data):
         ch = data[i]
@@ -30,6 +31,13 @@ def render(data: str, cols=80, rows=24) -> str:
             elif cmd == "D": cx = max(0, cx - (nums[0] if nums else 1))
             elif cmd == "d": cy = (nums[0] - 1) if nums else 0
             elif cmd == "G": cx = (nums[0] - 1) if nums else 0
+            elif cmd == "b":      # REP: repeat the previous character n times
+                n = nums[0] if nums else 1
+                for _ in range(n):
+                    if 0 <= cy < rows and 0 <= cx < cols:
+                        grid[cy][cx] = last
+                    cx += 1
+                    if cx >= cols: cx = 0; cy += 1
             elif cmd == "X":      # ECH: erase n chars at the cursor, no move
                 n = nums[0] if nums else 1
                 for x in range(cx, min(cols, cx + n)): grid[cy][x] = " "
@@ -58,6 +66,7 @@ def render(data: str, cols=80, rows=24) -> str:
             cx = 0; i += 1; continue
         if 0 <= cy < rows and 0 <= cx < cols and ch.isprintable():
             grid[cy][cx] = ch
+            last = ch
         cx += 1
         if cx >= cols: cx = 0; cy += 1
         i += 1

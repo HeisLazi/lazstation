@@ -194,6 +194,32 @@ def accent_for(game: "Game") -> tuple[int, int, int]:
     return int(r * 255), int(g * 255), int(b * 255)
 
 
+def save_summary(profile: str, slug: str, slot: int = 1) -> str | None:
+    """A one-line description of a save, shown on the dashboard.
+
+    A game opts in by putting a "_summary" string in its save -- the console
+    cannot interpret arbitrary save data, but a game knows exactly how to say
+    where you left off ("floor 6, 24 cards"). Absent that, we only report
+    that a save exists.
+    """
+    directory = paths.save_dir(profile, slug, slot)
+    if not directory.is_dir():
+        return None
+    files = sorted(directory.glob("*.json"))
+    if not files:
+        return None
+    for path in files:
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if isinstance(data, dict):
+            note = data.get("_summary")
+            if isinstance(note, str) and note.strip():
+                return note.strip()[:15]
+    return "saved"
+
+
 def format_last_played(iso: str | None) -> str:
     if not iso:
         return "never"

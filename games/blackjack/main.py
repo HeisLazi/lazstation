@@ -304,6 +304,7 @@ def main() -> int:
         ts.save(save)
 
     store_chips(chips)
+    save["_summary"] = f"{chips} chips"
     ts.save(save)
     header(chips)
     ts.tv_print(ts.box([

@@ -57,6 +57,21 @@ class Action:
         self.kind, self.game, self.profile, self.slot = kind, game, profile, slot
 
 
+def _wrap(text: str, width: int) -> list[str]:
+    """Greedy word wrap. Long words are left to be clipped by the caller."""
+    out: list[str] = []
+    for para in text.splitlines():
+        line = ""
+        for word in para.split():
+            if len(line) + len(word) + 1 > width:
+                out.append(line)
+                line = word
+            else:
+                line = f"{line} {word}".strip()
+        out.append(line)
+    return [l for l in out if l] or [""]
+
+
 def accent_for(game: Game) -> int:
     """The game's accent as an xterm-256 index."""
     return fx.rgb(*library.accent_for(game))
@@ -186,11 +201,22 @@ class Console:
         self.msg_until = time.monotonic() + seconds
 
     # ------------------------------------------------------------- drawing
+    @staticmethod
+    def card(canvas: fx.Canvas, x: int, y: int, w: int, h: int, label: str,
+             lines: list[tuple[str, int]], edge: int, label_color: int) -> None:
+        """A small titled panel. The label sits in the top border, which is
+        what makes a row of these read as a set of cards rather than boxes."""
+        canvas.box(x, y, w, h, edge)
+        tag = f" {label} "[: max(0, w - 4)]
+        canvas.text(x + 2, y, tag, label_color)
+        for i, (text, color) in enumerate(lines[: h - 2]):
+            canvas.text(x + 2, y + 1 + i, text[: w - 3], color)
+
     def cover_tile(self, canvas: fx.Canvas, game: Game, cx: int, cy: int,
                    closeness: float, pulse: float = 0.0) -> None:
         """One cover. `closeness` is 1 at the centre and 0 far out."""
-        w = int(14 + 8 * closeness)
-        h = int(7 + 4 * closeness)
+        w = int(14 + 6 * closeness)
+        h = int(5 + 3 * closeness)
         x = cx - w // 2
         y = cy - h // 2
         if x + w < 0 or x > canvas.w:
@@ -227,7 +253,7 @@ class Console:
         canvas = fx.Canvas(width, height, ambient=0.92)
         games = self.visible
         pulse = 0.5 + 0.5 * math.sin(t * 1.9)
-        self.drift(canvas, dt, floor=12)
+        self.drift(canvas, dt, floor=9)
         game_now = self.current
         tone = accent_for(game_now) if game_now else AMBER
 
@@ -255,54 +281,9 @@ class Console:
 
             game = self.current
             if game:
-                st = self.stats.get(game.slug, {})
-                name = game.name.upper()
-                settle = min(1.0, (t - self.change_at) / 0.28)
-                title_col = fx.mix(fx.scale(tone, 0.25), GLOW, settle)
-                canvas.text(max(1, (width - len(name)) // 2), 13,
-                            name, title_col)
-                room = width - 6
-                tag = game.tagline
-                if len(tag) > room:
-                    tag = tag[:room - 1].rsplit(" ", 1)[0] + "…"
-                canvas.text(max(1, (width - len(tag)) // 2), 14, tag, PAPER)
-                # row 15: awards, playtime, recency -- the at-a-glance row
-                got = self.award_count(game.slug)
-                total = game.awards or got
-                stars = ("★" * got) + ("☆" * max(0, total - got))
-                label = f"{got}/{total}" if total else str(got)
-                bits = [f"{stars} {label} award" + ("" if total == 1 else "s")]
-                if st.get("launches"):
-                    n = st["launches"]
-                    bits.append(f"{n} play" + ("" if n == 1 else "s"))
-                    bits.append(library.format_playtime(st.get("seconds", 0)))
-                    bits.append(library.format_last_played(st.get("last_played")))
-                else:
-                    bits.append("never played")
-                line = "     ".join(bits)
-                canvas.text(max(1, (width - len(line)) // 2), 15, line,
-                            fx.scale(tone, 0.75) if got else INK)
-
-                # row 16: tags, so the band reads as a card rather than a list
-                if game.tags:
-                    tags = "   ".join(f"·{t}" for t in game.tags)
-                    canvas.text(max(1, (width - len(tags)) // 2), 16, tags, INK)
-
-                chosen = self.slots.get(game.slug, 1)
-                used = paths.slots_used(self.profile, game.slug)
-                marks = []
-                for n, taken in enumerate(used, 1):
-                    glyph = "▣" if taken else "▢"
-                    marks.append(f"{glyph}{n}" if n != chosen else f"[{glyph}{n}]")
-                slot_line = "slot  " + " ".join(marks)
-                canvas.text(max(1, (width - len(slot_line)) // 2), 17,
-                            slot_line, AMBER if chosen != 1 else INK)
-
-                # position dots, like a console dashboard
-                dots = "".join("◆" if i == self.index else "◇"
-                               for i in range(len(games)))
-                canvas.text(max(1, (width - len(dots)) // 2), 18, dots,
-                            fx.scale(tone, 0.6))
+                self.game_hub(canvas, game, width, height, tone, t,
+                              position="".join("◆" if i == self.index else "◇"
+                                               for i in range(len(games))))
 
         if self.attract:
             note = "▌ ATTRACT MODE — press any key"
@@ -325,6 +306,80 @@ class Console:
                     "t theme   / find   ? help   q off")
             canvas.text(max(1, (width - len(hint)) // 2), height - 1, hint, INK)
         return canvas
+
+    def game_hub(self, canvas: fx.Canvas, game: Game, width: int, height: int,
+                 tone: int, t: float, position: str = "") -> None:
+        """The panel under the shelf: what this game is, and where you are in
+        it. Modelled on a console game hub -- a few contextual cards rather
+        than a list of fields, so it holds the space and changes per game."""
+        top = 10
+        panel_h = max(6, height - top - 1)
+        st = self.stats.get(game.slug, {})
+        settle = min(1.0, (t - self.change_at) / 0.3)
+        edge = fx.mix(fx.scale(tone, 0.3), tone, settle)
+
+        canvas.box(0, top, width, panel_h, edge)
+        name = f" {game.name.upper()} "
+        canvas.text(2, top, name, GLOW)
+        tags = " ".join(f"·{x}" for x in game.tags)[: width // 2]
+        if tags:
+            canvas.text(max(4, width - len(tags) - 3), top, f" {tags} ", INK)
+
+        # description, wrapped into the panel
+        room = width - 6
+        wrapped = _wrap(game.tagline, room)[:2]
+        for i, line in enumerate(wrapped):
+            canvas.text(3, top + 1 + i, line, PAPER)
+        byline = f"v{game.version}" + (f"   by {game.author}" if game.author else "")
+        canvas.text(3, top + 3, byline, INK)
+
+        # --- activity cards
+        chosen = self.slots.get(game.slug, 1)
+        used = paths.slots_used(self.profile, game.slug)
+        has_save = used[chosen - 1] if chosen <= len(used) else False
+        summary = library.save_summary(self.profile, game.slug, chosen)
+
+        got = self.award_count(game.slug)
+        total = game.awards or got
+        stars = ("★" * got) + ("☆" * max(0, total - got))
+        filled = int(10 * got / total) if total else 0
+
+        plays = st.get("launches", 0)
+        played = library.format_playtime(st.get("seconds", 0)) if plays else "—"
+        last = library.format_last_played(st.get("last_played")) if plays else "never"
+
+        marks = " ".join(f"[{n}]" if n == chosen else f" {n} "
+                         for n, _ in enumerate(used, 1))
+        filled_marks = "".join("▣" if taken else "▢" for taken in used)
+
+        cards = [
+            ("CONTINUE" if has_save else "START",
+             [(summary or "new run", GLOW if has_save else PAPER),
+              (f"slot {chosen}", INK)]),
+            ("AWARDS",
+             [(f"{stars} {got}/{total}" if total else "none yet",
+               fx.scale(tone, 0.95) if got else INK),
+              ("▓" * filled + "░" * (10 - filled), fx.scale(tone, 0.8))]),
+            ("PLAYED",
+             [(f"{played}  ·  {plays}×" if plays else "not yet", PAPER),
+              (last, INK)]),
+            ("SLOT", [(marks, PAPER), (filled_marks, fx.scale(tone, 0.8))]),
+        ]
+
+        if position:
+            canvas.text(max(2, (width - len(position)) // 2),
+                        top + panel_h - 1, f" {position} ", fx.scale(tone, 0.7))
+
+        card_y = top + 4
+        if card_y + 4 > top + panel_h:
+            card_y = top + panel_h - 4
+        gap = 1
+        cw = max(12, (width - 6 - gap * (len(cards) - 1)) // len(cards))
+        x = 3
+        for label, lines in cards:
+            self.card(canvas, x, card_y, cw, 4, label, lines,
+                      fx.scale(edge, 0.7), fx.scale(tone, 0.9))
+            x += cw + gap
 
     def crt(self, canvas: fx.Canvas, t: float = 0.0) -> None:
         """Scanlines, vignette, a slow rolling band and a little flicker --
