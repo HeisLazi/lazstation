@@ -604,14 +604,38 @@ def achievements(slug: str | None = None) -> dict:
     return data.get(slug, {}) if slug else data
 
 
+#: Awards unlocked but not yet shown, for games that draw their own screen.
+_award_queue: list[dict] = []
+
+
+def drain_awards() -> list[dict]:
+    """Take the awards unlocked since this was last called.
+
+    Line-based games need not bother -- unlock() announces those itself. A
+    full-screen game owns every cell, so it drains this and draws the banner
+    wherever it likes.
+    """
+    global _award_queue
+    out, _award_queue = _award_queue, []
+    return out
+
+
+def _announce(title: str, description: str) -> None:
+    line = f"  ★  {title}"
+    if description:
+        line += f" — {description}"
+    width = min(size()[0], 78)
+    bar = color("─" * width, "amber")
+    for text in (bar, color(line, "bright_yellow", bold=True), bar):
+        _out(text)
+
+
 def unlock(key: str, title: str = "", description: str = "") -> bool:
     """Record an achievement. Returns True only the first time.
 
-    Use the return value to decide whether to show the player a banner, so a
-    re-earned achievement stays quiet:
-
-        if ts.unlock("first-boss", "Kingslayer", "Beat the Cinder King"):
-            show_banner("Kingslayer")
+    A newly unlocked award announces itself: printed inline for a line-based
+    game, or queued for a full-screen one to draw via drain_awards(). An
+    award earned again stays silent.
     """
     path = _achievements_path()
     if path is None:
@@ -635,6 +659,12 @@ def unlock(key: str, title: str = "", description: str = "") -> bool:
         tmp.replace(path)
     except OSError:
         return False
+
+    record = {"key": key, "title": title or key, "description": description}
+    if _tv_state.get("active"):
+        _announce(record["title"], record["description"])
+    else:
+        _award_queue.append(record)
     return True
 
 
@@ -643,4 +673,4 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
-__all__ += ["slot", "unlock", "achievements"]
+__all__ += ["slot", "unlock", "achievements", "drain_awards"]

@@ -25,8 +25,23 @@ import termstation_fx as fx                              # noqa: E402
 from termstation_bezel import frame_lines, geometry, side_runs  # noqa: E402
 
 FPS = 30
-PITCH = 22              # horizontal distance between cover centres
+PITCH = 22
+IDLE_AFTER = 45.0     # seconds before the console starts demoing itself
+ATTRACT_EVERY = 3.0   # seconds per cover while it does              # horizontal distance between cover centres
 SLIDE_TIME = 0.20
+
+#: Phosphor themes, cycled with 't'. Each is (chrome, dim, paper, ink, glow).
+THEMES = {
+    "amber":  ((255, 176, 64), (150, 96, 30), (236, 226, 205), (120, 112, 100),
+               (255, 210, 120)),
+    "green":  ((120, 235, 130), (50, 130, 60), (215, 240, 215), (95, 130, 100),
+               (170, 255, 180)),
+    "mono":   ((225, 225, 225), (110, 110, 110), (240, 240, 240), (130, 130, 130),
+               (255, 255, 255)),
+    "ice":    ((130, 200, 255), (55, 105, 160), (220, 235, 250), (110, 130, 150),
+               (185, 225, 255)),
+}
+THEME_ORDER = list(THEMES)
 
 AMBER = fx.rgb(255, 176, 64)
 AMBER_DIM = fx.rgb(150, 96, 30)
@@ -65,10 +80,46 @@ class Console:
         self.flicker = 1.0
         self.slots: dict[str, int] = {}
         self.motes: list[list[float]] = []
+        self.theme = "amber"
+        self.last_key = time.monotonic()
+        self.attract = False
+        self.attract_at = 0.0
         self.born = time.monotonic()
         self.prev_game: Game | None = None
         self.change_at = 0.0
         self.refresh_library()
+
+    def load_config(self) -> dict:
+        try:
+            import json
+            return json.loads(paths.CONFIG_FILE.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {}
+
+    def save_config(self) -> None:
+        """Remember the look between sessions -- a console that forgets your
+        settings every time you switch it on is not a console."""
+        import json
+        try:
+            paths.CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
+            data = self.load_config()
+            data.update(theme=self.theme, fast_boot=self.fast_boot,
+                        profile=self.profile)
+            tmp = paths.CONFIG_FILE.with_suffix(".tmp")
+            tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
+            tmp.replace(paths.CONFIG_FILE)
+        except OSError:
+            pass
+
+    def apply_theme(self, name: str) -> None:
+        """Re-tint the whole dashboard. Module-level colours are rebound so
+        every drawing call picks the new phosphor up without threading a
+        palette through each one."""
+        global AMBER, AMBER_DIM, PAPER, INK, GLOW
+        chrome, dim, paper, ink, glow = THEMES[name]
+        AMBER, AMBER_DIM = fx.rgb(*chrome), fx.rgb(*dim)
+        PAPER, INK, GLOW = fx.rgb(*paper), fx.rgb(*ink), fx.rgb(*glow)
+        self.theme = name
 
     # ------------------------------------------------------------- ambience
     def seed_motes(self, width: int, height: int) -> None:
@@ -253,14 +304,25 @@ class Console:
                 canvas.text(max(1, (width - len(dots)) // 2), 18, dots,
                             fx.scale(tone, 0.6))
 
-        if self.searching:
+        if self.attract:
+            note = "▌ ATTRACT MODE — press any key"
+            canvas.text(max(1, (width - len(note)) // 2), height - 1,
+                        note, fx.scale(tone, 0.55 + 0.45 * pulse))
+        elif self.searching:
             bar = f"search: {self.filter}_"
             canvas.text(1, height - 1, bar, GLOW)
         elif self.message and time.monotonic() < self.msg_until:
             canvas.text(1, height - 1, self.message[:width - 2], CYAN)
         else:
-            hint = ("← →  select   ⏎ play   1-3 slot   a awards   "
-                    "/ find   p profile   ? help   q off")
+            game = self.current
+            has_save = False
+            if game:
+                chosen = self.slots.get(game.slug, 1)
+                used = paths.slots_used(self.profile, game.slug)
+                has_save = used[chosen - 1] if chosen <= len(used) else False
+            verb = "continue" if has_save else "play"
+            hint = (f"← →  select   ⏎ {verb}   1-3 slot   a awards   "
+                    "t theme   / find   ? help   q off")
             canvas.text(max(1, (width - len(hint)) // 2), height - 1, hint, INK)
         return canvas
 
@@ -347,11 +409,28 @@ class Console:
             else:
                 self.scroll += gap * min(1.0, dt * 11.0)
 
+            # Idle long enough and the console starts showing itself off,
+            # the way a shop-floor console does.
+            if not self.searching and now - self.last_key > IDLE_AFTER:
+                if not self.attract:
+                    self.attract = True
+                    self.attract_at = now
+                elif now - self.attract_at > ATTRACT_EVERY:
+                    self.attract_at = now
+                    games_now = self.visible
+                    if games_now:
+                        self.select((self.index + 1) % len(games_now))
+
             self.render(stdscr, now - self.born, dt)
 
             key = stdscr.getch()
             if key == -1:
                 time.sleep(max(0.0, 1 / FPS - (time.monotonic() - now)))
+                continue
+            self.last_key = now
+            if self.attract:
+                # The keypress that wakes it only wakes it.
+                self.attract = False
                 continue
             if key == curses.KEY_RESIZE:
                 continue
@@ -396,6 +475,7 @@ class Console:
                 self.say("library refreshed")
             elif key in (ord("b"), ord("B")):
                 self.fast_boot = not self.fast_boot
+                self.save_config()
                 self.say("boot animation " + ("off" if self.fast_boot else "on"))
             elif key in (ord("p"), ord("P")):
                 stdscr.nodelay(False)
@@ -406,6 +486,12 @@ class Console:
                 if game:
                     self.slots[game.slug] = key - ord("0")
                     self.say(f"slot {key - ord('0')} selected")
+            elif key in (ord("t"), ord("T")):
+                nxt = THEME_ORDER[(THEME_ORDER.index(self.theme) + 1)
+                                  % len(THEME_ORDER)]
+                self.apply_theme(nxt)
+                self.save_config()
+                self.say(f"{nxt} phosphor")
             elif key in (ord("a"), ord("A")):
                 stdscr.nodelay(False)
                 self.achievements_screen(stdscr)
@@ -486,6 +572,7 @@ class Console:
             "  p          switch save profile",
             "  r          rescan for new games",
             "  b          toggle the boot animation",
+            "  t          cycle the phosphor: amber, green, mono, ice",
             "  q          power off",
             "",
             "  new game:  lazstation new <name>",
