@@ -9,7 +9,22 @@ The house rules, six decks, dealer stands on soft 17.
 Split, double down and buy insurance. Your chips persist between
 sessions and are shared with every other game on the station."""
 tags = ["cards", "casino", "quick"]
-awards = 3
 entry = ["{python}", "main.py"]
 min_cols = 60
 min_rows = 20
+
+
+[[awards]]
+key = "first-win"
+title = "House Money"
+description = "Won a hand"
+
+[[awards]]
+key = "natural"
+title = "Natural"
+description = "Was dealt twenty-one"
+
+[[awards]]
+key = "high-roller"
+title = "High Roller"
+description = "Sat on a thousand chips"

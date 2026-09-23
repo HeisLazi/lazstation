@@ -10,7 +10,22 @@ Start with ten cards and pick up more as you climb — but every card
 you add makes the deck slower. Enemies tell you what they will do
 before you commit, so every turn is a real decision."""
 tags = ["roguelike", "cards", "deckbuilder"]
-awards = 3
 entry = ["{python}", "main.py"]
 min_cols = 66
 min_rows = 20
+
+
+[[awards]]
+key = "cinder-king"
+title = "Kingslayer"
+description = "Cleared the spire"
+
+[[awards]]
+key = "lean-deck"
+title = "Nothing Spare"
+description = "Cleared the spire with twelve cards or fewer"
+
+[[awards]]
+key = "halfway"
+title = "Halfway Up"
+description = "Reached floor 6"

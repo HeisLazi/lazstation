@@ -40,7 +40,7 @@ class Game:
     min_rows: int = 24
     bundled: bool = True
     accent: list[int] | None = None
-    awards: int = 0
+    award_defs: list[dict] = field(default_factory=list)
 
     @property
     def tagline(self) -> str:
@@ -90,7 +90,8 @@ def load_manifest(directory: Path, bundled: bool = True) -> Game:
         author=str(game.get("author", "")),
         tags=[str(t) for t in game.get("tags", [])],
         accent=game.get("accent"),
-        awards=int(game.get("awards", 0)),
+        award_defs=[dict(a) for a in data.get("awards", [])
+                    if isinstance(a, dict) and a.get("key")],
         min_cols=int(game.get("min_cols", 80)),
         min_rows=int(game.get("min_rows", 24)),
         bundled=bundled,

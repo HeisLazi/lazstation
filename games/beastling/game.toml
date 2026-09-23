@@ -10,7 +10,27 @@ Twenty species across six types, levelling and evolution,
 lures and a field journal, six routes and five champions
 who keep the roads."""
 tags = ["rpg", "creatures", "turn-based"]
-awards = 4
 entry = ["{python}", "main.py"]
 min_cols = 66
 min_rows = 20
+
+
+[[awards]]
+key = "first-catch"
+title = "Something Followed You Home"
+description = "Caught your first beast"
+
+[[awards]]
+key = "half-journal"
+title = "Half the Journal"
+description = "Caught half of everything in the Vale"
+
+[[awards]]
+key = "first-badge"
+title = "First Badge"
+description = "Beat a champion of the roads"
+
+[[awards]]
+key = "all-badges"
+title = "Keeper of the Roads"
+description = "Beat every champion in the Hollow Vale"

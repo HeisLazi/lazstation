@@ -53,8 +53,10 @@ GLOW = fx.rgb(255, 210, 120)
 
 class Action:
     def __init__(self, kind: str, game: Game | None = None,
-                 profile: str = "default", slot: int = 1) -> None:
+                 profile: str = "default", slot: int = 1,
+                 boot: bool = True) -> None:
         self.kind, self.game, self.profile, self.slot = kind, game, profile, slot
+        self.boot = boot          # quick start skips the loading screen
 
 
 def _wrap(text: str, width: int) -> list[str]:
@@ -99,6 +101,9 @@ class Console:
         self.last_key = time.monotonic()
         self.attract = False
         self.attract_at = 0.0
+        self.focus = "shelf"      # or "panel": down moves into the cards
+        self.card = 0
+        self.cards: list[str] = []
         self.born = time.monotonic()
         self.prev_game: Game | None = None
         self.change_at = 0.0
@@ -216,7 +221,7 @@ class Console:
                    closeness: float, pulse: float = 0.0) -> None:
         """One cover. `closeness` is 1 at the centre and 0 far out."""
         w = int(14 + 6 * closeness)
-        h = int(5 + 3 * closeness)
+        h = int(5 + 4 * closeness)
         x = cx - w // 2
         y = cy - h // 2
         if x + w < 0 or x > canvas.w:
@@ -263,7 +268,7 @@ class Console:
         meta = f"{self.profile}   {len(self.all_games)} games   ★ {total_awards}"
         canvas.text(max(1, width - len(meta) - 1), 0, meta, INK)
 
-        row_y = 7
+        row_y = 6
         if not games:
             msg = "no games found" if not self.filter else f"nothing matches '{self.filter}'"
             canvas.text(max(1, (width - len(msg)) // 2), row_y, msg, AMBER)
@@ -302,84 +307,98 @@ class Console:
                 used = paths.slots_used(self.profile, game.slug)
                 has_save = used[chosen - 1] if chosen <= len(used) else False
             verb = "continue" if has_save else "play"
-            hint = (f"← →  select   ⏎ {verb}   1-3 slot   a awards   "
-                    "t theme   / find   ? help   q off")
+            if self.focus == "panel":
+                hint = ("← →  card   ⏎ choose   ↑ back to the shelf   "
+                        "t theme   ? help   q off")
+            else:
+                hint = (f"← →  select   ⏎ {verb}   ↓ options   a awards   "
+                        "t theme   / find   ? help   q off")
             canvas.text(max(1, (width - len(hint)) // 2), height - 1, hint, INK)
         return canvas
 
+    def hub_cards(self, game: Game) -> list[tuple[str, list[tuple[str, int]]]]:
+        """The contextual cards under a game, in order."""
+        st = self.stats.get(game.slug, {})
+        chosen = self.slots.get(game.slug, 1)
+        used = paths.slots_used(self.profile, game.slug)
+        has_save = used[chosen - 1] if chosen <= len(used) else False
+        summary = library.save_summary(self.profile, game.slug, chosen)
+        tone = accent_for(game)
+
+        got = self.award_count(game.slug)
+        total = len(game.award_defs) or got
+        stars = ("★" * got) + ("☆" * max(0, total - got))
+        filled = int(10 * got / total) if total else 0
+
+        marks = " ".join(f"[{n}]" if n == chosen else f" {n} "
+                         for n, _ in enumerate(used, 1))
+        return [
+            ("CONTINUE" if has_save else "START",
+             [(summary or "new run", GLOW if has_save else PAPER),
+              ("play now", INK)]),
+            ("AWARDS",
+             [(f"{stars} {got}/{total}" if total else "none", 
+               fx.scale(tone, 0.95) if got else INK),
+              ("▓" * filled + "░" * (10 - filled), fx.scale(tone, 0.8))]),
+            ("SLOT",
+             [(marks, PAPER),
+              ("".join("▣" if t else "▢" for t in used), fx.scale(tone, 0.8))]),
+            ("MANUAL",
+             [("how to play", PAPER), ("controls", INK)]),
+        ]
+
     def game_hub(self, canvas: fx.Canvas, game: Game, width: int, height: int,
                  tone: int, t: float, position: str = "") -> None:
-        """The panel under the shelf: what this game is, and where you are in
-        it. Modelled on a console game hub -- a few contextual cards rather
-        than a list of fields, so it holds the space and changes per game."""
-        top = 10
-        panel_h = max(6, height - top - 1)
+        """The panel under the shelf. Down moves focus into it, so the cards
+        are things you operate rather than a readout."""
+        top = 12
+        panel_h = height - top - 1
         st = self.stats.get(game.slug, {})
         settle = min(1.0, (t - self.change_at) / 0.3)
         edge = fx.mix(fx.scale(tone, 0.3), tone, settle)
 
         canvas.box(0, top, width, panel_h, edge)
-        name = f" {game.name.upper()} "
-        canvas.text(2, top, name, GLOW)
-        tags = " ".join(f"·{x}" for x in game.tags)[: width // 2]
-        if tags:
-            canvas.text(max(4, width - len(tags) - 3), top, f" {tags} ", INK)
-
-        # description, wrapped into the panel
-        room = width - 6
-        wrapped = _wrap(game.tagline, room)[:2]
-        for i, line in enumerate(wrapped):
-            canvas.text(3, top + 1 + i, line, PAPER)
-        byline = f"v{game.version}" + (f"   by {game.author}" if game.author else "")
-        canvas.text(3, top + 3, byline, INK)
-
-        # --- activity cards
-        chosen = self.slots.get(game.slug, 1)
-        used = paths.slots_used(self.profile, game.slug)
-        has_save = used[chosen - 1] if chosen <= len(used) else False
-        summary = library.save_summary(self.profile, game.slug, chosen)
-
-        got = self.award_count(game.slug)
-        total = game.awards or got
-        stars = ("★" * got) + ("☆" * max(0, total - got))
-        filled = int(10 * got / total) if total else 0
+        canvas.text(2, top, f" {game.name.upper()} ", GLOW)
 
         plays = st.get("launches", 0)
-        played = library.format_playtime(st.get("seconds", 0)) if plays else "—"
-        last = library.format_last_played(st.get("last_played")) if plays else "never"
+        if plays:
+            right = (f"{library.format_playtime(st.get('seconds', 0))}"
+                     f" · {plays}× · {library.format_last_played(st.get('last_played'))}")
+        else:
+            right = "never played"
+        canvas.text(max(4, width - len(right) - 4), top, f" {right} ", INK)
 
-        marks = " ".join(f"[{n}]" if n == chosen else f" {n} "
-                         for n, _ in enumerate(used, 1))
-        filled_marks = "".join("▣" if taken else "▢" for taken in used)
+        desc = _wrap(game.tagline, width - 6)[0]
+        canvas.text(3, top + 1, desc, PAPER)
 
-        cards = [
-            ("CONTINUE" if has_save else "START",
-             [(summary or "new run", GLOW if has_save else PAPER),
-              (f"slot {chosen}", INK)]),
-            ("AWARDS",
-             [(f"{stars} {got}/{total}" if total else "none yet",
-               fx.scale(tone, 0.95) if got else INK),
-              ("▓" * filled + "░" * (10 - filled), fx.scale(tone, 0.8))]),
-            ("PLAYED",
-             [(f"{played}  ·  {plays}×" if plays else "not yet", PAPER),
-              (last, INK)]),
-            ("SLOT", [(marks, PAPER), (filled_marks, fx.scale(tone, 0.8))]),
-        ]
+        cards = self.hub_cards(game)
+        self.cards = [label for label, _ in cards]
+        gap = 1
+        cw = max(11, (width - 6 - gap * (len(cards) - 1)) // len(cards))
+        x = 3
+        for i, (label, lines) in enumerate(cards):
+            live = self.focus == "panel" and i == self.card
+            border = GLOW if live else fx.scale(edge, 0.7)
+            head = GLOW if live else fx.scale(tone, 0.9)
+            self.card_box(canvas, x, top + 2, cw, 4, label, lines, border, head,
+                          marker=live)
+            x += cw + gap
 
         if position:
             canvas.text(max(2, (width - len(position)) // 2),
                         top + panel_h - 1, f" {position} ", fx.scale(tone, 0.7))
 
-        card_y = top + 4
-        if card_y + 4 > top + panel_h:
-            card_y = top + panel_h - 4
-        gap = 1
-        cw = max(12, (width - 6 - gap * (len(cards) - 1)) // len(cards))
-        x = 3
-        for label, lines in cards:
-            self.card(canvas, x, card_y, cw, 4, label, lines,
-                      fx.scale(edge, 0.7), fx.scale(tone, 0.9))
-            x += cw + gap
+    @staticmethod
+    def card_box(canvas: fx.Canvas, x: int, y: int, w: int, h: int, label: str,
+                 lines: list[tuple[str, int]], edge: int, label_color: int,
+                 marker: bool = False) -> None:
+        canvas.box(x, y, w, h, edge)
+        tag = f" {label} "[: max(0, w - 4)]
+        canvas.text(x + 2, y, tag, label_color)
+        if marker:
+            canvas.text(x + w - 3, y, "▾", label_color)
+        for i, (text, color) in enumerate(lines[: h - 2]):
+            canvas.text(x + 2, y + 1 + i, text[: w - 3], color)
 
     def crt(self, canvas: fx.Canvas, t: float = 0.0) -> None:
         """Scanlines, vignette, a slow rolling band and a little flicker --
@@ -508,20 +527,50 @@ class Console:
             games = self.visible
             if key in (ord("q"), ord("Q")):
                 return Action("quit")
-            if key in (curses.KEY_LEFT, ord("h")) and games:
-                self.select((self.index - 1) % len(games))
+            if key in (curses.KEY_DOWN, ord("j")) and games:
+                self.focus = "panel"
+            elif key in (curses.KEY_UP, ord("k")):
+                self.focus = "shelf"
+            elif key in (curses.KEY_LEFT, ord("h")) and games:
+                if self.focus == "panel":
+                    self.card = (self.card - 1) % max(1, len(self.cards))
+                else:
+                    self.select((self.index - 1) % len(games))
             elif key in (curses.KEY_RIGHT, ord("l")) and games:
-                self.select((self.index + 1) % len(games))
+                if self.focus == "panel":
+                    self.card = (self.card + 1) % max(1, len(self.cards))
+                else:
+                    self.select((self.index + 1) % len(games))
             elif key in (curses.KEY_HOME, ord("g")) and games:
                 self.select(0)
             elif key in (curses.KEY_END, ord("G")) and games:
                 self.select(len(games) - 1)
             elif key in (10, 13, curses.KEY_ENTER, ord(" ")):
                 game = self.current
-                if game:
+                if not game:
+                    continue
+                if self.focus == "shelf":
                     stdscr.nodelay(False)
                     return Action("launch", game, self.profile,
                                   self.slots.get(game.slug, 1))
+                label = self.cards[self.card] if self.cards else ""
+                if label in ("CONTINUE", "START"):
+                    stdscr.nodelay(False)
+                    # Quick start: straight in, no loading screen.
+                    return Action("launch", game, self.profile,
+                                  self.slots.get(game.slug, 1), boot=False)
+                if label == "AWARDS":
+                    stdscr.nodelay(False)
+                    self.awards_screen(stdscr)
+                    stdscr.nodelay(True)
+                elif label == "SLOT":
+                    nxt = self.slots.get(game.slug, 1) % 3 + 1
+                    self.slots[game.slug] = nxt
+                    self.say(f"slot {nxt}")
+                elif label == "MANUAL":
+                    stdscr.nodelay(False)
+                    self.manual_screen(stdscr, game)
+                    stdscr.nodelay(True)
             elif key == ord("/"):
                 self.searching = True
                 self.filter = ""
@@ -549,7 +598,7 @@ class Console:
                 self.say(f"{nxt} phosphor")
             elif key in (ord("a"), ord("A")):
                 stdscr.nodelay(False)
-                self.achievements_screen(stdscr)
+                self.awards_screen(stdscr)
                 stdscr.nodelay(True)
             elif key == ord("?"):
                 stdscr.nodelay(False)
@@ -578,43 +627,141 @@ class Console:
         self.say(f"profile: {name}")
         return name
 
-    def achievements_screen(self, stdscr) -> None:
-        """Everything unlocked, across every game."""
-        import json
-        try:
-            data = json.loads(paths.ACHIEVEMENTS.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            data = {}
-        names = {g.slug: g.name for g in self.all_games}
+    def pager(self, stdscr, title: str, lines: list[tuple[str, int]],
+              footer: str = "↑↓ scroll    any other key goes back") -> None:
+        """A scrollable full-picture page. Used for awards and manuals."""
+        offset = 0
+        while True:
+            width, height = self.screen.width, self.screen.height
+            body = height - 4
+            canvas = fx.Canvas(width, height, ambient=0.95)
+            canvas.text(2, 0, title, GLOW)
+            count = f"{len(lines)} lines" if len(lines) > body else ""
+            if len(lines) > body:
+                count = f"{offset + 1}-{min(len(lines), offset + body)} of {len(lines)}"
+                canvas.text(max(2, width - len(count) - 2), 0, count, INK)
+            canvas.text(1, 1, "─" * (width - 2), fx.scale(AMBER_DIM, 0.8))
+            for i, (text, color) in enumerate(lines[offset:offset + body]):
+                canvas.text(2, 2 + i, text[: width - 4], color)
+            canvas.text(1, height - 2, "─" * (width - 2), fx.scale(AMBER_DIM, 0.8))
+            canvas.text(2, height - 1, footer, INK)
+            self.crt(canvas, 0.0)
+            stdscr.erase()
+            self.draw_cabinet(stdscr)
+            canvas.blit(stdscr, self.palette, self.screen.x, self.screen.y)
+            stdscr.noutrefresh()
+            curses.doupdate()
 
-        lines: list[tuple[str, int]] = [("AWARDS", GLOW), ("", INK)]
-        total = sum(len(v) for v in data.values())
-        if not total:
-            lines += [("  Nothing unlocked yet.", PAPER), ("", INK),
-                      ("  Games award these as you play.", INK)]
-        else:
-            lines.append((f"  {total} unlocked", INK))
+            key = stdscr.getch()
+            if key in (curses.KEY_DOWN, ord("j")) and offset + body < len(lines):
+                offset += 1
+            elif key in (curses.KEY_UP, ord("k")) and offset > 0:
+                offset -= 1
+            elif key == curses.KEY_NPAGE:
+                offset = min(max(0, len(lines) - body), offset + body)
+            elif key == curses.KEY_PPAGE:
+                offset = max(0, offset - body)
+            elif key == curses.KEY_RESIZE:
+                continue
+            else:
+                return
+
+    def awards_screen(self, stdscr) -> None:
+        """Every award on the console, locked ones included.
+
+        Showing what you have *not* earned is the point -- a list of things
+        already done is a receipt, a list of what is still out there is a
+        reason to play.
+        """
+        self.awards = self.load_awards()
+        lines: list[tuple[str, int]] = []
+        earned = total = 0
+
+        for game in self.all_games:
+            got = self.awards.get(game.slug, {})
+            defs = game.award_defs
+            if not defs and not got:
+                continue
+            tone = accent_for(game)
+            have = len([d for d in defs if d["key"] in got]) if defs else len(got)
+            of = len(defs) or len(got)
+            earned += have
+            total += of
             lines.append(("", INK))
-            for slug, got in sorted(data.items()):
-                lines.append((f"  {names.get(slug, slug)}", AMBER))
-                for key, meta in sorted(got.items(),
-                                        key=lambda kv: kv[1].get("at", "")):
-                    title = meta.get("title", key)
-                    desc = meta.get("description", "")
-                    lines.append((f"    ★ {title}" + (f" — {desc}" if desc else ""),
-                                  PAPER))
-        lines += [("", INK), ("  any key to go back", INK)]
+            lines.append((f"{game.name.upper()}".ljust(34) + f"{have}/{of}", tone))
+            shown = set()
+            for d in defs:
+                key = d["key"]
+                shown.add(key)
+                unlocked = key in got
+                mark = "★" if unlocked else "☆"
+                title = d.get("title", key)
+                desc = d.get("description", "") or "—"
+                colour = PAPER if unlocked else INK
+                lines.append((f"  {mark} {title.ljust(30)}{desc}", colour))
+            # awards earned before they were declared in the manifest
+            for key, meta in got.items():
+                if key in shown:
+                    continue
+                lines.append((f"  ★ {meta.get('title', key).ljust(30)}"
+                              f"{meta.get('description', '')}", PAPER))
 
-        canvas = fx.Canvas(self.screen.width, self.screen.height, ambient=0.95)
-        for i, (text, color) in enumerate(lines[: self.screen.height - 1]):
-            canvas.text(3, i + 1, text[: self.screen.width - 4], color)
-        self.crt(canvas, 0.0)
-        stdscr.erase()
-        self.draw_cabinet(stdscr)
-        canvas.blit(stdscr, self.palette, self.screen.x, self.screen.y)
-        stdscr.noutrefresh()
-        curses.doupdate()
-        stdscr.getch()
+        if not lines:
+            lines = [("", INK), ("  No games declare awards yet.", PAPER)]
+        header = f"AWARDS    {earned} of {total} unlocked" if total else "AWARDS"
+        self.pager(stdscr, header, lines)
+
+    def manual_screen(self, stdscr, game: Game) -> None:
+        """How to play, from the game's own manual if it ships one."""
+        lines: list[tuple[str, int]] = [("", INK)]
+        for line in _wrap(game.description.strip(), self.screen.width - 6):
+            lines.append((f"  {line}", PAPER))
+
+        text = None
+        for name in ("manual.md", "manual.txt", "README.md"):
+            try:
+                text = (game.root / name).read_text(encoding="utf-8")
+                break
+            except OSError:
+                continue
+        if text:
+            room = self.screen.width - 6
+            lines.append(("", INK))
+            para: list[str] = []
+
+            def flush() -> None:
+                # Wrap whole paragraphs, not source lines: wrapping each line
+                # on its own strands the last word or two of every one.
+                if para:
+                    for part in _wrap(" ".join(para), room):
+                        lines.append((f"  {part}", PAPER))
+                    para.clear()
+
+            for raw in text.splitlines():
+                stripped = raw.strip()
+                if not stripped:
+                    flush()
+                    lines.append(("", INK))
+                elif stripped.startswith("#"):
+                    flush()
+                    lines.append((f"  {stripped.lstrip('#').strip()}", GLOW))
+                elif stripped.startswith(("  ", "\t")) or "  " in raw[:4]:
+                    flush()
+                    lines.append((f"  {raw.rstrip()}", PAPER))
+                else:
+                    para.append(stripped)
+            flush()
+        else:
+            lines.append(("", INK))
+            lines.append(("  This game ships no manual.", INK))
+            lines.append(("  Drop a manual.md in its folder and it appears here.",
+                          INK))
+
+        lines.append(("", INK))
+        lines.append((f"  version {game.version}"
+                      + (f"    by {game.author}" if game.author else ""), INK))
+        lines.append((f"  saves    {paths.save_dir(self.profile, game.slug)}", INK))
+        self.pager(stdscr, f"MANUAL — {game.name.upper()}", lines)
 
     def help_screen(self, stdscr) -> None:
         lines = [

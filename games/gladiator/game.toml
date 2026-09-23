@@ -10,7 +10,22 @@ Full-screen arena combat. Manage stamina, read your opponent's
 stance, and work the crowd — win their favour and survive a
 killing blow. Ten opponents stand between you and the wooden sword."""
 tags = ["combat", "roguelike", "curses"]
-awards = 3
 entry = ["{python}", "main.py"]
 min_cols = 70
 min_rows = 20
+
+
+[[awards]]
+key = "first-blood"
+title = "First Blood"
+description = "Survived your first bout"
+
+[[awards]]
+key = "crowd-darling"
+title = "They Chant Your Name"
+description = "Won the crowd almost completely over"
+
+[[awards]]
+key = "rudis"
+title = "The Wooden Sword"
+description = "Won your freedom in the arena"
