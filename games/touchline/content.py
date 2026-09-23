@@ -21,6 +21,14 @@ CLUBS = [
          ground="Breaker Lane", style="Strong in the air, calm under pressure."),
 ]
 
+try:
+    from . import tideway
+except ImportError:  # Support launching main.py directly from this game folder.
+    import tideway
+
+# Tideway's authored clubs and squads remain in their own editable data file.
+CLUBS.extend(tideway.CLUBS)
+
 # Each club starts with one goalkeeper, four defenders, four midfielders, one
 # winger, and two forwards. Add or retune a row without touching the engine.
 ROSTER_ROWS = {
@@ -110,6 +118,12 @@ ROSTER_ROWS = {
     ],
 }
 
+ROSTER_ROWS.update(tideway.ROSTER_ROWS)
+for _club in CLUBS:
+    _club.setdefault("division", "sable")
+for _club in tideway.CLUBS:
+    _club["division"] = "tideway"
+
 
 def _make_player(player_id, club_id, row):
     name, position, pace, passing, finishing, defending, stamina, age, value = row
@@ -189,6 +203,41 @@ FIXTURES = [
     [("GLA", "BRP"), ("BWA", "LVA"), ("RDW", "CWC")],
 ]
 
+
+def _double_round_robin(club_ids):
+    """Build an even-sized home/away schedule for future promoted sides."""
+    rotation = list(club_ids)
+    if len(rotation) % 2:
+        rotation.append(None)
+    first_leg = []
+    for round_index in range(len(rotation) - 1):
+        pairs = []
+        for pair_index in range(len(rotation) // 2):
+            left, right = rotation[pair_index], rotation[-pair_index - 1]
+            if left is None or right is None:
+                continue
+            if (round_index + pair_index) % 2:
+                left, right = right, left
+            pairs.append((left, right))
+        first_leg.append(pairs)
+        rotation = [rotation[0], rotation[-1], *rotation[1:-1]]
+    return first_leg + [[(away, home) for home, away in row]
+                        for row in first_leg]
+
+
+DIVISIONS = [
+    {"id": "sable", "name": "Sable Coast League", "initial_clubs":
+     [club["id"] for club in CLUBS if club["division"] == "sable"]},
+    {"id": "tideway", "name": "Tideway Championship", "initial_clubs":
+     [club["id"] for club in CLUBS if club["division"] == "tideway"]},
+]
+DIVISION_BY_ID = {division["id"]: division for division in DIVISIONS}
+DIVISION_FIXTURES = {
+    "sable": FIXTURES,
+    "tideway": _double_round_robin(DIVISION_BY_ID["tideway"]["initial_clubs"]),
+}
+PROMOTION_PLACES = 2
+
 TRAINING = {
     "Finishing": "finishing",
     "Passing": "passing",
@@ -213,6 +262,7 @@ MANAGERS = {
     "BWA": dict(name="Halen Drift", approach="Patient counter", risk=43,
                 formation="3-5-2", line="low", press="mid", build="direct"),
 }
+MANAGERS.update(tideway.MANAGERS)
 
 # Candid identity signals are used by previews, board targets, and home support.
 # Re-tune them here without changing simulation formulas.
@@ -230,6 +280,7 @@ CLUB_IDENTITY = {
     "BWA": dict(expectation=2, patience=63, attendance=9300,
                 supporter_style="Compete for every ball and every cup."),
 }
+CLUB_IDENTITY.update(tideway.CLUB_IDENTITY)
 
 # Training focus effects are explained to the manager before a week is applied.
 # Effects are interpreted by main.py; these strings are player-facing content.
@@ -327,6 +378,10 @@ RIVALRIES = [
          reason="The docks and the lantern quarter argue over the coast."),
     dict(home="CWC", away="BWA", name="The Foundry Tide",
          reason="Two working ports with very different ideas of power."),
+    dict(home="NQF", away="ASH", name="Quay and Common",
+         reason="The harbour wards and Ashdown villages contest the old ferry route."),
+    dict(home="KES", away="MOR", name="The Last Local Stop",
+         reason="The railway towns have spent generations measuring the distance between them."),
 ]
 
 # Personalities affect willingness, development, and state-triggered voice.
@@ -358,7 +413,7 @@ PLAYER_REPORT_NOTES = {
 }
 
 LEAGUE_NAME = "Sable Coast League"
-SEASON_ROUNDS = len(FIXTURES)
+SEASON_ROUNDS = max(len(fixtures) for fixtures in DIVISION_FIXTURES.values())
 MATCH_PERIODS = 6
 
 # Use this 3x3 sketch to keep zone vocabulary consistent in the match room.
@@ -389,6 +444,8 @@ NEWS_LINES = {
     "round_close": "Round {round} closes: {count} fixtures settled; {leader} lead the table.",
     "season_close": "Season {season} ends. {champion} are champions; you finish {place}.",
     "season_open": "Season {season} opens. {count} academy players join the pyramid.",
+    "promoted": "{club} finish {place} in {division} and move up a tier.",
+    "relegated": "{club} finish {place} in {division} and drop a tier.",
     "signing": "{player} signs for {club} for £{fee}k and £{wage}k/week.",
     "sale": "{club} sign {player} for £{fee}k.",
 }

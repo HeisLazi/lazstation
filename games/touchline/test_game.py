@@ -28,21 +28,30 @@ class AlwaysInjuredRoll:
 
 
 class FixtureRules(unittest.TestCase):
-    def test_round_robin_is_complete_and_balanced(self):
-        club_ids = {club["id"] for club in content.CLUBS}
+    def _assert_calendar(self, club_ids, fixtures):
+        expected = set(club_ids)
         seen = []
-        for round_fixtures in content.FIXTURES:
-            self.assertEqual(len(round_fixtures), len(club_ids) // 2)
+        for round_fixtures in fixtures:
+            self.assertEqual(len(round_fixtures), len(expected) // 2)
             participants = [club for fixture in round_fixtures for club in fixture]
-            self.assertEqual(set(participants), club_ids)
+            self.assertEqual(set(participants), expected)
             self.assertEqual(len(participants), len(set(participants)))
             seen.extend(round_fixtures)
-
-        self.assertEqual(len(content.FIXTURES), 10)
-        self.assertEqual(len(seen), 30)
-        for first, second in __import__("itertools").combinations(sorted(club_ids), 2):
+        self.assertEqual(len(fixtures), 10)
+        self.assertEqual(len(seen), len(expected) * (len(expected) - 1))
+        for first, second in __import__("itertools").combinations(sorted(expected), 2):
             meetings = [fixture for fixture in seen if set(fixture) == {first, second}]
             self.assertEqual(sorted(meetings), [(first, second), (second, first)])
+
+    def test_both_tier_calendars_are_complete_and_balanced(self):
+        for division in content.DIVISIONS:
+            self._assert_calendar(division["initial_clubs"],
+                                  content.DIVISION_FIXTURES[division["id"]])
+
+    def test_moved_clubs_get_a_valid_balanced_calendar(self):
+        fixtures = game.generate_double_round_robin(
+            ["BRP", "GLA", "NQF", "ASH", "KES", "MOR"])
+        self._assert_calendar(["BRP", "GLA", "NQF", "ASH", "KES", "MOR"], fixtures)
 
 
 class MatchRules(unittest.TestCase):
@@ -200,17 +209,23 @@ class CareerRules(unittest.TestCase):
 
         self.assertTrue(career["season_complete"])
         self.assertEqual(career["round"], content.SEASON_ROUNDS)
-        self.assertEqual(len(career["results"]), 30)
-        self.assertEqual(len(set(career["played_ids"])), 30)
+        self.assertEqual(len(career["results"]), 60)
+        self.assertEqual(len(set(career["played_ids"])), 60)
         self.assertEqual(season["user_place"],
                          game._table_order(career).index("BRP") + 1)
-        self.assertEqual(sum(row["played"] for row in career["table"].values()), 60)
-        self.assertEqual(sum(row["gf"] for row in career["table"].values()),
-                         sum(row["ga"] for row in career["table"].values()))
-        for row in career["table"].values():
-            self.assertEqual(row["played"], 10)
-            self.assertEqual(row["played"], row["won"] + row["drawn"] + row["lost"])
-            self.assertEqual(row["points"], row["won"] * 3 + row["drawn"])
+        self.assertEqual(set(season["champions"]), {"sable", "tideway"})
+        self.assertEqual(len(season["movement"]["promoted"]), content.PROMOTION_PLACES)
+        self.assertEqual(len(season["movement"]["relegated"]), content.PROMOTION_PLACES)
+        for division in content.DIVISIONS:
+            rows = [career["table"][cid]
+                    for cid in game.division_clubs(career, division["id"])]
+            self.assertEqual(sum(row["played"] for row in rows), 60)
+            self.assertEqual(sum(row["gf"] for row in rows),
+                             sum(row["ga"] for row in rows))
+            for row in rows:
+                self.assertEqual(row["played"], 10)
+                self.assertEqual(row["played"], row["won"] + row["drawn"] + row["lost"])
+                self.assertEqual(row["points"], row["won"] * 3 + row["drawn"])
 
         academy = game.begin_next_season(career)
         self.assertEqual(career["season"], 2)
@@ -219,6 +234,52 @@ class CareerRules(unittest.TestCase):
         self.assertEqual(len(academy), len(content.CLUBS))
         self.assertTrue(all(pid in career["players"] for pid in academy))
         self.assertTrue(all(row["played"] == 0 for row in career["table"].values()))
+        promoted = season["movement"]["promoted"]
+        relegated = season["movement"]["relegated"]
+        self.assertTrue(all(career["clubs"][cid]["division"] == "sable" for cid in promoted))
+        self.assertTrue(all(career["clubs"][cid]["division"] == "tideway" for cid in relegated))
+        self.assertEqual(len(game.fixtures_for(career, "sable")), 10)
+        self.assertEqual(len(game.fixtures_for(career, "tideway")), 10)
+
+    def test_tideway_career_uses_its_own_table_and_can_win_promotion(self):
+        career = game.new_career("NQF", seed=318)
+        self.assertEqual(game.division_id(career), "tideway")
+        self.assertEqual({row[1] for row in game.table_rows(career)},
+                         {game.club_by_id(cid)["name"]
+                          for cid in game.division_clubs(career, "tideway")})
+
+        season = game.simulate_full_season(career)
+        lower_order = game._table_order(career, game.division_clubs(career, "tideway"))
+        self.assertEqual(season["movement"]["promoted"],
+                         lower_order[:content.PROMOTION_PLACES])
+        game.begin_next_season(career)
+        self.assertEqual(game.division_id(career), "sable"
+                         if "NQF" in season["movement"]["promoted"] else "tideway")
+        self.assertEqual(len(game.fixtures_for(career, "sable")), 10)
+        self.assertEqual(len(game.fixtures_for(career, "tideway")), 10)
+
+    def test_legacy_save_adds_tideway_without_resetting_existing_progress(self):
+        career = game.new_career("BRP", seed=72)
+        career["players"]["BRP-01"]["morale"] = 21
+        tideway_ids = set(content.DIVISION_BY_ID["tideway"]["initial_clubs"])
+        career["clubs"] = {cid: state for cid, state in career["clubs"].items()
+                            if cid not in tideway_ids}
+        career["table"] = {cid: row for cid, row in career["table"].items()
+                           if cid not in tideway_ids}
+        career["players"] = {pid: player for pid, player in career["players"].items()
+                              if player.get("club") not in tideway_ids}
+        career.pop("fixtures")
+
+        migrated = game.migrate_save({"version": 1, "career": career})
+        result = migrated["career"]
+        self.assertEqual(migrated["version"], 2)
+        self.assertEqual(result["version"], 2)
+        self.assertEqual(result["players"]["BRP-01"]["morale"], 21)
+        self.assertEqual(len(result["clubs"]), len(content.CLUBS))
+        self.assertEqual(len(result["table"]), len(content.CLUBS))
+        self.assertEqual(result["clubs"]["NQF"]["division"], "tideway")
+        self.assertEqual(result["players"]["NQF-01"]["club"], "NQF")
+        self.assertIn("tideway", result["fixtures"])
 
 
 if __name__ == "__main__":

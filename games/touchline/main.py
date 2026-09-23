@@ -23,7 +23,7 @@ else:
     import content
 
 
-SAVE_DEFAULTS = {"version": 1, "career": None}
+SAVE_DEFAULTS = {"version": 2, "career": None}
 POSITION_NAMES = {"GK": "Goalkeeper", "DEF": "Defender", "MID": "Midfielder",
                   "WNG": "Wide player", "FWD": "Forward"}
 ATTRIBUTE_NAMES = {
@@ -188,6 +188,7 @@ def new_career(club_id: str, seed: int = 1) -> dict[str, Any]:
         clubs[cid] = {
             "roster": roster,
             "lineup": [],
+            "division": club["division"],
             "tactics": default_tactics(cid),
             "training": {"focus": "Tactical", "intensity": "normal"},
             "finance": {"cash": int(club["budget"] * 5),
@@ -202,9 +203,10 @@ def new_career(club_id: str, seed: int = 1) -> dict[str, Any]:
             "wins": 0,
         }
     career = {
-        "version": 1, "seed": int(seed), "club_id": club_id,
+        "version": 2, "seed": int(seed), "club_id": club_id,
         "season": 1, "round": 0, "career_week": 0, "season_complete": False,
         "players": players, "clubs": clubs, "table": empty_table(),
+        "fixtures": copy.deepcopy(content.DIVISION_FIXTURES),
         "market": list(content.PROSPECT_IDS), "scouting": {},
         "played_ids": [], "results": [], "season_history": [],
         "news": [{"round": 0, "kind": "club", "text":
@@ -219,6 +221,48 @@ def new_career(club_id: str, seed: int = 1) -> dict[str, Any]:
 
 def club_by_id(club_id: str) -> dict[str, Any]:
     return next(club for club in content.CLUBS if club["id"] == club_id)
+
+
+def division_id(career: dict[str, Any], club_id: str | None = None) -> str:
+    """Return a club's current competition after any saved promotion movement."""
+    cid = club_id or career["club_id"]
+    return career["clubs"][cid].get("division", club_by_id(cid)["division"])
+
+
+def division_clubs(career: dict[str, Any], competition: str | None = None) -> list[str]:
+    target = competition or division_id(career)
+    return [club["id"] for club in content.CLUBS
+            if division_id(career, club["id"]) == target]
+
+
+def division_name(competition: str) -> str:
+    return content.DIVISION_BY_ID[competition]["name"]
+
+
+def fixtures_for(career: dict[str, Any], competition: str | None = None):
+    target = competition or division_id(career)
+    return career.get("fixtures", content.DIVISION_FIXTURES)[target]
+
+
+def generate_double_round_robin(club_ids: list[str]) -> list[list[tuple[str, str]]]:
+    """Rebuild a balanced calendar after clubs move between divisions."""
+    rotation: list[str | None] = list(club_ids)
+    if len(rotation) % 2:
+        rotation.append(None)
+    first_leg = []
+    for round_index in range(len(rotation) - 1):
+        fixtures = []
+        for pair_index in range(len(rotation) // 2):
+            home, away = rotation[pair_index], rotation[-pair_index - 1]
+            if home is None or away is None:
+                continue
+            if (round_index + pair_index) % 2:
+                home, away = away, home
+            fixtures.append((home, away))
+        first_leg.append(fixtures)
+        rotation = [rotation[0], rotation[-1], *rotation[1:-1]]
+    return first_leg + [[(away, home) for home, away in fixtures]
+                        for fixtures in first_leg]
 
 
 def player_by_id(career: dict[str, Any], player_id: str) -> dict[str, Any]:
@@ -863,8 +907,9 @@ def prepare_week(career: dict[str, Any]) -> list[dict[str, Any]]:
     return reports
 
 
-def _table_order(career: dict[str, Any]) -> list[str]:
-    return sorted(career["table"], key=lambda cid: (
+def _table_order(career: dict[str, Any], club_ids: list[str] | None = None) -> list[str]:
+    eligible = club_ids if club_ids is not None else division_clubs(career)
+    return sorted(eligible, key=lambda cid: (
         -career["table"][cid]["points"],
         -(career["table"][cid]["gf"] - career["table"][cid]["ga"]),
         -career["table"][cid]["gf"],
@@ -885,7 +930,7 @@ def table_rows(career: dict[str, Any]) -> list[list[str]]:
 def current_fixture(career: dict[str, Any]) -> tuple[str, str] | None:
     if career["round"] >= content.SEASON_ROUNDS:
         return None
-    for fixture in content.FIXTURES[career["round"]]:
+    for fixture in fixtures_for(career)[career["round"]]:
         if career["club_id"] in fixture:
             return fixture
     raise AssertionError(f"club {career['club_id']} has no fixture in round {career['round'] + 1}")
@@ -1073,6 +1118,7 @@ def apply_match_result(career: dict[str, Any], match: dict[str, Any]) -> bool:
                   "Won the Brineport–Glasswind derby")
     career["played_ids"].append(match["id"])
     career["results"].append({"id": match["id"], "season": career["season"],
+                              "division": division_id(career, home),
                               "round": match["round"] + 1, "home": home, "away": away,
                               "home_goals": hg, "away_goals": ag,
                               "stats": copy.deepcopy(match["stats"]),
@@ -1090,7 +1136,7 @@ def _match_seed(career: dict[str, Any], round_index: int,
 
 
 def complete_user_match(career: dict[str, Any], match: dict[str, Any]) -> list[dict[str, Any]]:
-    """Finish a round: store the managed match, simulate all other fixtures, advance."""
+    """Settle the user's match and every division's fixtures for this week."""
     if not match["finished"]:
         raise ValueError("finish the match before advancing the week")
     if int(match["round"]) != int(career["round"]):
@@ -1098,16 +1144,15 @@ def complete_user_match(career: dict[str, Any], match: dict[str, Any]) -> list[d
     if not apply_match_result(career, match):
         return []
     resolved = [match]
-    for home, away in content.FIXTURES[career["round"]]:
-        if home == match["home"] and away == match["away"]:
-            continue
-        if home == match["away"] and away == match["home"]:
-            continue
-        other = simulate_match(career, home, away,
-                               _match_seed(career, career["round"], home, away),
-                               career["round"])
-        apply_match_result(career, other)
-        resolved.append(other)
+    for division in content.DIVISIONS:
+        for home, away in fixtures_for(career, division["id"])[career["round"]]:
+            if {home, away} == {match["home"], match["away"]}:
+                continue
+            other = simulate_match(career, home, away,
+                                   _match_seed(career, career["round"], home, away),
+                                   career["round"])
+            apply_match_result(career, other)
+            resolved.append(other)
     career["round"] += 1
     career["career_week"] = int(career.get("career_week", 0)) + 1
     career["training_applied_round"] = -1
@@ -1127,11 +1172,23 @@ def complete_user_match(career: dict[str, Any], match: dict[str, Any]) -> list[d
 def finish_season(career: dict[str, Any]) -> dict[str, Any]:
     if career["season_complete"]:
         return career["season_history"][-1]
-    order = _table_order(career)
-    champion = order[0]
-    user_place = order.index(career["club_id"]) + 1
-    record = {"season": career["season"], "champion": champion,
-              "user_place": user_place, "table": copy.deepcopy(career["table"]),
+    orders = {division["id"]: _table_order(career, division_clubs(career, division["id"]))
+              for division in content.DIVISIONS}
+    champions = {comp: order[0] for comp, order in orders.items()}
+    user_division = division_id(career)
+    user_order = orders[user_division]
+    user_place = user_order.index(career["club_id"]) + 1
+    division_tables = {
+        comp: {cid: copy.deepcopy(career["table"][cid]) for cid in order}
+        for comp, order in orders.items()
+    }
+    promoted = orders["tideway"][:content.PROMOTION_PLACES]
+    relegated = orders["sable"][-content.PROMOTION_PLACES:]
+    record = {"season": career["season"], "champion": champions[user_division],
+              "champions": champions, "user_division": user_division,
+              "user_place": user_place, "table": division_tables[user_division],
+              "division_tables": division_tables,
+              "movement": {"promoted": promoted, "relegated": relegated},
               "goals_for": career["table"][career["club_id"]]["gf"],
               "goals_against": career["table"][career["club_id"]]["ga"]}
     career["season_history"].append(record)
@@ -1140,14 +1197,27 @@ def finish_season(career: dict[str, Any]) -> dict[str, Any]:
     finance = career["clubs"][career["club_id"]]["finance"]
     finance["cash"] += prize
     finance["transfer_budget"] += max(0, prize // 4)
+    ranks = {cid: rank for comp, order in orders.items()
+             for rank, cid in enumerate(order, start=1)}
     for cid, state in career["clubs"].items():
-        rank = order.index(cid) + 1
+        rank = ranks[cid]
         expected = state["expected_place"]
         state["board_confidence"] = int(clamp(state["board_confidence"]
                                                 + clamp(expected - rank, -3, 4) * 4, 0, 100))
     _news(career, content.NEWS_LINES["season_close"].format(
-        season=career["season"], champion=club_by_id(champion)["name"],
+        season=career["season"], champion=club_by_id(champions[user_division])["name"],
         place=ordinal(user_place)), "season")
+    for cid in promoted:
+        _news(career, content.NEWS_LINES["promoted"].format(
+            club=club_by_id(cid)["name"], place=ordinal(orders["tideway"].index(cid) + 1),
+            division=division_name("tideway")), "promotion")
+    if career["club_id"] in promoted:
+        ts.unlock("promotion", "Up the Coast",
+                  "Earned promotion from Tideway to the Sable Coast League")
+    for cid in relegated:
+        _news(career, content.NEWS_LINES["relegated"].format(
+            club=club_by_id(cid)["name"], place=ordinal(orders["sable"].index(cid) + 1),
+            division=division_name("sable")), "relegation")
     ts.unlock("season-finished", "Final Whistle",
               "Completed a full Sable Coast League season")
     return record
@@ -1194,6 +1264,15 @@ def begin_next_season(career: dict[str, Any]) -> list[str]:
     if not career["season_complete"]:
         raise ValueError("the current season is still in progress")
     season = int(career["season"]) + 1
+    movement = career["season_history"][-1].get("movement", {})
+    promoted = movement.get("promoted", [])
+    relegated = movement.get("relegated", [])
+    for cid in promoted:
+        career["clubs"][cid]["division"] = "sable"
+        career["clubs"][cid]["expected_place"] = max(3, int(career["clubs"][cid]["expected_place"]))
+    for cid in relegated:
+        career["clubs"][cid]["division"] = "tideway"
+        career["clubs"][cid]["expected_place"] = min(3, int(career["clubs"][cid]["expected_place"]))
     youth = []
     for club in content.CLUBS:
         cid = club["id"]
@@ -1209,16 +1288,27 @@ def begin_next_season(career: dict[str, Any]) -> list[str]:
     career["round"] = 0
     career["season_complete"] = False
     career["table"] = empty_table()
+    career["fixtures"] = {
+        division["id"]: generate_double_round_robin(
+            division_clubs(career, division["id"]))
+        for division in content.DIVISIONS
+    }
     career["played_ids"] = []
     career["training_applied_round"] = -1
     career["live_match"] = None
     _news(career, content.NEWS_LINES["season_open"].format(
         season=season, count=len(youth)), "academy")
+    for cid in promoted:
+        _news(career, f"{club_by_id(cid)['name']} begin Season {season} in {division_name('sable')}.",
+              "promotion")
+    for cid in relegated:
+        _news(career, f"{club_by_id(cid)['name']} begin Season {season} in {division_name('tideway')}.",
+              "relegation")
     return youth
 
 
 def simulate_full_season(career: dict[str, Any]) -> dict[str, Any]:
-    """Headless integration path used to verify all 30 fixtures and settlement."""
+    """Headless integration path used to verify both leagues' full calendars."""
     while career["round"] < content.SEASON_ROUNDS:
         prepare_week(career)
         fixture = current_fixture(career)
@@ -1400,9 +1490,10 @@ def migrate_save(data: dict[str, Any]) -> dict[str, Any]:
     """Keep an empty or older console save safe as the schema gains fields."""
     for key, value in SAVE_DEFAULTS.items():
         data.setdefault(key, copy.deepcopy(value))
-    data["version"] = 1
+    data["version"] = 2
     career = data.get("career")
     if isinstance(career, dict):
+        career["version"] = 2
         career.setdefault("season", 1)
         career.setdefault("round", 0)
         career.setdefault("career_week", max(0, (int(career["season"]) - 1)
@@ -1418,7 +1509,48 @@ def migrate_save(data: dict[str, Any]) -> dict[str, Any]:
         career.setdefault("training_applied_round", -1)
         career.setdefault("live_match", None)
         career.setdefault("manager_name", "You")
+        career.setdefault("clubs", {})
+        career.setdefault("players", {})
+        for player_id, seed in content.PLAYERS.items():
+            if seed.get("club") and player_id not in career["players"]:
+                career["players"][player_id] = make_player(seed)
         _ensure_player_ids(career)
+        for club in content.CLUBS:
+            cid = club["id"]
+            roster = [pid for pid, player in career["players"].items()
+                      if player.get("club") == cid]
+            state = career["clubs"].setdefault(cid, {
+                "roster": roster, "lineup": [], "division": club["division"],
+                "tactics": default_tactics(cid),
+                "training": {"focus": "Tactical", "intensity": "normal"},
+                "finance": {"cash": int(club["budget"] * 5),
+                            "transfer_budget": int(club["budget"]),
+                            "wage_budget": 36,
+                            "weekly_wages": sum(career["players"][pid]["wage"]
+                                                 for pid in roster)},
+                "board_confidence": 64, "supporter_mood": 63,
+                "attendance": content.CLUB_IDENTITY[cid]["attendance"],
+                "expected_place": content.CLUB_IDENTITY[cid]["expectation"],
+                "board_patience": content.CLUB_IDENTITY[cid]["patience"],
+                "wins": 0,
+            })
+            state.setdefault("roster", roster)
+            state.setdefault("lineup", [])
+            state.setdefault("division", club["division"])
+            state.setdefault("tactics", default_tactics(cid))
+            state.setdefault("training", {"focus": "Tactical", "intensity": "normal"})
+            state.setdefault("board_confidence", 64)
+            state.setdefault("supporter_mood", 63)
+            state.setdefault("attendance", content.CLUB_IDENTITY[cid]["attendance"])
+            state.setdefault("expected_place", content.CLUB_IDENTITY[cid]["expectation"])
+            state.setdefault("board_patience", content.CLUB_IDENTITY[cid]["patience"])
+            state.setdefault("wins", 0)
+            if not state["lineup"]:
+                state["lineup"] = best_lineup(career, cid, state["tactics"]["in_shape"])
+        career.setdefault("table", {})
+        for cid, zero in empty_table().items():
+            career["table"].setdefault(cid, zero)
+        career.setdefault("fixtures", copy.deepcopy(content.DIVISION_FIXTURES))
     return data
 
 
@@ -1433,7 +1565,7 @@ def _career_summary(career: dict[str, Any]) -> str:
 
 
 def _persist(save_data: dict[str, Any], career: dict[str, Any] | None) -> None:
-    save_data["version"] = 1
+    save_data["version"] = 2
     save_data["career"] = career
     save_data["_summary"] = _career_summary(career) if career else ""
     ts.save(save_data)
@@ -1471,18 +1603,19 @@ def _init_colors() -> None:
         pass
 
 
-def _restore_bezel_bottom_right(stdscr, screen) -> None:
-    """Put back the lower-right corner that curses cannot addnstr at the edge."""
-    if not getattr(screen, "framed", False):
+def _restore_bezel_bottom_right(_stdscr, screen) -> None:
+    """Keep cabinet edges visible after the game's inner window is refreshed."""
+    if not getattr(screen, "framed", False) or not sys.stdout.isatty():
         return
-    y = screen.oy + screen.cab_h - 1
-    x = screen.ox + screen.cab_w - 1
-    try:
-        stdscr.addch(y, x, "╝", curses.A_BOLD)
-    except curses.error:
-        # ncurses may report ERR after successfully queuing the lower-right cell.
-        pass
-    stdscr.noutrefresh()
+    right = screen.ox + screen.cab_w - 1
+    bottom = screen.oy + screen.cab_h - 1
+    out = []
+    for y in range(screen.oy + 3, bottom):
+        out.extend((f"\x1b[{y + 1};{screen.ox + 1}H║",
+                    f"\x1b[{y + 1};{right + 1}H║"))
+    out.append(f"\x1b[{bottom + 1};{right + 1}H╝")
+    sys.stdout.write("".join(out))
+    sys.stdout.flush()
 
 
 def _money(value: float | int) -> str:
@@ -1503,23 +1636,26 @@ def _team_result(stats: dict[str, Any], cid: str) -> str:
 def _draw_frame(win, career: dict[str, Any] | None, app: dict[str, Any]) -> ui.Rect:
     win.erase()
     height, width = win.getmaxyx()
+    # Leave the subwindow's last column unused: ncurses can keep a deferred
+    # wrap there, and a subsequent flush/replay may carry it into the bezel.
+    safe_width = max(1, width - 1)
     if career:
         club = club_by_id(career["club_id"])
         state = career["clubs"][career["club_id"]]
         when = (f"S{career['season']} END" if career["season_complete"]
                 else f"S{career['season']} · W{career['round'] + 1:02d}/{content.SEASON_ROUNDS:02d}")
-        header = (f"EKSE SLAAN BALL  /  {club['name']}  /  {when}  /  "
+        header = (f"EKSE SLAAN BALL  /  {club['name']} · {division_name(division_id(career))}  /  {when}  /  "
                   f"BOARD {state['board_confidence']}  /  {_money(state['finance']['transfer_budget'])} TRANSFER")
     else:
-        header = "EKSE SLAAN BALL  /  SABLE COAST FOOTBALL"
-    ui.draw_text(win, 0, 0, header, width, _pair(1, bold=True))
-    ui.draw_rule(win, 0, 1, width, "─", _pair(2))
-    body = ui.Rect(0, 2, width, max(1, height - 5))
+        header = "EKSE SLAAN BALL  /  SABLE COAST FOOTBALL PYRAMID"
+    ui.draw_text(win, 0, 0, header, safe_width, _pair(1, bold=True))
+    ui.draw_rule(win, 0, 1, safe_width, "─", _pair(2))
+    body = ui.Rect(0, 2, safe_width, max(1, height - 5))
     message_y = max(2, height - 3)
     footer_y = max(2, height - 2)
     msg = app.get("message", "")
     if msg:
-        ui.draw_text(win, 0, message_y, f"» {msg}", width, _pair(1))
+        ui.draw_text(win, 0, message_y, f"» {msg}", safe_width, _pair(1))
     page = app.get("page", "home")
     footer = "1 Home  2 Squad  3 Plan  4 Train  5 Market  6 Table  7 Logs  M Match  ? Help  Q Quit"
     if page == "match":
@@ -1536,7 +1672,7 @@ def _draw_frame(win, career: dict[str, Any] | None, app: dict[str, Any]) -> ui.R
         footer = "Any page: 1-7 jump  Tab next page  Esc return  Q quit"
     elif page == "offer":
         footer = "Left/Right fee ±£10k  Up/Down wage ±£0.1k  C accept counter  Enter submit  Esc cancel"
-    ui.draw_text(win, 0, footer_y, footer, width, _pair(2, bold=True))
+    ui.draw_text(win, 0, footer_y, footer, safe_width, _pair(2, bold=True))
     return body
 
 
@@ -1566,7 +1702,8 @@ def _draw_home(win, body: ui.Rect, career: dict[str, Any], app: dict[str, Any]) 
                      _pair(1, bold=True))
         place = _season_rank(career, career["club_id"])
         champion = club_by_id(_table_order(career)[0])["name"]
-        ui.draw_text(win, left.x, y + 1, f"You finish {ordinal(place)}. Champions: {champion}.",
+        ui.draw_text(win, left.x, y + 1,
+                     f"{division_name(division_id(career))}: {ordinal(place)} · {champion} win.",
                      left.width)
         ui.draw_text(win, left.x, y + 3, f"Record: {career['table'][career['club_id']]['won']}W "
                      f"{career['table'][career['club_id']]['drawn']}D "
@@ -1575,6 +1712,13 @@ def _draw_home(win, body: ui.Rect, career: dict[str, Any], app: dict[str, Any]) 
                      f"GA {career['table'][career['club_id']]['ga']}", left.width)
         ui.draw_text(win, left.x, y + 5, "Press Enter to begin the next season.", left.width,
                      _pair(3, bold=True))
+        movement = career["season_history"][-1].get("movement", {})
+        if career["club_id"] in movement.get("promoted", []):
+            ui.draw_text(win, left.x, y + 7, "PROMOTED · next season in Sable Coast League",
+                         left.width, _pair(3, bold=True))
+        elif career["club_id"] in movement.get("relegated", []):
+            ui.draw_text(win, left.x, y + 7, "RELEGATED · next season in Tideway Championship",
+                         left.width, _pair(4, bold=True))
     else:
         fixture = current_fixture(career)
         opponent_id = next(cid for cid in fixture if cid != career["club_id"]) if fixture else ""
@@ -1627,7 +1771,7 @@ def _draw_home(win, body: ui.Rect, career: dict[str, Any], app: dict[str, Any]) 
             ui.draw_text(win, left.x, y + 14, "M starts or resumes matchday.", left.width,
                          _pair(3, bold=True))
 
-    inner_right = _draw_panel_heading(win, right, "TABLE")
+    inner_right = _draw_panel_heading(win, right, division_name(division_id(career)).upper())
     concise = [[row[0], row[1], row[2], row[7], row[8]] for row in table_rows(career)]
     table = ui.TableView(["#", "Club", "P", "GD", "Pts"], concise)
     table.draw(win, ui.Rect(inner_right.x, inner_right.y,
@@ -1900,23 +2044,28 @@ def _draw_offer(win, body: ui.Rect, career: dict[str, Any], app: dict[str, Any])
 
 def _draw_table(win, body: ui.Rect, career: dict[str, Any], app: dict[str, Any]) -> None:
     table_rows_full = table_rows(career)
-    table_height = min(max(4, body.height - 5), len(table_rows_full) + 1)
+    ui.draw_text(win, body.x, body.y, division_name(division_id(career)).upper(),
+                 body.width, _pair(1, bold=True))
+    table_height = min(max(4, body.height - 7), len(table_rows_full) + 1)
     table = ui.TableView(["#", "Club", "P", "W", "D", "L", "GF:GA", "GD", "Pts"],
                          table_rows_full, selected=app.get("table_index", 0),
                          widths=[2, 23, 3, 3, 3, 3, 6, 4, 4])
-    table.draw(win, ui.Rect(body.x, body.y, body.width, table_height),
+    table.draw(win, ui.Rect(body.x, body.y + 1, body.width, table_height),
                selected_attr=_pair(3, bold=True), header_attr=_pair(1, bold=True))
-    y = body.y + table_height + 1
+    y = body.y + table_height + 2
     ui.draw_rule(win, body.x, y, body.width, "─", _pair(2))
     y += 1
     heading = "RECENT RESULTS" if career["season_complete"] else f"ROUND {career['round'] + 1} FIXTURES"
     ui.draw_text(win, body.x, y, heading, body.width, _pair(1, bold=True))
     y += 1
-    fixtures = [r for r in career["results"] if r["season"] == career["season"]]
+    current_division = division_id(career)
+    fixtures = [r for r in career["results"]
+                if r["season"] == career["season"]
+                and r.get("division", current_division) == current_division]
     fixtures = fixtures[-min(4, max(1, body.bottom - y - 1)):]
     if not career["season_complete"]:
         fixtures = []
-        for home, away in content.FIXTURES[career["round"]]:
+        for home, away in fixtures_for(career)[career["round"]]:
             home_result = next((r for r in career["results"] if r["id"] ==
                                 f"S{career['season']}-W{career['round'] + 1:02d}-{home}-{away}"), None)
             if home_result:
@@ -1933,7 +2082,7 @@ def _draw_table(win, body: ui.Rect, career: dict[str, Any], app: dict[str, Any])
         ui.draw_text(win, body.x, y, text, body.width,
                      _pair(3 if item.get("home") == career["club_id"] or item.get("away") == career["club_id"] else 6))
         y += 1
-    _draw_hint(win, body, "Table tiebreak: points, goal difference, goals scored, then club name")
+    _draw_hint(win, body, "Top two in Tideway rise; bottom two in Sable Coast drop after the season")
 
 
 def _draw_history(win, body: ui.Rect, career: dict[str, Any]) -> None:
@@ -2200,11 +2349,12 @@ def _draw_new_career(win, body: ui.Rect, app: dict[str, Any]) -> None:
     left, right = ui.split_horizontal(body, .56, 1)
     panel = _draw_panel_heading(win, left, "CHOOSE YOUR CLUB")
     description = _draw_panel_heading(win, right, "CLUB PROFILE")
-    rows = [[index + 1, club["name"], _money(club["budget"]),
+    rows = [[index + 1, club["name"],
+             "SBL" if club["division"] == "sable" else "TDW", _money(club["budget"]),
              ordinal(content.CLUB_IDENTITY[club["id"]]["expectation"])]
             for index, club in enumerate(clubs)]
-    view = ui.TableView(["#", "Club", "Fund", "Target"], rows,
-                        selected=app["club_index"], widths=[2, 21, 7, 7])
+    view = ui.TableView(["#", "Club", "Tier", "Fund", "Target"], rows,
+                        selected=app["club_index"], widths=[2, 17, 6, 7, 7])
     view.draw(win, ui.Rect(panel.x, panel.y, panel.width, panel.height),
               selected_attr=_pair(3, bold=True), header_attr=_pair(1, bold=True))
     app["club_index"] = view.selected
@@ -2213,10 +2363,11 @@ def _draw_new_career(win, body: ui.Rect, app: dict[str, Any]) -> None:
     identity = content.CLUB_IDENTITY[club["id"]]
     lines = [
         (club["name"], 1),
+        (division_name(club["division"]), 1),
         (club["ground"], 2),
         (club["style"], 0),
         (f"Manager: {manager['name']} · {manager['approach']}", 0),
-        (f"Board target: top {identity['expectation']}", 0),
+        (f"Board target: top {identity['expectation']} in this tier", 0),
         (f"Patience: {identity['patience']}/100", 0),
         (identity["supporter_style"], 5),
         (f"Transfer fund: {_money(club['budget'])}", 3),
@@ -2229,7 +2380,7 @@ def _draw_new_career(win, body: ui.Rect, app: dict[str, Any]) -> None:
         ui.draw_text(win, description.x, y, line, description.width,
                      _pair(pair, bold=pair == 1))
         y += 1
-    _draw_hint(win, body, "Six original clubs · arrows select · Enter starts a seeded career")
+    _draw_hint(win, body, "12 clubs · two tiers · arrows select · Enter starts a seeded career")
 
 
 def _handle_offer_key(key: int, career: dict[str, Any], app: dict[str, Any]) -> bool:
@@ -2455,7 +2606,8 @@ def _route_key(key: int, career: dict[str, Any] | None,
         if key in (curses.KEY_UP, ord("k")):
             app["table_index"] = max(0, int(app.get("table_index", 0)) - 1)
         elif key in (curses.KEY_DOWN, ord("j")):
-            app["table_index"] = min(5, int(app.get("table_index", 0)) + 1)
+            app["table_index"] = min(len(table_rows(career)) - 1,
+                                      int(app.get("table_index", 0)) + 1)
     elif page == "history" and career:
         if key in (curses.KEY_UP, ord("k")):
             app["history_index"] = max(0, int(app.get("history_index", 0)) - 1)
@@ -2471,7 +2623,7 @@ def _create_selected_career(save_data: dict[str, Any], app: dict[str, Any]) -> b
     seed = random.SystemRandom().randrange(1, 2_000_000_000)
     career = new_career(club_id, seed)
     save_data["career"] = career
-    save_data["version"] = 1
+    save_data["version"] = 2
     save_data["_summary"] = _career_summary(career)
     ts.save(save_data)
     app["career"] = career
@@ -2513,6 +2665,7 @@ def _run(stdscr) -> int:
         _draw_page(win, body, career, app)
         win.noutrefresh()
         curses.doupdate()
+        _restore_bezel_bottom_right(stdscr, screen)
         key = win.getch()
         if key == curses.KEY_RESIZE:
             win, screen = ts.tv_curses(stdscr, "Ekse Slaan Ball")

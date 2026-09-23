@@ -1,11 +1,12 @@
 [game]
 name = "Ekse Slaan Ball"
 slug = "touchline"
-version = "0.1.0"
+version = "0.2.0"
 author = "lazi"
 description = """
 Build a club's identity across tactics, people, recruitment and a living
-season. Read the match as a chain of decisions, then live with what it changes.
+two-tier season. Chase promotion, avoid the drop, and live with what each
+match changes.
 """
 tags = ["football", "management", "career", "tactics"]
 entry = ["{python}", "main.py"]
@@ -27,3 +28,8 @@ description = "Win the Brineport–Glasswind derby."
 key = "season-finished"
 title = "Final Whistle"
 description = "Complete a full league season."
+
+[[awards]]
+key = "promotion"
+title = "Up the Coast"
+description = "Earn promotion from Tideway to the Sable Coast League."

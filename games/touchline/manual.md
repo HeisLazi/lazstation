@@ -1,8 +1,9 @@
 # Ekse Slaan Ball
 
-You are the manager of one of six original Sable Coast clubs. A career runs
-through ten home-and-away league rounds, then rolls into a new season with
-player development, contracts, finances and academy arrivals carried forward.
+You are the manager of one of twelve original clubs across the Sable Coast
+League and Tideway Championship. Each tier plays ten home-and-away rounds;
+both competitions settle each week, then two clubs rise and two fall at the
+season break. Players, contracts, finances and academy arrivals carry forward.
 
 ## The desk
 
@@ -80,8 +81,8 @@ chances. The opposing manager can adapt to the score late in the match.
 | `Q` | Quick-sim the remaining periods with the same match engine |
 | `Esc` | Pause and return to Home; `M` resumes |
 
-At full time, press Enter again to update all three fixtures, the table,
-finances, player form, morale, trust and injury outlook for the round.
+At full time, press Enter again to update all six fixtures across both tiers,
+the tables, finances, player form, morale, trust and injury outlook for the round.
 
 ## Recruitment
 
@@ -95,11 +96,13 @@ or sold later.
 
 ## League and career
 
-The table sorts by points, goal difference, goals scored, then club name. The
-current proof league has six clubs and ten rounds; each opponent is met home
-and away. Complete the final round, review the season, then press Enter on Home
-to begin the next one. Players age, deals run down, and every club receives a
-new academy prospect. The same clubs and competition continue across seasons.
+The table shows your current division and sorts by points, goal difference,
+goals scored, then club name. The two leagues each have six clubs and ten
+rounds; every opponent is met home and away. The top two in Tideway are
+promoted and the bottom two in Sable Coast are relegated. Complete the final
+round, review the movement, then press Enter on Home to begin the next season.
+Players age, deals run down, and every club receives a new academy prospect.
+Club membership and the fixtures adapt to promotion and relegation.
 
 The career autosaves in the console's selected save slot. Quit with `Q` at a
 desk page; an active match can be resumed from Home.
