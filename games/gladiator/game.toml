@@ -1,0 +1,15 @@
+[game]
+name = "Gladiator"
+slug = "gladiator"
+version = "1.0.0"
+author = "lazi"
+description = """
+Sand, steel and the roar of the crowd.
+
+Full-screen arena combat. Manage stamina, read your opponent's
+stance, and work the crowd — win their favour and survive a
+killing blow. Ten opponents stand between you and the wooden sword."""
+tags = ["combat", "roguelike", "curses"]
+entry = ["{python}", "main.py"]
+min_cols = 70
+min_rows = 20

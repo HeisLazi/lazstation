@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# LAZSTATION 2 — boot the console.
+#
+#   lazstation            open the console
+#   lazstation play <slug>  launch a game straight away
+#   lazstation new <name>   scaffold a new game
+#   lazstation list         list installed games
+set -euo pipefail
+
+# Resolve through symlinks so this works from anywhere on PATH.
+SOURCE="${BASH_SOURCE[0]}"
+while [ -L "$SOURCE" ]; do
+  DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
+  SOURCE="$(readlink "$SOURCE")"
+  [[ $SOURCE != /* ]] && SOURCE="$DIR/$SOURCE"
+done
+ROOT="$(cd -P "$(dirname "$SOURCE")/.." && pwd)"
+
+PY="${LAZSTATION_PYTHON:-python3}"
+if ! command -v "$PY" >/dev/null 2>&1; then
+  echo "lazstation: python3 not found on PATH" >&2
+  exit 1
+fi
+
+cd "$ROOT"
+exec "$PY" -m termstation "$@"

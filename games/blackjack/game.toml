@@ -1,0 +1,14 @@
+[game]
+name = "Blackjack"
+slug = "blackjack"
+version = "1.0.0"
+author = "lazi"
+description = """
+The house rules, six decks, dealer stands on soft 17.
+
+Split, double down and buy insurance. Your chips persist between
+sessions and are shared with every other game on the station."""
+tags = ["cards", "casino", "quick"]
+entry = ["{python}", "main.py"]
+min_cols = 60
+min_rows = 20
