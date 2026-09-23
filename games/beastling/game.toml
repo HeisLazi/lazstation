@@ -1,0 +1,15 @@
+[game]
+name = "Beastling"
+slug = "beastling"
+version = "1.0.0"
+author = "lazi"
+description = """
+Catch, raise and battle creatures in the Hollow Vale.
+
+Twenty species across six types, levelling and evolution,
+lures and a field journal, six routes and five champions
+who keep the roads."""
+tags = ["rpg", "creatures", "turn-based"]
+entry = ["{python}", "main.py"]
+min_cols = 66
+min_rows = 20

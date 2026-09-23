@@ -351,6 +351,36 @@ def _visible_len(text: str) -> int:
     return out
 
 
+def _clip(text: str, width: int) -> str:
+    """Cut to `width` visible columns, keeping colour codes intact.
+
+    Counting escape bytes as if they were part of the budget (or not) both go
+    wrong: the only reliable way is to walk the string and stop once enough
+    printable columns have been emitted.
+    """
+    out, seen, i = [], 0, 0
+    while i < len(text):
+        if text[i] == "\x1b":
+            j = text.find("m", i)
+            if j == -1:
+                break
+            out.append(text[i:j + 1])
+            i = j + 1
+            continue
+        if seen >= width:
+            # Keep any trailing resets so colour does not leak onward.
+            rest = text[i:]
+            out.append("".join(
+                rest[k:rest.find("m", k) + 1]
+                for k in range(len(rest)) if rest[k] == "\x1b"))
+            break
+        out.append(text[i])
+        seen += 1
+        i += 1
+    result = "".join(out)
+    return result if result.endswith(RESET) or "\x1b" not in result else result + RESET
+
+
 def tv_print(*parts: object, sep: str = " ") -> None:
     """print() that stays inside the picture tube.
 
@@ -367,7 +397,7 @@ def tv_print(*parts: object, sep: str = " ") -> None:
             tv_pause()
             tv_clear()
         if _visible_len(line) > _tv_state["stage"]:
-            line = line[: _tv_state["stage"] + (len(line) - _visible_len(line))]
+            line = _clip(line, _tv_state["stage"])
         if _tty():
             col = screen.x + _tv_state["indent"] + 1
             sys.stdout.write(
