@@ -18,6 +18,30 @@ CHART = {
     "Gloom": {"Bloom": 2.0, "Spark": 2.0, "Ember": 0.5, "Stone": 0.5},
 }
 
+# ------------------------------------------------------------- abilities
+# One passive per type (not per species) -- keeps the system honest about
+# its own scope: six real hooks into combat, not twenty bespoke ones.
+# Each is always-on and known (no hidden-ability bluffing here -- that
+# needs per-species, not per-type, abilities to mean anything, which is
+# real added scope, not this pass).
+TYPE_ABILITY = {
+    "Ember": "Tinder",
+    "Tide": "Riptide",
+    "Bloom": "Thick Hide",
+    "Stone": "Unshaken",
+    "Spark": "Static Charge",
+    "Gloom": "Vengeful",
+}
+
+ABILITY_DESC = {
+    "Tinder": "On a landed hit, a small chance to also burn the target.",
+    "Riptide": "Never burns.",
+    "Thick Hide": "Takes less damage from a super-effective hit.",
+    "Unshaken": "Its own stats can't be lowered by a foe's move.",
+    "Static Charge": "A small chance to paralyze whatever hits it.",
+    "Vengeful": "The first time it drops below a quarter HP, its Atk rises.",
+}
+
 # ---------------------------------------------------------------- moves
 # name: dict(type, power, accuracy, desc, priority, effect)
 #

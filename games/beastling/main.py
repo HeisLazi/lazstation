@@ -13,7 +13,8 @@ import random
 import sys
 
 import termstation_sdk as ts
-from beasts import CHAMPIONS, CHART, MOVES, ROUTES, SPECIES, STARTERS
+from beasts import (ABILITY_DESC, CHAMPIONS, CHART, MOVES, ROUTES, SPECIES, STARTERS,
+                    TYPE_ABILITY)
 
 PAGE = 19          # rows a battle screen uses, for vertical centring
 PARTY_MAX = 6
@@ -40,10 +41,12 @@ class Beast:
         self.atk_stage = 0
         self.def_stage = 0
         self.spd_stage = 0
+        self.vengeful_used = False           # Vengeful triggers once per battle
 
     def reset_combat_state(self) -> None:
         self.status = None
         self.atk_stage = self.def_stage = self.spd_stage = 0
+        self.vengeful_used = False
 
     @staticmethod
     def _stage_mult(stage: int) -> float:
@@ -79,6 +82,10 @@ class Beast:
     @property
     def type(self) -> str:
         return self.base["type"]
+
+    @property
+    def ability(self) -> str:
+        return TYPE_ABILITY[self.type]
 
     # --- stats: flat growth, so a level-20 beast is roughly twice a level-5 one
     def _stat(self, key: str, scale: float) -> int:
@@ -185,8 +192,10 @@ def damage(attacker: Beast, defender: Beast, move: str) -> tuple[int, float, boo
     # equal levels should take about five exchanges, so a super-effective
     # choice (two or three) is a real decision rather than a rounding error.
     base = ((2 * attacker.level / 5 + 2) * power * attacker.eff_atk / max(1, defender.eff_def)) / 26
-    dealt = int((base + 2) * mult * (CRIT_MULT if crit else 1.0) * random.uniform(0.85, 1.0))
-    return max(1, dealt), mult, True, crit
+    dealt = (base + 2) * mult * (CRIT_MULT if crit else 1.0) * random.uniform(0.85, 1.0)
+    if defender.ability == "Thick Hide" and mult >= 2.0:
+        dealt *= 0.75
+    return max(1, int(dealt)), mult, True, crit
 
 
 STAGE_NAME = {"atk": "Atk", "def": "Def", "spd": "Spd"}
@@ -202,12 +211,16 @@ def apply_move_effect(attacker: Beast, defender: Beast, move: str) -> list[str]:
         _, status, _ = effect
         if defender.status is not None or not defender.alive:
             return []
+        if status == "burn" and defender.ability == "Riptide":
+            return [f"  {defender.name}'s Riptide keeps it from burning!"]
         defender.status = status
         verb = "is burned!" if status == "burn" else "is paralyzed!"
         return [f"  {defender.name} {verb}"]
     # ("stage", stat, delta, target, chance)
     _, stat, delta, target, _ = effect
     who = attacker if target == "self" else defender
+    if who is defender and delta < 0 and who.ability == "Unshaken":
+        return [f"  {who.name}'s Unshaken holds its stats steady!"]
     field = f"{stat}_stage"
     before = getattr(who, field)
     after = max(-3, min(3, before + delta))
@@ -216,6 +229,40 @@ def apply_move_effect(attacker: Beast, defender: Beast, move: str) -> list[str]:
         return []
     word = "rose" if after > before else "fell"
     return [f"  {who.name}'s {STAGE_NAME[stat]} {word}!"]
+
+
+TINDER_CHANCE = 0.12
+STATIC_CHARGE_CHANCE = 0.15
+
+
+def apply_ability_on_hit(attacker: Beast, defender: Beast) -> list[str]:
+    """Hooks that fire after ANY successful, damaging hit -- independent of
+    the move's own `effect`, since abilities are a property of the beast,
+    not the move. Tinder (attacker's) and Static Charge (defender's) can
+    both fire off the same hit; order is attacker-first, matching who
+    acted."""
+    lines: list[str] = []
+    if (attacker.ability == "Tinder" and defender.status is None and defender.alive
+            and defender.ability != "Riptide" and random.random() < TINDER_CHANCE):
+        defender.status = "burn"
+        lines.append(f"  {attacker.name}'s Tinder catches {defender.name} alight!")
+    if (defender.ability == "Static Charge" and defender.alive and attacker.status is None
+            and random.random() < STATIC_CHARGE_CHANCE):
+        attacker.status = "paralyze"
+        lines.append(f"  {defender.name}'s Static Charge locks up {attacker.name}!")
+    return lines
+
+
+def check_vengeful(beast: Beast) -> list[str]:
+    """Once per battle, the instant a Vengeful beast drops below a quarter
+    HP, its Atk rises -- checked right after any damage that could have
+    crossed the threshold, not on a timer."""
+    if (beast.ability == "Vengeful" and not beast.vengeful_used and beast.alive
+            and beast.hp <= beast.max_hp * 0.25):
+        beast.vengeful_used = True
+        beast.atk_stage = max(-3, min(3, beast.atk_stage + 1))
+        return [f"  {beast.name}'s Vengeful flares -- its Atk rose!"]
+    return []
 
 
 def resolve_status_upkeep(beast: Beast) -> list[str]:
@@ -227,7 +274,10 @@ def resolve_status_upkeep(beast: Beast) -> list[str]:
         line = f"  {beast.name} is hurt by its burn. ({dot} HP)"
         if not beast.alive:
             line += f" {beast.name} is out of the fight!"
-        return [line]
+        lines = [line]
+        if beast.alive:
+            lines.extend(check_vengeful(beast))  # burn can cross the threshold too
+        return lines
     return []
 
 
@@ -281,7 +331,8 @@ def beast_line(b: Beast, wild: bool = False) -> list[str]:
         word, colour = STATUS_TAG[b.status]
         status = "  " + ts.color(word, colour)
     return [
-        f"{head}{lv.rjust(max(1, 44 - len(head)))}  {ts.color(b.type, 'cyan')}",
+        f"{head}{lv.rjust(max(1, 44 - len(head)))}  {ts.color(b.type, 'cyan')}"
+        f" {ts.color('· ' + b.ability, 'grey')}",
         f"   HP [{bar(b.hp, b.max_hp)}] {b.hp}/{b.max_hp}{status}{ts.color(stages, 'grey')}",
     ]
 
@@ -465,6 +516,8 @@ class Game:
                     note = ("A critical hit! " + note).strip()
                 log.append(f"{attacker.name} used {move}. {note}".strip())
                 log.append(f"  {defender.name} lost {dealt} HP.")
+                log.extend(apply_ability_on_hit(attacker, defender))
+                log.extend(check_vengeful(defender))
                 if not defender.alive:
                     log.append(f"{defender.name} is out of the fight!")
                     break
@@ -657,6 +710,8 @@ class Game:
                         "",
                         f"  HP {b.max_hp}   ATK {b.atk}   DEF {b.dfn}   SPD {b.spd}",
                         f"  XP {b.xp}/{b.xp_needed()} to the next level",
+                        "",
+                        f"  Ability: {b.ability} -- {ABILITY_DESC[b.ability]}",
                         "",
                         f"  Moves: {', '.join(b.moves)}",
                     ]))
