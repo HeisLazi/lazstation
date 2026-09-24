@@ -66,7 +66,9 @@ class Beast:
         # --- transient combat state: never saved (see to_dict/from_dict),
         # always reset at the top of `Game.battle` and again on send-out,
         # so nothing leaks between encounters or between party members.
-        self.status: str | None = None       # None | "burn" | "paralyze"
+        self.status: str | None = None       # None|"burn"|"paralyze"|"sleep"|"confused"
+        self.status_turns = 0                # sleep/confused duration; burn/paralyze
+                                              # ignore this, they last the whole battle
         self.atk_stage = 0
         self.def_stage = 0
         self.spd_stage = 0
@@ -75,6 +77,7 @@ class Beast:
 
     def reset_combat_state(self) -> None:
         self.status = None
+        self.status_turns = 0
         self.atk_stage = self.def_stage = self.spd_stage = 0
         self.vengeful_used = False
         self.item_used = False
@@ -254,6 +257,17 @@ def status_immune(beast: Beast, status: str) -> bool:
     return status == "burn" and beast.ability == "Riptide"
 
 
+#: sleep/confused wear off after a random number of turns; burn/paralyze
+#: don't use this at all (they last the whole battle, until cured).
+STATUS_DURATION = {"sleep": (1, 3), "confused": (2, 4)}
+STATUS_VERB = {
+    "burn": "is burned!",
+    "paralyze": "is paralyzed!",
+    "sleep": "falls asleep!",
+    "confused": "becomes confused!",
+}
+
+
 def apply_move_effect(attacker: Beast, defender: Beast, move: str) -> list[str]:
     """Rolls and applies a move's secondary effect, if it has one and the
     roll succeeds. Returns log lines, empty if nothing happened."""
@@ -267,8 +281,10 @@ def apply_move_effect(attacker: Beast, defender: Beast, move: str) -> list[str]:
         if status_immune(defender, status):
             return [f"  {defender.name}'s Riptide keeps it from burning!"]
         defender.status = status
-        verb = "is burned!" if status == "burn" else "is paralyzed!"
-        return [f"  {defender.name} {verb}"]
+        if status in STATUS_DURATION:
+            lo, hi = STATUS_DURATION[status]
+            defender.status_turns = random.randint(lo, hi)
+        return [f"  {defender.name} {STATUS_VERB[status]}"]
     # ("stage", stat, delta, target, chance)
     _, stat, delta, target, _ = effect
     who = attacker if target == "self" else defender
@@ -356,11 +372,39 @@ def resolve_status_upkeep(beast: Beast) -> list[str]:
     return []
 
 
-def may_act(beast: Beast) -> bool:
-    """Paralysis has a real chance to no-sell a turn entirely."""
+CONFUSION_SELF_HIT_CHANCE = 0.33
+
+
+def may_act(beast: Beast) -> tuple[bool, list[str]]:
+    """Returns (can_act, log_lines). Three status ailments gate action,
+    each differently: paralysis has a real chance to no-sell a turn
+    entirely (unchanged from before); sleep guarantees no action for a
+    random 1-3 turns, then wakes on its own (waking doesn't cost the
+    turn -- a beast that wakes up this turn still acts); confusion is
+    the odd one out -- it doesn't block the CHOSEN move, it sometimes
+    replaces it with a typeless self-hit instead, wearing off after a
+    random 2-4 turns regardless of whether it triggered that turn."""
+    if beast.status == "sleep":
+        beast.status_turns -= 1
+        if beast.status_turns <= 0:
+            beast.status = None
+            return True, [f"  {beast.name} wakes up!"]
+        return False, [f"{beast.name} is fast asleep."]
     if beast.status == "paralyze" and random.random() < 0.25:
-        return False
-    return True
+        return False, [f"{beast.name} is fully paralyzed! It can't move!"]
+    if beast.status == "confused":
+        beast.status_turns -= 1
+        if beast.status_turns <= 0:
+            beast.status = None
+            return True, [f"  {beast.name} snaps out of its confusion!"]
+        if random.random() < CONFUSION_SELF_HIT_CHANCE:
+            dot = max(1, beast.max_hp // 8)
+            beast.hp = max(0, beast.hp - dot)
+            lines = [f"{beast.name} is confused! It hurt itself. ({dot} HP)"]
+            if not beast.alive:
+                lines.append(f"{beast.name} is out of the fight!")
+            return False, lines
+    return True, []
 
 
 def choose_ai_move(attacker: Beast, defender: Beast) -> str:
@@ -392,7 +436,12 @@ def bar(value: int, maximum: int, width: int = BAR_W) -> str:
     return (ts.color("█" * filled, colour) + ts.color("░" * (width - filled), "grey"))
 
 
-STATUS_TAG = {"burn": ("BRN", "bright_red"), "paralyze": ("PAR", "bright_yellow")}
+STATUS_TAG = {
+    "burn": ("BRN", "bright_red"),
+    "paralyze": ("PAR", "bright_yellow"),
+    "sleep": ("SLP", "bright_blue"),
+    "confused": ("CNF", "bright_magenta"),
+}
 
 
 def beast_line(b: Beast, wild: bool = False) -> list[str]:
@@ -632,8 +681,9 @@ class Game:
             for who, attacker, defender, move in order:
                 if not attacker.alive or not defender.alive:
                     continue
-                if not may_act(attacker):
-                    log.append(f"{attacker.name} is fully paralyzed! It can't move!")
+                can_act, status_lines = may_act(attacker)
+                log.extend(status_lines)
+                if not can_act:
                     continue
                 dealt, mult, hit, crit = damage(attacker, defender, move, weather)
                 if not hit:
