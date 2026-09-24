@@ -1,8 +1,9 @@
 # Touchline baseline
 
 **Snapshot date:** 24 September 2026. **Evidence class:** source/workspace
-inspection plus one benchmark run for matches and seasons. Presentation and
-unit-test evidence remain pending.
+inspection, benchmark and fixture runs, unit tests, PTY captures and an
+isolated doctor run. The 80x24 VT replay has a recorded rendering limitation;
+it is not treated as evidence of a physical-terminal defect.
 
 ## Snapshot
 
@@ -65,13 +66,27 @@ checks passed, including reloading the written files. The manifest reports:
 `manifest.json` records generator/engine/save versions, seed, lifecycle and
 SHA-256 hashes. The fixtures remain in `/tmp` and are not repository assets.
 
-## Runtime evidence still required
+## P00 runtime evidence
 
-The existing unit test, 80x24 and 110x30 PTY season scenarios, and isolated
-`python3 -m termstation doctor` have not been run in this pass. The planning
-commands are in `LUNA_HANDOFF.md`; their presence there is not evidence that
-they pass. No screen frames have been captured or reviewed. P00 remains
-incomplete until these checks and their limitations are recorded here and in
+The legacy unit suite ran in an isolated save/XDG environment:
+`python3 -m unittest games.touchline.test_game` exited 0 (13 tests, 1.496 s).
+
+The full `season_scenario.json` ran under PTY at both required sizes, using
+separate temporary save directories. Both exited 0 and the `home`, `tactics`,
+`match-01`, `round-01` and `season-review` frames were inspected:
+
+| Size | Result | Inspection |
+|---|---|---|
+| 80x24 | Exit 0; complete season reached review. | Replay has a few stray `ss`, `i` and `es` fragments near the right edge and some joined match-feed text. The outer border is mostly drawn. This is recorded as a narrow-width VT replay limitation, not a verified physical-terminal rendering defect. |
+| 110x30 | Exit 0; complete season reached review. | Layout, border and text were clean/readable in the inspected frames. |
+
+The isolated `python3 -m termstation doctor` exited 0 and found eight games;
+all manifests, including Touchline and Gladiator, were accepted. This verifies
+manifest discovery only, not simulation correctness.
+
+Artifacts were kept outside the repository under `/tmp/touchline-p00-checks.eZPrzx/`
+(`pty80`, `pty110`; isolated doctor directories) and are not game assets. The
+exact commands and package-level acceptance state are recorded in
 `STATUS.md`.
 
 The P00 benchmark measures seeded unsettled matches or completed seasons
