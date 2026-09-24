@@ -90,12 +90,14 @@ ITEMS = {
     "Power Band": {"desc": "Deals 20% more damage.", "dmg_dealt": 1.20},
     "Guard Charm": {"desc": "Takes 20% less damage.", "dmg_taken": 0.80},
     "Quick Charm": {"desc": "20% faster.", "speed": 1.20},
-    # Kept to ~56 chars -- a reviewed regression: the original wording
-    # (83 chars) exceeded the read-about panel's real inner width at the
-    # game's declared minimum terminal size and got silently truncated by
-    # ts.box(), the exact bug class this project keeps re-finding.
-    "Mending Berry": {"desc": "Once per battle, heals 20% HP at a "
-                              "quarter HP or less.",
+    # Kept short -- a reviewed regression, twice over: the original wording
+    # (83 chars) overflowed the read-about panel's ts.box() at the game's
+    # declared minimum terminal size, and a since-shortened 54-char version
+    # still overflowed equip_menu()'s OWN listing (a separate tv_print/_clip
+    # render path with a tighter budget than the box -- "   [N] <name>  -- "
+    # eats space too). Verified headlessly against the real stage width (62
+    # cols at 66x24) in both render paths before landing on this wording.
+    "Mending Berry": {"desc": "Heals 20% once, at 25% HP or less.",
                        "heal_threshold": 0.25, "heal_amount": 0.20},
 }
 

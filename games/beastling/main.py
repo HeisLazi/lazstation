@@ -944,6 +944,14 @@ class Game:
         ts.tv_pause()
         self.store()
 
+    #: A box menu with everything on one page hit the dangerous silent
+    #: `_seat_cursor` wipe (not tv_print's safe pause-and-continue) at
+    #: ordinary sizes -- 12-13 caught beasts, not just some extreme --
+    #: verified headlessly against the real row count at the game's
+    #: declared minimum. Paginating keeps every page's own row count
+    #: well under that threshold regardless of how large the box grows.
+    BOX_PAGE = 8
+
     def box_screen(self) -> None:
         if not self.box:
             self.header("The box")
@@ -952,20 +960,45 @@ class Game:
             ts.tv_print()
             ts.tv_pause()
             return
+        page = 0
         while True:
+            pages = max(1, -(-len(self.box) // self.BOX_PAGE))
+            page = max(0, min(page, pages - 1))
+            start = page * self.BOX_PAGE
+            chunk = self.box[start:start + self.BOX_PAGE]
             self.header("The box")
             ts.tv_print()
-            names = [f"{b.name}  Lv {b.level}  {b.type}" for b in self.box]
-            pick = ts.menu("Bring one into your team", names, back="Back")
+            if pages > 1:
+                ts.tv_print(f"  Page {page + 1}/{pages}")
+                ts.tv_print()
+            names = [f"{b.name}  Lv {b.level}  {b.type}" for b in chunk]
+            options = list(names)
+            has_next = pages > 1 and page < pages - 1
+            has_prev = pages > 1 and page > 0
+            if has_next:
+                options.append("Next page")
+            if has_prev:
+                options.append("Previous page")
+            pick = ts.menu("Bring one into your team", options, back="Back")
             if pick == -1:
                 return
-            if len(self.party) >= PARTY_MAX:
-                ts.tv_print(ts.color("  Your team is full — send one back first.",
-                                     "bright_red"))
-                ts.tv_pause()
+            if pick < len(names):
+                if len(self.party) >= PARTY_MAX:
+                    ts.tv_print(ts.color("  Your team is full — send one back first.",
+                                         "bright_red"))
+                    ts.tv_pause()
+                    continue
+                self.party.append(self.box.pop(start + pick))
+                self.store()
                 continue
-            self.party.append(self.box.pop(pick))
-            self.store()
+            pick -= len(names)
+            if has_next and pick == 0:
+                page += 1
+                continue
+            if has_next:
+                pick -= 1
+            if has_prev and pick == 0:
+                page -= 1
 
     def shop(self) -> None:
         while True:
