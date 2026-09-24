@@ -19,27 +19,50 @@ CHART = {
 }
 
 # ---------------------------------------------------------------- moves
-# name: (type, power, accuracy, description)
+# name: dict(type, power, accuracy, desc, priority, effect)
+#
+# `priority`: +1 moves resolve before normal-priority moves regardless of
+# speed -- a real answer to "the enemy is faster and about to finish me."
+#
+# `effect`: optional secondary effect, rolled independently of the accuracy
+# check and only if the move actually hits. One of:
+#   ("status", "burn"|"paralyze", chance)
+#   ("stage", "atk"|"def"|"spd", delta, "self"|"foe", chance)
+# Exactly one flagship move per type carries a stat-stage effect and Ember/
+# Spark each get a dedicated status-inflicting move, so every type has a
+# distinct non-damage identity without touching every move in the list.
+def _move(m_type, power, accuracy, desc, priority=0, effect=None):
+    return dict(type=m_type, power=power, accuracy=accuracy, desc=desc,
+                priority=priority, effect=effect)
+
+
 MOVES = {
-    "Tackle":      ("Stone", 35, 95, "a plain running hit"),
-    "Scratch":     ("Stone", 30, 100, "quick claws"),
-    "Cinder Spit": ("Ember", 40, 95, "a gob of hot ash"),
-    "Flare Rush":  ("Ember", 65, 85, "charges wreathed in flame"),
-    "Magma Slam":  ("Ember", 85, 75, "brings down molten weight"),
-    "Bubble":      ("Tide", 38, 100, "a stream of stinging bubbles"),
-    "Tide Pull":   ("Tide", 62, 90, "drags the foe off balance"),
-    "Deluge":      ("Tide", 88, 75, "a wall of black water"),
-    "Vine Whip":   ("Bloom", 40, 95, "a quick lash"),
-    "Seed Volley": ("Bloom", 60, 90, "a spray of hard seeds"),
-    "Bramblewall": ("Bloom", 85, 75, "thorns burst from the ground"),
-    "Rock Toss":   ("Stone", 45, 90, "hurls a loose stone"),
-    "Cragfall":    ("Stone", 70, 80, "drops a slab"),
-    "Spark Nip":   ("Spark", 42, 100, "a stinging jolt"),
-    "Arc Bolt":    ("Spark", 68, 85, "a leaping arc of current"),
-    "Thunderhead": ("Spark", 90, 70, "calls down the storm"),
-    "Shadow Nip":  ("Gloom", 40, 100, "a bite out of the dark"),
-    "Duskwave":    ("Gloom", 66, 88, "a rolling wave of shade"),
-    "Night Terror":("Gloom", 92, 70, "the dark itself lunges"),
+    "Tackle":      _move("Stone", 35, 95, "a plain running hit"),
+    "Scratch":     _move("Stone", 30, 100, "quick claws", priority=1),
+    "Cinder Spit": _move("Ember", 40, 95, "a gob of hot ash",
+                         effect=("status", "burn", 0.20)),
+    "Flare Rush":  _move("Ember", 65, 85, "charges wreathed in flame"),
+    "Magma Slam":  _move("Ember", 85, 75, "brings down molten weight",
+                         effect=("stage", "def", -1, "foe", 0.30)),
+    "Bubble":      _move("Tide", 38, 100, "a stream of stinging bubbles"),
+    "Tide Pull":   _move("Tide", 62, 90, "drags the foe off balance"),
+    "Deluge":      _move("Tide", 88, 75, "a wall of black water",
+                         effect=("stage", "spd", -1, "foe", 0.30)),
+    "Vine Whip":   _move("Bloom", 40, 95, "a quick lash"),
+    "Seed Volley": _move("Bloom", 60, 90, "a spray of hard seeds"),
+    "Bramblewall": _move("Bloom", 85, 75, "thorns burst from the ground",
+                         effect=("stage", "def", 1, "self", 0.30)),
+    "Rock Toss":   _move("Stone", 45, 90, "hurls a loose stone"),
+    "Cragfall":    _move("Stone", 70, 80, "drops a slab",
+                         effect=("stage", "def", 1, "self", 0.30)),
+    "Spark Nip":   _move("Spark", 42, 100, "a stinging jolt", priority=1),
+    "Arc Bolt":    _move("Spark", 68, 85, "a leaping arc of current"),
+    "Thunderhead": _move("Spark", 90, 70, "calls down the storm",
+                         effect=("status", "paralyze", 0.30)),
+    "Shadow Nip":  _move("Gloom", 40, 100, "a bite out of the dark", priority=1),
+    "Duskwave":    _move("Gloom", 66, 88, "a rolling wave of shade"),
+    "Night Terror":_move("Gloom", 92, 70, "the dark itself lunges",
+                         effect=("stage", "atk", -1, "foe", 0.30)),
 }
 
 # ---------------------------------------------------------------- species

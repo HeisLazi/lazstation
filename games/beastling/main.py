@@ -14,6 +14,7 @@ import sys
 
 import termstation_sdk as ts
 from beasts import CHAMPIONS, CHART, MOVES, ROUTES, SPECIES, STARTERS
+from tournament import generate_bracket
 
 PAGE = 19          # rows a battle screen uses, for vertical centring
 PARTY_MAX = 6
@@ -33,6 +34,39 @@ class Beast:
         self.xp = 0
         self.moves = self._known_moves()
         self.hp = self.max_hp
+        # --- transient combat state: never saved (see to_dict/from_dict),
+        # always reset at the top of `Game.battle` and again on send-out,
+        # so nothing leaks between encounters or between party members.
+        self.status: str | None = None       # None | "burn" | "paralyze"
+        self.atk_stage = 0
+        self.def_stage = 0
+        self.spd_stage = 0
+
+    def reset_combat_state(self) -> None:
+        self.status = None
+        self.atk_stage = self.def_stage = self.spd_stage = 0
+
+    @staticmethod
+    def _stage_mult(stage: int) -> float:
+        # The standard formula: +1 = 1.5x, +2 = 2x, +3 = 2.5x (capped);
+        # -1 = 0.67x, -2 = 0.5x, -3 = 0.4x. Capped at +-3 rather than the
+        # usual +-6 -- this game's fights are short enough that +-3 already
+        # swings an exchange hard.
+        stage = max(-3, min(3, stage))
+        return (2 + stage) / 2 if stage >= 0 else 2 / (2 - stage)
+
+    @property
+    def eff_atk(self) -> int:
+        return max(1, int(self.atk * self._stage_mult(self.atk_stage)))
+
+    @property
+    def eff_def(self) -> int:
+        return max(1, int(self.dfn * self._stage_mult(self.def_stage)))
+
+    @property
+    def eff_spd(self) -> float:
+        mult = self._stage_mult(self.spd_stage)
+        return self.spd * mult * (0.5 if self.status == "paralyze" else 1.0)
 
     # --- identity
     @property
@@ -134,20 +168,87 @@ def effect_word(mult: float) -> str:
     return ""
 
 
-def damage(attacker: Beast, defender: Beast, move: str) -> tuple[int, float, bool]:
-    """Returns (damage, type multiplier, hit?)."""
-    m_type, power, accuracy, _ = MOVES[move]
+CRIT_CHANCE = 1 / 16   # Gen-1-flavoured: rare enough to feel earned, not spammy
+CRIT_MULT = 1.5
+
+
+def damage(attacker: Beast, defender: Beast, move: str) -> tuple[int, float, bool, bool]:
+    """Returns (damage, type multiplier, hit?, crit?)."""
+    spec = MOVES[move]
+    m_type, power, accuracy = spec["type"], spec["power"], spec["accuracy"]
     if random.randint(1, 100) > accuracy:
-        return 0, 1.0, False
+        return 0, 1.0, False, False
     mult = effectiveness(m_type, defender.type)
     if m_type == attacker.type:
         mult *= 1.25                      # it suits them
+    crit = random.random() < CRIT_CHANCE
     # The divisor is tuned against these stat sizes: a neutral hit between
     # equal levels should take about five exchanges, so a super-effective
     # choice (two or three) is a real decision rather than a rounding error.
-    base = ((2 * attacker.level / 5 + 2) * power * attacker.atk / max(1, defender.dfn)) / 26
-    dealt = int((base + 2) * mult * random.uniform(0.85, 1.0))
-    return max(1, dealt), mult, True
+    base = ((2 * attacker.level / 5 + 2) * power * attacker.eff_atk / max(1, defender.eff_def)) / 26
+    dealt = int((base + 2) * mult * (CRIT_MULT if crit else 1.0) * random.uniform(0.85, 1.0))
+    return max(1, dealt), mult, True, crit
+
+
+STAGE_NAME = {"atk": "Atk", "def": "Def", "spd": "Spd"}
+
+
+def apply_move_effect(attacker: Beast, defender: Beast, move: str) -> list[str]:
+    """Rolls and applies a move's secondary effect, if it has one and the
+    roll succeeds. Returns log lines, empty if nothing happened."""
+    effect = MOVES[move]["effect"]
+    if not effect or random.random() >= effect[-1]:
+        return []
+    if effect[0] == "status":
+        _, status, _ = effect
+        if defender.status is not None or not defender.alive:
+            return []
+        defender.status = status
+        verb = "is burned!" if status == "burn" else "is paralyzed!"
+        return [f"  {defender.name} {verb}"]
+    # ("stage", stat, delta, target, chance)
+    _, stat, delta, target, _ = effect
+    who = attacker if target == "self" else defender
+    field = f"{stat}_stage"
+    before = getattr(who, field)
+    after = max(-3, min(3, before + delta))
+    setattr(who, field, after)
+    if after == before:
+        return []
+    word = "rose" if after > before else "fell"
+    return [f"  {who.name}'s {STAGE_NAME[stat]} {word}!"]
+
+
+def resolve_status_upkeep(beast: Beast) -> list[str]:
+    """End-of-turn status damage (burn only -- paralysis is checked at
+    action time instead, via `may_act`)."""
+    if beast.status == "burn" and beast.alive:
+        dot = max(1, beast.max_hp // 16)
+        beast.hp = max(0, beast.hp - dot)
+        line = f"  {beast.name} is hurt by its burn. ({dot} HP)"
+        if not beast.alive:
+            line += f" {beast.name} is out of the fight!"
+        return [line]
+    return []
+
+
+def may_act(beast: Beast) -> bool:
+    """Paralysis has a real chance to no-sell a turn entirely."""
+    if beast.status == "paralyze" and random.random() < 0.25:
+        return False
+    return True
+
+
+def choose_ai_move(attacker: Beast, defender: Beast) -> str:
+    """Weighted toward whatever hits hardest into the current matchup --
+    not perfect play (there's still real randomness), but no longer a
+    trainer who might Tackle into something 4x resistant for no reason."""
+    weights = []
+    for move in attacker.moves:
+        spec = MOVES[move]
+        mult = effectiveness(spec["type"], defender.type)
+        weights.append(max(0.15, mult) ** 2 * spec["power"])
+    return random.choices(attacker.moves, weights=weights, k=1)[0]
 
 
 def catch_chance(beast: Beast, lure_bonus: float = 1.0) -> float:
@@ -167,13 +268,22 @@ def bar(value: int, maximum: int, width: int = BAR_W) -> str:
     return (ts.color("█" * filled, colour) + ts.color("░" * (width - filled), "grey"))
 
 
+STATUS_TAG = {"burn": ("BRN", "bright_red"), "paralyze": ("PAR", "bright_yellow")}
+
+
 def beast_line(b: Beast, wild: bool = False) -> list[str]:
     tag = "Wild " if wild else ""
     head = f"  {tag}{b.name}"
     lv = f"Lv {b.level}"
+    stages = "".join(f" {STAGE_NAME[s].upper()}{v:+d}" for s, v in
+                      (("atk", b.atk_stage), ("def", b.def_stage), ("spd", b.spd_stage)) if v)
+    status = ""
+    if b.status:
+        word, colour = STATUS_TAG[b.status]
+        status = "  " + ts.color(word, colour)
     return [
         f"{head}{lv.rjust(max(1, 44 - len(head)))}  {ts.color(b.type, 'cyan')}",
-        f"   HP [{bar(b.hp, b.max_hp)}] {b.hp}/{b.max_hp}",
+        f"   HP [{bar(b.hp, b.max_hp)}] {b.hp}/{b.max_hp}{status}{ts.color(stages, 'grey')}",
     ]
 
 
@@ -196,6 +306,7 @@ class Game:
         self.caught = set(save.get("caught", []))
         self.lures = int(save.get("lures", 8))
         self.money = int(save.get("money", 300))
+        self.best_tournament_round = int(save.get("best_tournament_round", 0))
 
     # --- persistence
     def store(self) -> None:
@@ -203,7 +314,8 @@ class Game:
             party=[b.to_dict() for b in self.party],
             box=[b.to_dict() for b in self.box],
             badges=self.badges, seen=sorted(self.seen), caught=sorted(self.caught),
-            lures=self.lures, money=self.money)
+            lures=self.lures, money=self.money,
+            best_tournament_round=self.best_tournament_round)
         self.save["_summary"] = (f"{self.badges} badges · {len(self.caught)} caught")
         ts.save(self.save)
 
@@ -234,6 +346,13 @@ class Game:
                trainer: str = "") -> str:
         """Returns 'won', 'lost', 'caught' or 'fled'."""
         self.seen.add(foe.slug)
+        # A clean slate every encounter: status and stat stages never
+        # persist between battles (only within one), regardless of swap
+        # history -- simplest correct rule, see the comment on
+        # Beast.reset_combat_state.
+        foe.reset_combat_state()
+        for b in self.party:
+            b.reset_combat_state()
         log: list[str] = []
         if wild:
             log.append(f"A wild {foe.name} appears!")
@@ -257,9 +376,11 @@ class Game:
 
             options = []
             for i, move in enumerate(me.moves, 1):
-                m_type, power, acc, _ = MOVES[move]
+                spec = MOVES[move]
+                quick = ts.color(" quick", "bright_yellow") if spec["priority"] > 0 else ""
                 ts.tv_print(f"   {ts.color(str(i), 'bright_cyan')}  "
-                            f"{move.ljust(13)} {m_type.ljust(6)} pow {power:>2}  acc {acc}")
+                            f"{move.ljust(13)} {spec['type'].ljust(6)} "
+                            f"pow {spec['power']:>2}  acc {spec['accuracy']}{quick}")
                 options.append(str(i))
             extra = len(me.moves)
             tail = f"   {ts.color(str(extra + 1), 'bright_cyan')}  lure"
@@ -296,9 +417,16 @@ class Game:
                     return "caught"
                 log.append("It shook free!")
             elif choice == extra + 2:
+                # A voluntary swap now costs the turn (the incoming beast's
+                # own player_action stays None, so the "you" entry below is
+                # skipped and only the foe acts) -- a forced swap, after
+                # your active beast faints, is still free: the loop just
+                # restarts with `me = self.lead()` picking the next one up
+                # before any of this menu code runs again.
                 if self.swap_menu():
                     log.append(f"You send out {self.lead().name}!")
-                continue
+                else:
+                    continue
             else:
                 if wild:
                     if random.random() < 0.7:
@@ -308,26 +436,46 @@ class Game:
                     log.append("You can't run from a duel.")
                     continue
 
-            # ---- resolve the exchange, faster beast first
+            # ---- resolve the exchange
+            # `player_action` is None on a swap or a failed lure -- both
+            # consume the whole turn, so only the foe's entry is included
+            # and the fix-up below naturally handles what used to be a
+            # crash (MOVES[None]) on a failed lure in the old code.
             me = self.lead()
-            order = [("you", me, foe, player_action), ("foe", foe, me, random.choice(foe.moves))]
-            if foe.spd > me.spd:
-                order.reverse()
+            foe_move = choose_ai_move(foe, me)
+            order = []
+            if player_action is not None:
+                order.append(("you", me, foe, player_action))
+            order.append(("foe", foe, me, foe_move))
+            # Priority first, then effective speed (which already folds in
+            # stat stages and a paralysis penalty) -- a stable sort keeps
+            # "you" first on an exact tie, matching the old tie-break.
+            order.sort(key=lambda e: (-MOVES[e[3]]["priority"], -e[1].eff_spd))
 
             for who, attacker, defender, move in order:
                 if not attacker.alive or not defender.alive:
                     continue
-                dealt, mult, hit = damage(attacker, defender, move)
+                if not may_act(attacker):
+                    log.append(f"{attacker.name} is fully paralyzed! It can't move!")
+                    continue
+                dealt, mult, hit, crit = damage(attacker, defender, move)
                 if not hit:
                     log.append(f"{attacker.name}'s {move} missed.")
                     continue
                 defender.hp = max(0, defender.hp - dealt)
                 note = effect_word(mult)
+                if crit:
+                    note = ("A critical hit! " + note).strip()
                 log.append(f"{attacker.name} used {move}. {note}".strip())
                 log.append(f"  {defender.name} lost {dealt} HP.")
                 if not defender.alive:
                     log.append(f"{defender.name} is out of the fight!")
                     break
+                log.extend(apply_move_effect(attacker, defender, move))
+
+            for b in (foe, me):
+                if b.alive:
+                    log.extend(resolve_status_upkeep(b))
 
             if not foe.alive:
                 gained = max(4, int(foe.level * 3.2))
@@ -364,7 +512,10 @@ class Game:
         if len(options) < 2:
             return False
         pick = ts.menu("Send out which beast?", options, back="Cancel")
-        if pick == -1:
+        if pick == -1 or pick == 0:
+            # pick == 0 is already the active lead -- selecting it is a
+            # no-op, not a real swap, and must not cost a turn now that
+            # voluntary swaps do (see battle()).
             return False
         chosen = self.party[pick]
         if not chosen.alive:
@@ -456,6 +607,126 @@ class Game:
             "",
             f"  Badges: {self.badges}/{len(CHAMPIONS)}   +5 lures, and a purse.",
         ], fg="yellow"))
+        ts.tv_print()
+        ts.tv_pause()
+        self.store()
+
+    # ------------------------------------------------------------- tournament
+    def pick_squad(self) -> list[Beast] | None:
+        """Choose up to PARTY_MAX beasts from the full roster (party + box)
+        for a tournament run. Returns None on cancel."""
+        roster = self.party + self.box
+        if not roster:
+            return None
+        chosen: list[Beast] = []
+        while True:
+            self.header("Choose your squad")
+            ts.tv_print()
+            ts.tv_print(f"  {len(chosen)}/{PARTY_MAX} chosen. No healing between rounds --")
+            ts.tv_print("  pick beasts that can go the distance, not just the strongest one.")
+            ts.tv_print()
+            labels = []
+            for b in roster:
+                mark = "☑" if b in chosen else "☐"
+                down = ts.color("  (down)", "bright_red") if not b.alive else ""
+                labels.append(f"{mark} {b.name.ljust(13)} Lv {str(b.level).rjust(2)}  "
+                              f"{b.type.ljust(6)} {b.hp}/{b.max_hp} HP{down}")
+            options = list(labels)
+            if chosen:
+                options.append(ts.color("Begin the tournament", "bright_green"))
+            pick = ts.menu("Squad", options, back="Cancel")
+            if pick == -1:
+                return None
+            if chosen and pick == len(labels):
+                return chosen
+            beast = roster[pick]
+            if beast in chosen:
+                chosen.remove(beast)
+            elif len(chosen) >= PARTY_MAX:
+                ts.tv_print(ts.color(f"  Squads are capped at {PARTY_MAX}.", "bright_red"))
+                ts.tv_pause()
+            else:
+                chosen.append(beast)
+
+    def tournament(self) -> None:
+        squad = self.pick_squad()
+        if not squad:
+            return
+        avg_level = max(1, sum(b.level for b in squad) // len(squad))
+        bracket = generate_bracket(avg_level)
+
+        self.header("The Circuit")
+        ts.tv_print()
+        ts.tv_print(ts.box([
+            f"  {len(bracket)} rounds. No healing between them.",
+            "",
+            f"  Your squad ({len(squad)}): " + ", ".join(b.name for b in squad),
+            "",
+            f"  Best run so far: round {self.best_tournament_round}/{len(bracket)}"
+            if self.best_tournament_round else "  You haven't finished a round before.",
+        ]))
+        ts.tv_print()
+        if not ts.confirm("  Enter the circuit?", default=True):
+            return
+
+        old_party, old_box = self.party, self.box
+        self.party = squad
+        reached = 0
+        try:
+            for i, rival in enumerate(bracket, 1):
+                self.header(f"Round {i}/{len(bracket)}")
+                ts.tv_print()
+                ts.tv_print(ts.box([
+                    f"  {rival['name']}  —  {'/'.join(rival['types'])}",
+                    "",
+                    f"  {rival['blurb']}",
+                    "",
+                    f"  Team of {len(rival['team'])}.",
+                ]))
+                ts.tv_print()
+                if not self.healthy():
+                    break
+                ts.tv_pause("press enter to fight")
+
+                won_round = True
+                for slug, level in rival["team"]:
+                    foe = Beast(slug, level)
+                    result = self.battle(foe, wild=False, title=f"Round {i} · {rival['name']}",
+                                         trainer=rival["name"])
+                    if result == "lost":
+                        won_round = False
+                        break
+                if not won_round:
+                    break
+                reached = i
+        finally:
+            self.party, self.box = old_party, old_box
+
+        if reached > self.best_tournament_round:
+            self.best_tournament_round = reached
+        outcome = "champion" if reached == len(bracket) else "lost"
+
+        self.header("The Circuit")
+        ts.tv_print()
+        if outcome == "champion":
+            prize = 150 + 40 * len(bracket)
+            self.money += prize
+            ts.unlock("circuit-champion", "Circuit Champion",
+                      "Won a full tournament run")
+            ts.tv_print(ts.box([
+                "  You cleared the whole circuit.",
+                "",
+                f"  +{prize} coins.",
+            ], fg="yellow"))
+        else:
+            ts.tv_print(ts.box([
+                f"  Your squad went down in round {reached + 1}/{len(bracket)}.",
+                "",
+                f"  Best run: round {self.best_tournament_round}/{len(bracket)}.",
+            ]))
+            if reached >= 3:
+                ts.unlock("circuit-contender", "Circuit Contender",
+                          "Reached round 4 of a tournament")
         ts.tv_print()
         ts.tv_pause()
         self.store()
@@ -612,8 +883,8 @@ class Game:
                 ts.tv_print(ts.color(f"  {len(hurt)} of your team are hurt.", "yellow"))
             ts.tv_print()
 
-            options = ["Travel", "Rest (heal the team)", "Your team", "Field notes",
-                       "The box", "Supplies"]
+            options = ["Travel", "Tournament", "Rest (heal the team)", "Your team",
+                       "Field notes", "The box", "Supplies"]
             if self.badges < len(CHAMPIONS):
                 champ = CHAMPIONS[self.badges]
                 options.insert(1, f"Challenge {champ['name']}")
@@ -624,11 +895,15 @@ class Game:
             label = options[pick]
             if label == "Travel":
                 self.travel()
+            elif label == "Tournament":
+                self.tournament()
             elif label.startswith("Challenge"):
                 self.challenge(CHAMPIONS[self.badges])
             elif label.startswith("Rest"):
                 self.heal_all()
                 self.store()
+                self.header("Camp")  # same reasoning as travel()'s fix above
+                ts.tv_print()
                 ts.tv_print(ts.color("  Everyone is patched up.", "bright_green"))
                 ts.tv_pause()
             elif label == "Your team":
@@ -641,6 +916,15 @@ class Game:
                 self.shop()
 
     def travel(self) -> None:
+        # A clear before this menu, not just before explore()'s own screen:
+        # without it, this call inherits whatever row Camp's own (now
+        # 9-option) menu left `_tv_state` at, and once that's close enough
+        # to the bottom, `_seat_cursor` silently clears the picture right
+        # before the "choose:" prompt -- the menu prints, then vanishes
+        # before the player ever sees it. Found by actually driving the
+        # game through a PTY, not by reading the code.
+        self.header("Travel")
+        ts.tv_print()
         open_routes = [r for r in ROUTES if r["need"] <= self.badges]
         locked = len(ROUTES) - len(open_routes)
         names = [f"{r['name']}  (Lv {r['levels'][0]}-{r['levels'][1]})"

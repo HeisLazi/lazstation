@@ -1,14 +1,17 @@
 [game]
 name = "Beastling"
 slug = "beastling"
-version = "1.0.0"
+version = "1.1.0"
 author = "lazi"
 description = """
 Catch, raise and battle creatures in the Hollow Vale.
 
 Twenty species across six types, levelling and evolution,
 lures and a field journal, six routes and five champions
-who keep the roads."""
+who keep the roads. Status ailments, stat swings, priority
+moves and crits give the fights real teeth -- and the Circuit
+tournament mode lets you pick a squad of up to six and run a
+generated bracket with no healing between rounds."""
 tags = ["rpg", "creatures", "turn-based"]
 entry = ["{python}", "main.py"]
 min_cols = 66
@@ -34,3 +37,13 @@ description = "Beat a champion of the roads"
 key = "all-badges"
 title = "Keeper of the Roads"
 description = "Beat every champion in the Hollow Vale"
+
+[[awards]]
+key = "circuit-contender"
+title = "Circuit Contender"
+description = "Reached round 4 of a tournament"
+
+[[awards]]
+key = "circuit-champion"
+title = "Circuit Champion"
+description = "Won a full tournament run"
