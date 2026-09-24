@@ -350,15 +350,24 @@ def beast_line(b: Beast, wild: bool = False) -> list[str]:
     if b.status:
         word, colour = STATUS_TAG[b.status]
         status = "  " + ts.color(word, colour)
-    # Ability gets its own line rather than sharing the name/type line --
-    # a real reviewed regression: cramming it on with the existing 44-char
-    # name/level field clipped "Static Charge" down to "St" at the SDK's
-    # own documented 60-column floor. Ability names are short enough (<=13
-    # chars) that even "   Static Charge" alone is never at risk.
+    # Ability shares the HP line, not its own line, and not the name/type
+    # line either -- this has bounced between both once already. Giving it
+    # a dedicated 3rd line (a prior fix, for a real clipping bug at narrow
+    # widths) turned out to cost a ROW every battle, and a real PTY probe
+    # at a stock 80x24 terminal -- not the oversized one this project kept
+    # testing at -- showed the worst case (4 known moves, max stat stages,
+    # a status, weather active) silently blanking the entire screen before
+    # the player ever saw it: a row-budget regression, the same failure
+    # class as the travel()/draft-screen bugs, just never checked at a
+    # realistic terminal size. Appending to the HP line risks the narrow-
+    # width clipping the 3-line version was built to avoid, in the rare
+    # case of long ability name + full stages + status all at once -- but
+    # clipped text degrades far more gracefully than the WHOLE SCREEN
+    # vanishing, which is what the 3-line version did at normal height.
     return [
         f"{head}{lv.rjust(max(1, 44 - len(head)))}  {ts.color(b.type, 'cyan')}",
-        f"   {ts.color(b.ability, 'grey')}",
-        f"   HP [{bar(b.hp, b.max_hp)}] {b.hp}/{b.max_hp}{status}{ts.color(stages, 'grey')}",
+        f"   HP [{bar(b.hp, b.max_hp)}] {b.hp}/{b.max_hp}{status}"
+        f"{ts.color(stages, 'grey')}  {ts.color(b.ability, 'grey')}",
     ]
 
 
@@ -443,6 +452,12 @@ class Game:
             me = self.lead()
             if me is None:
                 return "lost"
+            # Tracked per-turn so the end-of-turn expiry below can skip
+            # decrementing on the exact turn weather was (re)set -- without
+            # this, "Lasts 5 turns" would never actually show "5" on
+            # screen: it was being set to 5 and decremented to 4 in the
+            # same turn, before the player's next screen ever painted it.
+            weather_set_this_turn = False
             # Checked every time through, not just when hit: a Vengeful
             # beast sent out (or swapped in) already below a quarter HP --
             # this game keeps wounds across un-healed fights -- deserves
@@ -455,13 +470,19 @@ class Game:
             self.header(title)
             for line in beast_line(foe, wild=wild):
                 ts.tv_print(line)
-            ts.tv_print()
             for line in beast_line(me):
                 ts.tv_print(line)
+            # This one line does double duty: the weather status when
+            # there's weather to show, the plain separator rule otherwise
+            # -- not "rule, then weather" as a 3rd line, and no blank
+            # separator between the two beasts either. Both were pure
+            # cosmetic slack the row-budget regression above couldn't
+            # actually afford; see the comment on `beast_line`.
             if weather:
                 ts.tv_print(ts.color(f"   {weather} ({weather_turns} left) -- "
                                      f"{WEATHER_DESC[weather]}", "bright_yellow"))
-            ts.tv_print(ts.rule("─"))
+            else:
+                ts.tv_print(ts.rule("─"))
             show_log(log)
             ts.tv_print(ts.rule("─"))
 
@@ -564,6 +585,7 @@ class Game:
                 if new_weather:
                     fresh = new_weather != weather
                     weather, weather_turns = new_weather, WEATHER_DURATION
+                    weather_set_this_turn = True
                     if fresh:
                         log.append(f"  {new_weather} rolls in!")
                     else:
@@ -589,7 +611,7 @@ class Game:
                 if b.alive:
                     log.extend(resolve_status_upkeep(b))
 
-            if weather:
+            if weather and not weather_set_this_turn:
                 weather_turns -= 1
                 if weather_turns <= 0:
                     log.append(f"  {weather} fades.")
