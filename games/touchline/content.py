@@ -392,6 +392,21 @@ PERSONALITIES = [
     dict(id="fiery", label="Fiery", growth=1.02, patience=0.86),
 ]
 
+# Pre-match talks change morale by a small, authored amount for each known
+# personality. They do not add a hidden match-performance bonus; any later
+# effect follows the same morale path already used by the match engine.
+TEAM_TALKS = [
+    dict(id="composed", label="Trust the work",
+         speech="Keep your shape. Trust the next pass and let the game come to us.",
+         response={"professional": 2, "ambitious": 0, "steady": 2, "fiery": -1}),
+    dict(id="belief", label="Play with belief",
+         speech="You have earned this stage. Take the game to them together.",
+         response={"professional": 1, "ambitious": 2, "steady": 0, "fiery": 1}),
+    dict(id="standards", label="Set our standard",
+         speech="Win the next duel, then the next. Make every action count.",
+         response={"professional": 1, "ambitious": 1, "steady": -1, "fiery": 2}),
+]
+
 # Duration is the number of future match rounds missed. Exposure changes chance;
 # no injury is guaranteed by fatigue, training, or a tactical instruction.
 INJURIES = [

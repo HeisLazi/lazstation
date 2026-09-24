@@ -65,11 +65,19 @@ costs, not automatic injuries.
 
 ## Matchday
 
-Press Enter to play the next 15-minute window. The event feed records the
-phase, zone, action, tactical context, chance quality, and result. The same
-ledger drives goals, shots, xG, player performances, the report and career
-news. Better finishing changes conversion; it does not manufacture better
-chances. The opposing manager can adapt to the score late in the match.
+When you start a match, choose a team talk before kickoff. The preview shows
+how each starter is expected to respond; the delivered talk makes a small,
+personality-specific morale change and is recorded in the match events. It does
+not grant a hidden ability or tactical bonus.
+
+Press Enter to play the next 15-minute window. `Tab` cycles three views over
+the same match: Live shows the latest incident and its recorded explanation;
+Events lists incidents newest-first, with Up/Down browsing the chronology and
+the selected action's recorded explanation beside it; Stats shows the
+event-derived score, shots, xG, passes and player contributions. The same
+ledger drives goals, shots, player performances, the report and career news.
+Better finishing changes conversion; it does not manufacture better chances.
+The opposing manager can adapt to the score late in the match.
 
 | Key | Match action |
 |---|---|
@@ -77,9 +85,16 @@ chances. The opposing manager can adapt to the score late in the match.
 | `1` | Cycle your press |
 | `2` | Cycle your defensive line |
 | `3` | Cycle your width |
-| `4` | Choose a bench player for a substitution (five per match) |
+| `4` | Open Changes; select the outgoing and incoming players, then confirm (five per match) |
+| `Tab` | Cycle Live, Events and Stats |
+| Up/Down | Browse incidents in Events (newer/older) |
 | `Q` | Quick-sim the remaining periods with the same match engine |
 | `Esc` | Pause and return to Home; `M` resumes |
+
+In Changes, use `Tab` to switch between the on-pitch and available-player lists,
+then Up/Down to select each player. Enter confirms the exact pairing; Escape
+cancels without changing the lineup. Only medically cleared players are
+available, and a goalkeeper can only replace the goalkeeper.
 
 At full time, press Enter again to update all six fixtures across both tiers,
 the tables, finances, player form, morale, trust and injury outlook for the round.

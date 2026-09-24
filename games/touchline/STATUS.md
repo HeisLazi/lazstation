@@ -76,3 +76,33 @@ P01 acceptance passed for the contracts implemented here. The command ledger and
 ### P02 completion evidence
 
 P02 acceptance passed for typed profile/tactic data and static validation. All roster values are fictional authored scenario inputs, not calibrated simulation parameters or observed history. The tactics describe intentions only: there is no engine action, movement, legality resolution, tactical bonus or match outcome yet. Unknown player history remains empty; legacy conversion remains unimplemented. Existing Touchline and all unrelated concurrent work stayed outside this package.
+
+## MUD-01 — actionable matchday presentation
+
+- Status: `complete`
+- Base SHA: `faaa3b95f3adbfefd868dd5dc5e274a3d35841bd`
+- Intended owned paths: `games/touchline/main.py`, `games/touchline/content.py`, `games/touchline/test_game.py`, `games/touchline/manual.md`, `games/touchline/season_scenario.json`, `games/touchline/matchday_scenario.json`, and this status file.
+- Behavior: insert a pre-kickoff team-talk decision whose player reactions are explained and bounded; let the manager select the exact outgoing and incoming players before confirming a legal substitution; provide focused Live, Events and Stats match views derived read-only from the existing match state, with incident browsing in Events.
+- Acceptance: TALK-01 (talk is recorded once before kickoff, player responses use existing player state and are visible); SUB-01 (selected pairing, eligibility, goalkeeper and limit rules are checked before mutation; rejection leaves lineup/events/substitution count unchanged); VIEW-01 (all views reconcile to the same score, clock, statistics and event ledger, Events can browse older/newer incidents, and viewing does not mutate match state); PTY-01 (the talk, match views, incident browsing and explicit pairing remain usable at 80x24 and 110x30, with save/resume and the full-season replay still passing).
+- Exclusions: no spatial match engine, custom/free-placement formation editor or claim that legacy formation presets simulate player coordinates. Free placement is a required editor direction for the spatial-engine/editor slice; the current legacy engine stores no player coordinates for placements to affect.
+- Required checks: focused unit tests, `python3 -m unittest games.touchline.test_game`, isolated `matchday_scenario.json` and `season_scenario.json` PTY at 80x24 and 110x30 with frame inspection, isolated doctor, and owned-path diff review.
+
+### MUD-01 work log and acceptance evidence
+
+- Added three pre-kickoff talks with starter-by-starter reception preview from authored personality response data. Delivery applies only a bounded morale change, records the selection/reactions once ahead of kickoff in the match event ledger, and does not modify skills or add a direct performance modifier.
+- Replaced automatic player-off selection with a two-list confirmation screen. The manager explicitly chooses who comes off and who comes on; available players are medically cleared, goalkeeper/outfield pairings are enforced, role fit/fitness are shown, and accepted pairings persist in substitution history and match events. Rejected changes leave state untouched.
+- Replaced the single match panel with Live, Events and Stats views on one score/time strip. Live shows recorded latest action plus its explanation and current plan/readiness; Events browses a newest-first chronology and shows the selected incident's details; Stats reads the same match statistics and player contributions, with possession correctly labelled as share. Drawing the views is read-only.
+- Updated the game help/manual and the full-season PTY script for the new pre-match step and Live view. Added `matchday_scenario.json` covering talk selection, all views, explicit substitution, quick simulation, full time and settlement.
+- TALK-01 passed: one-time pre-kickoff delivery, bounded individual morale changes, no capability change, correct timeline ordering, and a refused repeat with no extra effect.
+- SUB-01 passed: exact selected pair is applied and recorded; duplicate/invalid and goalkeeper mismatch rejections are atomic; menu confirmation changes precisely the selected players.
+- VIEW-01 passed: all three views cycle without changing match state; Events browses older and newer incidents; rendered snapshots agree with current score, clock, events and statistics.
+- PTY-01 passed: `matchday_scenario.json` and the updated full-season replay both exited 0 at 80x24 and 110x30. Named snapshots were inspected under `/tmp/touchline-mud-final.3i5sW7/recheck-*`. The old 80x24 VT replay edge-fragment caveat noted in P00 remains visible in a season-review frame; this is not treated as new gameplay failure.
+- Regression: `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s games/touchline/checks -p 'test_*.py'` exited 0 (16 tests); `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest games.touchline.test_game` exited 0 (19 tests); `python3 -m py_compile games/touchline/main.py games/touchline/content.py games.touchline/test_game.py` exited 0; isolated `python3 -m termstation doctor` exited 0 and recognized all 8 game manifests.
+
+### MUD-01 completion and next slice
+
+Follow-up after adding incident browsing: the focused UI test now also checks older/newer navigation without match-state mutation (20 `test_game.py` tests total); the matchday PTY snapshots additionally assert the team-talk detail, older incident, stats, substitutions and full-time screens.
+
+Final recheck: matchday and full-season PTY scenarios exited 0 at both 80x24 and 110x30, the local game doctor found all 8 manifests, and the 20 game tests plus 16 contract/profile checks passed. Inspected current captures are under `/tmp/touchline-mud-final.zzGvzH/`.
+
+The current managed-match flow has an actionable pre-match talk, player-selected substitution pairings and three read-only match views, verified in unit and PTY paths. No schema-version bump was needed; legacy mid-match saves without the optional talk/history keys still use defaults. Free-placement formation creation remains intentionally unimplemented until custom coordinates can affect the spatial match engine instead of serving as a decorative legacy diagram. Next: P03 movement, ball flight and receiving, then integrate the requested free-placement editor with that spatial state.

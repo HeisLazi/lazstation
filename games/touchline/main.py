@@ -38,6 +38,7 @@ TACTIC_KEYS = ("press", "line", "width", "build", "tempo")
 LEVELS = ("low", "mid", "high")
 TRAINING_INTENSITIES = ("low", "normal", "high")
 MATCH_MINUTES = 90
+MATCH_VIEWS = ("live", "events", "stats")
 
 
 def clamp(value: float, low: float, high: float) -> float:
@@ -451,6 +452,7 @@ def new_match(career: dict[str, Any], home: str, away: str,
         "events": [], "lineups": lineups, "tactics": tactics,
         "substitutions": {home: 0, away: 0}, "load": {}, "player_stats": {},
         "current_period_start": 0, "ai_changes": [], "chemistry": {},
+        "team_talk": None, "substitution_history": [],
     }
     rivalry = next((rivalry for rivalry in content.RIVALRIES
                     if {rivalry["home"], rivalry["away"]} == {home, away}), None)
@@ -1658,14 +1660,16 @@ def _draw_frame(win, career: dict[str, Any] | None, app: dict[str, Any]) -> ui.R
         ui.draw_text(win, 0, message_y, f"» {msg}", safe_width, _pair(1))
     page = app.get("page", "home")
     footer = "1 Home  2 Squad  3 Plan  4 Train  5 Market  6 Table  7 Logs  M Match  ? Help  Q Quit"
-    if page == "match":
+    if page == "team_talk":
+        footer = "↑/↓ choose message  ·  Enter deliver & kick off  ·  Esc pause"
+    elif page == "match_subs":
+        footer = "Tab change side  ·  ↑/↓ select player  ·  Enter confirm pair  ·  Esc cancel"
+    elif page == "match":
         match = career.get("live_match") if career else None
-        if app.get("submode"):
-            footer = "↑/↓ bench player  ·  Enter substitute  ·  Esc cancel"
-        elif match and match.get("finished"):
-            footer = "Enter settle round  ·  Esc keep report open  ·  6 Table"
+        if match and match.get("finished"):
+            footer = "Tab view  ·  ↑/↓ Events  ·  Enter settle  ·  Esc report  ·  6 Table"
         else:
-            footer = "Enter next 15'  ·  1 Press  2 Line  3 Width  4 Sub  Q Quick-sim  Esc Home"
+            footer = "Enter +15' · Tab views · ↑/↓ log · 1–3 tactics · 4 subs · Q sim · Esc"
     if page == "career_select":
         footer = "Up/Down choose club  Enter begin career  Q back"
     elif page == "help":
@@ -2114,14 +2118,15 @@ def _draw_help(win, body: ui.Rect) -> None:
     lines = [
         ("THE MANAGER'S DESK", 1),
         ("1-7 jump straight to Home, Squad, Plan, Training, Market, Table and Logs.", 0),
-        ("M starts or resumes matchday. Enter advances one 15-minute match window.", 0),
-        ("On the match screen: 1 Press, 2 Line, 3 Width, 4 substitute, Q quick-sim.", 0),
+        ("M opens or resumes matchday. Before kickoff, choose and deliver a team talk.", 0),
+        ("Match: Tab views; Event arrows browse; Enter +15'; 1-3 tactics; 4 Changes.", 0),
+        ("Changes: Tab switches lists; arrows choose who comes off/on; Enter confirms.", 0),
         ("Squad: arrows select; X toggles a starter; V accepts a fair outgoing offer.", 0),
         ("Plan: I/O phase shapes; P/L/W/B/T change press, line, width, build and tempo.", 0),
         ("Training: arrows choose focus, Enter sets it, I cycles intensity.", 0),
         ("Market: scout for uncertainty ranges; negotiate fee and weekly wage separately.", 0),
         ("Tactical keys alter the actions the match engine can produce, not a hidden win bonus.", 0),
-        ("The live feed, stats, player form, morale, board confidence and table share one match ledger.", 0),
+        ("Talk responses change morale slightly; Live, Events and Stats read the same match ledger.", 0),
         ("Your career autosaves after each meaningful decision and match period.", 0),
         ("A report is a forecast, not a promise. The same plan can still lose a close match.", 0),
     ]
@@ -2133,6 +2138,257 @@ def _draw_help(win, body: ui.Rect) -> None:
     _draw_hint(win, body, "Esc returns to the last page · the full manual is available from the game hub")
 
 
+def _wrap_words(text: str, width: int) -> list[str]:
+    if width <= 0:
+        return []
+    lines: list[str] = []
+    current = ""
+    for word in str(text).split():
+        if len(word) > width:
+            if current:
+                lines.append(current)
+                current = ""
+            lines.extend(word[offset:offset + width]
+                         for offset in range(0, len(word), width))
+        elif not current:
+            current = word
+        elif len(current) + len(word) + 1 <= width:
+            current += " " + word
+        else:
+            lines.append(current)
+            current = word
+    if current:
+        lines.append(current)
+    return lines
+
+
+def _draw_wrapped(win, x: int, y: int, width: int, bottom: int,
+                  text: str, attr: int = 0) -> int:
+    for line in _wrap_words(text, width):
+        if y >= bottom:
+            break
+        ui.draw_text(win, x, y, line, width, attr)
+        y += 1
+    return y
+
+
+def _draw_team_talk(win, body: ui.Rect, career: dict[str, Any],
+                    app: dict[str, Any]) -> None:
+    match = career["live_match"]
+    talks = content.TEAM_TALKS
+    index = int(clamp(app.get("talk_index", 0), 0, len(talks) - 1))
+    talk = talks[index]
+    home, away = match["home"], match["away"]
+    title = (f"{club_by_id(home)['name']}  v  {club_by_id(away)['name']}  ·  "
+             f"S{career['season']} W{career['round'] + 1:02d}")
+    ui.draw_text(win, body.x, body.y, "BEFORE KICKOFF  /  TEAM TALK", body.width,
+                 _pair(1, bold=True))
+    if body.height > 1:
+        ui.draw_text(win, body.x, body.y + 1, title, body.width, _pair(2))
+    if body.height > 2:
+        ui.draw_rule(win, body.x, body.y + 2, body.width, "─", _pair(2))
+    left, right = ui.split_horizontal(
+        ui.Rect(body.x, body.y + 3, body.width, max(1, body.height - 5)), .56, 1)
+    message = _draw_panel_heading(win, left, "YOUR WORDS")
+    room = _draw_panel_heading(win, right, "THE ROOM")
+    y = message.y
+    for option_index, option in enumerate(talks):
+        if y >= body.bottom - 3:
+            break
+        marker = "›" if option_index == index else " "
+        ui.draw_text(win, message.x, y, f"{marker} {option['label']}", message.width,
+                     _pair(3 if option_index == index else 6,
+                           bold=option_index == index))
+        y += 1
+    y += 1
+    _draw_wrapped(win, message.x, y, message.width, body.bottom - 2,
+                  f"“{talk['speech']}”", _pair(1))
+    preview = _team_talk_preview(career, match, talk["id"])
+    counts = {kind: [
+        (career["players"][row["player_id"]]["name"].split()[-1]
+         if room.width < 35 else career["players"][row["player_id"]]["name"])
+        for row in preview
+                     if row["reception"] == kind]
+              for kind in ("lifted", "steady", "unsettled")}
+    y = room.y
+    for kind, label, pair in (("lifted", "LIFTED", 3),
+                              ("steady", "STEADY", 2),
+                              ("unsettled", "UNSETTLED", 5)):
+        names = counts[kind]
+        if not names:
+            continue
+        if y >= body.bottom - 2:
+            break
+        ui.draw_text(win, room.x, y, f"{label}  {len(names)}", room.width,
+                     _pair(pair, bold=True))
+        y = _draw_wrapped(win, room.x, y + 1, room.width, body.bottom - 2,
+                          ", ".join(names), _pair(6))
+
+
+def _draw_match_tabs(win, body: ui.Rect, selected: str) -> None:
+    x = body.x
+    y = body.y
+    for view, label in (("live", "LIVE"), ("events", "EVENTS"), ("stats", "STATS")):
+        text = f"[{label}]" if view == selected else f" {label} "
+        if x + len(text) <= body.right:
+            ui.draw_text(win, x, y, text, len(text),
+                         _pair(3 if view == selected else 6, bold=view == selected))
+        x += len(text) + 1
+
+
+def _draw_match_live(win, area: ui.Rect, career: dict[str, Any],
+                     match: dict[str, Any]) -> None:
+    club_id = career["club_id"]
+    left, right = ui.split_horizontal(area, .40, 1)
+    ui.draw_text(win, left.x, left.y, "MATCH PULSE", left.width, _pair(1, bold=True))
+    tactic = match["tactics"][club_id]
+    field_players = [career["players"][pid] for pid in match["lineups"][club_id]
+                     if career["players"][pid]["position"] != "GK"]
+    tired = min(field_players,
+                key=lambda player: float(match["load"].get(
+                    player["id"], player["fitness"])), default=None)
+    load = int(match["load"].get(tired["id"], tired["fitness"])) if tired else 0
+    pulse = [
+        f"Changes {match['substitutions'][club_id]}/5",
+        f"Lowest load · {tired['name']} {load}" if tired else "No load recorded",
+        f"IP {tactic['in_shape']} / OOP {tactic['out_shape']}",
+        f"{tactic['press']} press · {tactic['line']} line",
+        f"{tactic['width']} width · {tactic['build']} build",
+    ]
+    for offset, text in enumerate(pulse, start=1):
+        if left.y + offset >= left.bottom:
+            break
+        ui.draw_text(win, left.x, left.y + offset, text, left.width,
+                     _pair(5 if offset == 2 and load < 65 else 3 if offset == 1 else 6))
+
+    ui.draw_text(win, right.x, right.y, "LATEST MOMENT", right.width,
+                 _pair(1, bold=True))
+    events = [event for event in match["events"]
+              if event.get("kind") not in ("kickoff", "team_talk")]
+    event = events[-1] if events else None
+    if event is None:
+        _draw_wrapped(win, right.x, right.y + 2, right.width,
+                      right.bottom, "No on-pitch event yet. Enter begins the first 15-minute window.",
+                      _pair(6))
+    else:
+        club = event.get("club_id")
+        club_tag = club if club else "MATCH"
+        label = f"{int(event.get('minute', 0)):02d}'  {str(event.get('kind', 'event')).upper()}  {club_tag}"
+        ui.draw_text(win, right.x, right.y + 1, label, right.width, _pair(3, bold=True))
+        y = _draw_wrapped(win, right.x, right.y + 2, right.width,
+                          right.bottom, event.get("text", ""), _pair(1)) + 1
+        why = event.get("tactical_reason", "")
+        if why and y < right.bottom:
+            ui.draw_text(win, right.x, y, "WHY", right.width, _pair(2, bold=True))
+            _draw_wrapped(win, right.x, y + 1, right.width, right.bottom,
+                          why, _pair(6))
+
+
+def _draw_match_events(win, area: ui.Rect, match: dict[str, Any],
+                       event_index: int = 0) -> None:
+    events = list(reversed(match["events"]))
+    if not events:
+        ui.draw_text(win, area.x, area.y, "No recorded events yet.", area.width, _pair(6))
+        return
+
+    index = int(clamp(event_index, 0, len(events) - 1))
+    left, right = ui.split_horizontal(area, .54, 1)
+    ui.draw_text(win, left.x, left.y, f"CHRONOLOGY · {len(events)}", left.width,
+                 _pair(1, bold=True))
+    visible_rows = max(1, left.height - 1)
+    start = min(index, max(0, len(events) - visible_rows))
+    for row, event_offset in enumerate(range(start, min(len(events), start + visible_rows)),
+                                       start=1):
+        event = events[event_offset]
+        kind = str(event.get("kind", "event")).replace("_", " ").upper()
+        club = event.get("club_id") or "MATCH"
+        minute = int(event.get("minute", 0))
+        marker = "›" if event_offset == index else " "
+        attr = (_pair(3 if event.get("kind") == "goal" else 5
+                      if event.get("kind") == "team_talk" else 2,
+                      bold=event_offset == index))
+        ui.draw_text(win, left.x, left.y + row,
+                     f"{marker} {minute:02d}' {kind} {club}", left.width, attr)
+
+    selected = events[index]
+    kind = str(selected.get("kind", "event")).replace("_", " ").upper()
+    club = selected.get("club_id") or "MATCH"
+    minute = int(selected.get("minute", 0))
+    ui.draw_text(win, right.x, right.y, f"{minute:02d}' {kind} · {club}",
+                 right.width, _pair(3 if selected.get("kind") == "goal" else 1,
+                                    bold=True))
+    y = _draw_wrapped(win, right.x, right.y + 2, right.width, right.bottom,
+                      selected.get("text", ""), _pair(6))
+    reason = selected.get("tactical_reason", "")
+    if reason and y < right.bottom:
+        ui.draw_text(win, right.x, y, "WHY", right.width, _pair(2, bold=True))
+        _draw_wrapped(win, right.x, y + 1, right.width, right.bottom,
+                      reason, _pair(6))
+
+
+def _draw_match_stats(win, area: ui.Rect, career: dict[str, Any],
+                      match: dict[str, Any]) -> None:
+    home, away = match["home"], match["away"]
+    left_width = max(17, min(area.width - 18, int(area.width * .48)))
+    ui.draw_text(win, area.x, area.y, "MATCH DATA", left_width, _pair(1, bold=True))
+    ui.draw_text(win, area.x + left_width, area.y, home, 7, _pair(3, bold=True))
+    ui.draw_text(win, area.x + left_width + 8, area.y, away, 7, _pair(3, bold=True))
+    rows = (
+        ("Shots (on target)", lambda cid: f"{match['stats'][cid]['shots']} ({match['stats'][cid]['on_target']})"),
+        ("Expected goals", lambda cid: f"{float(match['stats'][cid]['xg']):.2f}"),
+        ("Corners", lambda cid: str(match["stats"][cid]["corners"])),
+        ("Passes complete", lambda cid: str(match["stats"][cid]["passes_completed"])),
+        ("High regains", lambda cid: str(match["stats"][cid]["high_regains"])),
+        ("Through balls", lambda cid: str(match["stats"][cid]["through_balls"])),
+        ("Saves", lambda cid: str(match["stats"][cid]["saves"])),
+        ("Possession share", lambda cid: "—"),
+    )
+    total_possessions = (int(match["stats"][home]["possessions"])
+                         + int(match["stats"][away]["possessions"]))
+    for offset, (label, value) in enumerate(rows, start=1):
+        y = area.y + offset
+        if y >= area.bottom:
+            return
+        if label == "Possession share":
+            values = [int(match["stats"][cid]["possessions"]) for cid in (home, away)]
+            display = [f"{round(value / total_possessions * 100)}%" if total_possessions else "0%"
+                       for value in values]
+        else:
+            display = [value(cid) for cid in (home, away)]
+        ui.draw_text(win, area.x, y, label, left_width, _pair(6))
+        ui.draw_text(win, area.x + left_width, y, display[0], 7, _pair(1))
+        ui.draw_text(win, area.x + left_width + 8, y, display[1], 7, _pair(1))
+
+    y = area.y + len(rows) + 2
+    if y < area.bottom:
+        ui.draw_text(win, area.x, y, "PLAYER IMPACT", area.width, _pair(1, bold=True))
+        y += 1
+    for cid in (home, away):
+        if y >= area.bottom:
+            break
+        contributions = []
+        for player_id, stats in match["player_stats"].items():
+            player = career["players"].get(player_id)
+            if not player or player.get("club") != cid:
+                continue
+            impact = (int(stats.get("goals", 0)) * 3 + int(stats.get("assists", 0)) * 2
+                      + int(stats.get("key_passes", 0)) + int(stats.get("tackles", 0))
+                      + int(stats.get("saves", 0)))
+            if impact:
+                contributions.append((impact, player["name"], stats))
+        contributions.sort(reverse=True)
+        if contributions:
+            _, name, stats = contributions[0]
+            ui.draw_text(win, area.x, y,
+                         f"{cid}  {name}: {stats.get('goals', 0)} G, "
+                         f"{stats.get('assists', 0)} A, {stats.get('key_passes', 0)} KP",
+                         area.width, _pair(6))
+        else:
+            ui.draw_text(win, area.x, y, f"{cid}  No recorded player contribution yet.",
+                         area.width, _pair(6))
+        y += 1
+
+
 def _draw_match(win, body: ui.Rect, career: dict[str, Any], app: dict[str, Any]) -> None:
     match = career["live_match"]
     home, away = match["home"], match["away"]
@@ -2142,78 +2398,85 @@ def _draw_match(win, body: ui.Rect, career: dict[str, Any], app: dict[str, Any])
                  body.width, _pair(1, bold=True))
     if body.height > 1:
         left_stats, right_stats = match["stats"][home], match["stats"][away]
-        summary = (f"{match['minute']:>2}' · {match['period']}/{content.MATCH_PERIODS}  "
+        phase = ("FULL TIME" if match["finished"] else
+                 "HALF-TIME" if match["period"] == 3 else f"{match['minute']:>2}'")
+        summary = (f"{phase} · {match['period']}/{content.MATCH_PERIODS}  "
                    f"Shots {left_stats['shots']}-{right_stats['shots']}  "
                    f"xG {float(left_stats['xg']):.2f}-{float(right_stats['xg']):.2f}  "
                    f"Corners {left_stats['corners']}-{right_stats['corners']}")
         ui.draw_text(win, body.x, body.y + 1, summary, body.width, _pair(2))
     if body.height > 2:
         ui.draw_rule(win, body.x, body.y + 2, body.width, "─", _pair(2))
-    left_width = min(27, max(21, body.width // 3))
-    left, right = ui.split_horizontal(ui.Rect(body.x, body.y + 3,
-                                              body.width, max(1, body.height - 7)),
-                                      left_width / max(1, body.width), 1)
-    ui.draw_text(win, left.x, left.y, "PHASE SHAPES", left.width, _pair(1, bold=True))
-    tactic = match["tactics"][career["club_id"]]
-    ui.draw_text(win, left.x, left.y + 1, f"IP  {tactic['in_shape']}", left.width)
-    ui.draw_text(win, left.x, left.y + 2, f"OOP {tactic['out_shape']}", left.width)
-    ui.draw_text(win, left.x, left.y + 4,
-                 f"{tactic['press'].upper()} PRESS", left.width, _pair(3, bold=True))
-    ui.draw_text(win, left.x, left.y + 5,
-                 f"{tactic['line'].upper()} LINE", left.width, _pair(2))
-    ui.draw_text(win, left.x, left.y + 6,
-                 f"{tactic['width']} / {tactic['build']}", left.width)
-    tired = [career["players"][pid] for pid in match["lineups"][career["club_id"]]
-             if float(match["load"].get(pid, 100)) < 72]
-    if left.y + 8 < body.bottom - 2:
-        ui.draw_text(win, left.x, left.y + 8,
-                     f"{len(tired)} tiring · {tired[0]['name'] if tired else 'legs holding'}",
-                     left.width, _pair(5 if tired else 3))
-    ui.draw_text(win, right.x, right.y, "MATCH EVENTS · WHY", right.width,
-                 _pair(1, bold=True))
-    current_period = max(1, match["period"])
-    events = [event for event in match["events"]
-              if event.get("period") == current_period
-              and event.get("kind") != "kickoff"]
-    events = events[-max(1, right.height - 2):]
-    y = right.y + 1
-    for event in events:
-        if y >= right.bottom:
-            break
-        marker = "GOAL" if event.get("kind") == "goal" else f"{event.get('minute', 0)}'"
-        ui.draw_text(win, right.x, y,
-                     f"{marker} {event.get('text', '')}", right.width,
-                     _pair(3 if event.get("kind") == "goal" else 6,
-                           bold=event.get("kind") == "goal"))
-        if right.width > 44 and y + 1 < right.bottom:
-            reason = event.get("tactical_reason", "")
-            if reason:
-                ui.draw_text(win, right.x + 3, y + 1, f"↳ {reason}", right.width - 3,
-                             _pair(2, dim=True))
-                y += 1
-        y += 1
-    if match["period"] == 3 and not match["finished"]:
-        ui.draw_text(win, body.x, body.bottom - 3, "HALF-TIME · changes are available now.",
-                     body.width, _pair(5, bold=True))
-    if match["finished"]:
-        ui.draw_text(win, body.x, body.bottom - 2,
-                     f"FULL TIME  ·  {_team_result(match['stats'], home)}  /  {_team_result(match['stats'], away)}",
-                     body.width, _pair(3, bold=True))
-        app["match_footer"] = "Enter settle the round  ·  Esc keep report open  ·  6 Table"
-    elif app.get("submode"):
-        bench = [career["players"][pid] for pid in career["clubs"][career["club_id"]]["roster"]
-                 if pid not in match["lineups"][career["club_id"]]
-                 and is_available(career, career["players"][pid])]
-        app["bench"] = [p["id"] for p in bench]
-        index = int(clamp(app.get("bench_index", 0), 0, max(0, len(bench) - 1)))
-        app["bench_index"] = index
-        if body.bottom - 2 >= body.y:
-            message = (f"SUB: {bench[index]['name']} ({bench[index]['position']}) · Enter to make change · Esc cancel"
-                       if bench else "No fit player is available from the bench · Esc cancel")
-            ui.draw_text(win, body.x, body.bottom - 2, message, body.width, _pair(5, bold=True))
-        app["match_footer"] = "↑/↓ select bench player  ·  Enter substitute  ·  Esc cancel"
+    view = app.get("match_view", "live")
+    if view not in MATCH_VIEWS:
+        view = "live"
+    tabs = ui.Rect(body.x, body.y + 3, body.width, 1)
+    _draw_match_tabs(win, tabs, view)
+    area = ui.Rect(body.x, body.y + 5, body.width, max(1, body.height - 5))
+    if view == "events":
+        _draw_match_events(win, area, match, app.get("event_index", 0))
+    elif view == "stats":
+        _draw_match_stats(win, area, career, match)
     else:
-        app["match_footer"] = "Enter next 15'  ·  1 Press  2 Line  3 Width  4 Sub  Q Quick-sim  Esc Home"
+        _draw_match_live(win, area, career, match)
+
+
+def _draw_substitutions(win, body: ui.Rect, career: dict[str, Any],
+                        app: dict[str, Any]) -> None:
+    match = career["live_match"]
+    club_id = career["club_id"]
+    lineup = [career["players"][pid] for pid in match["lineups"][club_id]]
+    out_index = int(clamp(app.get("sub_out_index", 0), 0, max(0, len(lineup) - 1)))
+    outgoing = lineup[out_index] if lineup else None
+    bench = _sub_candidates(career, match, club_id, outgoing["id"] if outgoing else None)
+    in_index = int(clamp(app.get("sub_in_index", 0), 0, max(0, len(bench) - 1)))
+    incoming = bench[in_index] if bench else None
+    ui.draw_text(win, body.x, body.y,
+                 f"MATCH CHANGES  ·  {match['substitutions'][club_id]}/5 used  ·  {match['minute']}'",
+                 body.width, _pair(1, bold=True))
+    left, right = ui.split_horizontal(ui.Rect(body.x, body.y + 2, body.width,
+                                               max(1, body.height - 4)), .51, 1)
+    on_panel = _draw_panel_heading(win, left, "ON PITCH · SELECT WHO COMES OFF")
+    bench_panel = _draw_panel_heading(win, right, "AVAILABLE · SELECT WHO COMES ON")
+    out_rows = [[">" if app.get("sub_focus", "out") == "out" and index == out_index else "",
+                 p["name"], p["position"], int(match["load"].get(p["id"], p["fitness"]))]
+                for index, p in enumerate(lineup)]
+    incoming_rows = [[">" if app.get("sub_focus", "out") == "in" and index == in_index else "",
+                      p["name"], p["position"], p["fitness"]]
+                     for index, p in enumerate(bench)]
+    if out_rows:
+        ui.TableView(["", "Player", "P", "LOAD"], out_rows,
+                     selected=out_index, widths=[2, 15, 4, 5]).draw(
+                         win, ui.Rect(on_panel.x, on_panel.y, on_panel.width,
+                                      max(1, on_panel.height)),
+                         selected_attr=_pair(3 if app.get("sub_focus", "out") == "out" else 2,
+                                             bold=app.get("sub_focus", "out") == "out"),
+                         header_attr=_pair(1, bold=True))
+    if incoming_rows:
+        ui.TableView(["", "Player", "P", "FIT"], incoming_rows,
+                     selected=in_index, widths=[2, 15, 4, 4]).draw(
+                         win, ui.Rect(bench_panel.x, bench_panel.y, bench_panel.width,
+                                      max(1, bench_panel.height)),
+                         selected_attr=_pair(3 if app.get("sub_focus", "out") == "in" else 2,
+                                             bold=app.get("sub_focus", "out") == "in"),
+                         header_attr=_pair(1, bold=True))
+    else:
+        reason = ("No eligible reserve goalkeeper." if outgoing and outgoing["position"] == "GK"
+                  else "No eligible outfield substitute.")
+        ui.draw_text(win, bench_panel.x, bench_panel.y, reason, bench_panel.width,
+                     _pair(5, bold=True))
+    if outgoing and incoming and body.bottom - 3 >= body.y:
+        fit = round(role_skill(incoming, outgoing["position"]))
+        role_note = (f"{incoming['position']} cover for {outgoing['position']}"
+                     if incoming["position"] != outgoing["position"] else
+                     f"like-for-like {outgoing['position']}")
+        lines = (f"PAIR  {outgoing['name']} ({outgoing['position']})  →  "
+                 f"{incoming['name']} ({incoming['position']})",
+                 f"{role_note} · role fit {fit}/100 · fitness {incoming['fitness']}/100")
+        for offset, text in enumerate(lines):
+            ui.draw_text(win, body.x, body.bottom - 3 + offset, text, body.width,
+                         _pair(5 if incoming["position"] != outgoing["position"] else 2,
+                               bold=offset == 0))
 
 
 def _draw_offer_details(career: dict[str, Any], player_id: str) -> tuple[int, float]:
@@ -2234,12 +2497,67 @@ def _begin_offer(career: dict[str, Any], app: dict[str, Any]) -> None:
     app["message"] = "Set the transfer fee and weekly wage separately; the scout range is uncertain."
 
 
+def _team_talk_preview(career: dict[str, Any], match: dict[str, Any],
+                       talk_id: str) -> list[dict[str, Any]]:
+    talk = next((item for item in content.TEAM_TALKS if item["id"] == talk_id), None)
+    if talk is None:
+        raise ValueError(f"unknown team talk: {talk_id}")
+    club_id = match["player_club"]
+    preview = []
+    for player_id in match["lineups"][club_id]:
+        player = career["players"][player_id]
+        nominal = int(talk["response"].get(player.get("personality", ""), 0))
+        after = int(clamp(int(player.get("morale", 60)) + nominal, 0, 100))
+        delta = after - int(player.get("morale", 60))
+        reception = "lifted" if delta > 0 else "unsettled" if delta < 0 else "steady"
+        preview.append({"player_id": player_id, "morale_delta": delta,
+                        "reception": reception})
+    return preview
+
+
+def _deliver_team_talk(career: dict[str, Any], match: dict[str, Any],
+                       talk_id: str) -> tuple[bool, str]:
+    if match.get("team_talk") is not None:
+        return False, "The team talk has already been delivered."
+    if int(match.get("period", 0)) != 0 or match.get("finished"):
+        return False, "The team talk is only available before kickoff."
+    talk = next((item for item in content.TEAM_TALKS if item["id"] == talk_id), None)
+    if talk is None:
+        return False, f"Unknown team talk: {talk_id}"
+
+    responses = _team_talk_preview(career, match, talk_id)
+    counts = {"lifted": 0, "steady": 0, "unsettled": 0}
+    for response in responses:
+        player = career["players"][response["player_id"]]
+        player["morale"] = int(clamp(
+            int(player.get("morale", 60)) + int(response["morale_delta"]), 0, 100))
+        counts[response["reception"]] += 1
+
+    summary = (f"{talk['label']}: {counts['lifted']} lifted, "
+               f"{counts['steady']} steady, {counts['unsettled']} unsettled.")
+    match["team_talk"] = {"id": talk_id, "club_id": match["player_club"],
+                          "minute": 0, "responses": responses, "summary": summary}
+    event = {"kind": "team_talk", "club_id": match["player_club"],
+             "text": summary, "minute": 0, "period": 0,
+             "phase": "pre-match", "action": "team-talk",
+             "zone": "pre-match", "tactical_reason": talk["speech"]}
+    _add_event(match, event)
+    # The recorded order should reflect the tunnel talk, then the opening plan.
+    match["events"].insert(0, match["events"].pop())
+    return True, summary
+
+
+def _needs_team_talk(match: dict[str, Any] | None) -> bool:
+    return bool(match and int(match.get("period", 0)) == 0
+                 and match.get("team_talk") is None and not match.get("finished"))
+
+
 def _start_matchday(career: dict[str, Any], app: dict[str, Any]) -> None:
     if career["season_complete"]:
         app["message"] = "The season is complete. Press Enter at Home to begin the next one."
         return
     if career.get("live_match"):
-        app["page"] = "match"
+        app["page"] = "team_talk" if _needs_team_talk(career["live_match"]) else "match"
         return
     prepare_week(career)
     fixture = current_fixture(career)
@@ -2250,8 +2568,9 @@ def _start_matchday(career: dict[str, Any], app: dict[str, Any]) -> None:
     career["live_match"] = new_match(career, home, away,
                                      career["round"],
                                      _match_seed(career, career["round"], home, away))
-    app["page"] = "match"
-    app["message"] = f"Matchday. Read the first phase, then choose when to advance the 15-minute window."
+    app["page"] = "team_talk"
+    app["talk_index"] = 0
+    app["message"] = "Matchday. Set the tone before the opening whistle."
 
 
 def _cycle_choice(current: str, choices: tuple[str, ...], direction: int = 1) -> str:
@@ -2270,41 +2589,91 @@ def _change_tactic(tactic: dict[str, str], key: str, direction: int = 1) -> str:
     return f"{key.title()} {tactic[key]}: {options[tactic[key]]}"
 
 
+def _sub_candidates(career: dict[str, Any], match: dict[str, Any],
+                    club_id: str, outgoing_id: str | None = None) -> list[dict[str, Any]]:
+    lineup = match["lineups"][club_id]
+    outgoing = career["players"].get(outgoing_id) if outgoing_id else None
+    outgoing_is_keeper = bool(outgoing and outgoing["position"] == "GK")
+    candidates = [career["players"][player_id]
+                  for player_id in career["clubs"][club_id]["roster"]
+                  if player_id not in lineup
+                  and is_available(career, career["players"][player_id])
+                  and (career["players"][player_id]["position"] == "GK")
+                      == outgoing_is_keeper]
+    role = outgoing["position"] if outgoing else "MID"
+    return sorted(candidates,
+                  key=lambda player: (-role_skill(player, role),
+                                      -int(player.get("fitness", 0)), player["name"]))
+
+
+def _open_substitutions(career: dict[str, Any], match: dict[str, Any],
+                        app: dict[str, Any]) -> None:
+    club_id = career["club_id"]
+    if int(match["substitutions"][club_id]) >= 5:
+        app["message"] = "All five substitutions have been used."
+        return
+    if match["period"] == 0 or match["finished"]:
+        app["message"] = "Changes are available after play begins and before full time."
+        return
+    lineup = [career["players"][player_id] for player_id in match["lineups"][club_id]]
+    if not lineup:
+        app["message"] = "There is no player on the pitch to replace."
+        return
+    outfield = [index for index, player in enumerate(lineup)
+                if player["position"] != "GK"]
+    choices = outfield or list(range(len(lineup)))
+    out_index = min(choices, key=lambda index: (
+        float(match["load"].get(lineup[index]["id"], lineup[index]["fitness"])),
+        lineup[index]["name"]))
+    bench = _sub_candidates(career, match, club_id, lineup[out_index]["id"])
+    if not bench:
+        app["message"] = "No medically cleared player can replace that role. Choose another player to come off."
+        return
+    app["sub_out_index"] = out_index
+    app["sub_in_index"] = 0
+    app["sub_focus"] = "out"
+    app["page"] = "match_subs"
+
+
 def _apply_substitution(career: dict[str, Any], match: dict[str, Any],
-                        incoming_id: str) -> str:
-    cid = career["club_id"]
-    if match["substitutions"][cid] >= 5:
-        return "All five substitutions have been used."
-    if match["period"] >= content.MATCH_PERIODS or match["period"] == 0:
-        return "Substitutions are available after play has begun and before full time."
+                        incoming_id: str, outgoing_id: str) -> tuple[bool, str]:
+    cid = match["player_club"]
+    if match.get("finished") or match["period"] >= content.MATCH_PERIODS or match["period"] == 0:
+        return False, "Substitutions are available after play has begun and before full time."
+    if int(match["substitutions"][cid]) >= 5:
+        return False, "All five substitutions have been used."
     if incoming_id not in career["clubs"][cid]["roster"]:
-        return "That player is not in your squad."
+        return False, "That player is not in your squad."
+    if outgoing_id not in match["lineups"][cid]:
+        return False, "Choose a player who is currently on the pitch."
     if incoming_id in match["lineups"][cid]:
-        return "That player is already on the pitch."
-    incoming = career["players"][incoming_id]
+        return False, "That player is already on the pitch."
+    incoming = career["players"].get(incoming_id)
+    outgoing = career["players"].get(outgoing_id)
+    if not incoming or not outgoing:
+        return False, "The selected player record is unavailable."
     if not is_available(career, incoming):
-        return f"{incoming['name']} is not medically cleared."
-    outgoing_options = [career["players"][pid] for pid in match["lineups"][cid]
-                       if career["players"][pid]["position"] != "GK"
-                       or incoming["position"] == "GK"]
-    if not outgoing_options:
-        return "There is no like-for-like player to replace."
-    outgoing = min(outgoing_options,
-                   key=lambda p: (float(match["load"].get(p["id"], p["fitness"])),
-                                  role_skill(p, incoming["position"])))
-    match["lineups"][cid].remove(outgoing["id"])
+        return False, f"{incoming['name']} is not medically cleared."
+    if (incoming["position"] == "GK") != (outgoing["position"] == "GK"):
+        return False, "A goalkeeper can only replace the goalkeeper, and an outfield player an outfield player."
+
+    match["lineups"][cid].remove(outgoing_id)
     match["lineups"][cid].append(incoming_id)
     match["substitutions"][cid] += 1
     _player_match_stats(match, incoming_id)
     text = content.MATCH_LINES["substitution"].format(
         incoming=incoming["name"], outgoing=outgoing["name"], minute=match["minute"])
+    change = {"minute": int(match["minute"]), "period": int(match["period"]),
+              "incoming_id": incoming_id, "outgoing_id": outgoing_id}
+    match.setdefault("substitution_history", []).append(change)
     _add_event(match, {"kind": "substitution", "club_id": cid,
-                       "actor_id": incoming_id, "target_id": outgoing["id"],
+                       "actor_id": incoming_id, "target_id": outgoing_id,
                        "text": text, "minute": match["minute"],
-                       "phase": "touchline", "action": "substitution",
+                       "period": match["period"], "phase": "touchline",
+                       "action": "substitution",
                        "tactical_reason": content.TACTICAL_REASONS["substitution"].format(
-                           position=incoming["position"])})
-    return text
+                           position=outgoing["position"])})
+    return True, text
 
 
 def _advance_season_from_ui(career: dict[str, Any], app: dict[str, Any]) -> None:
@@ -2336,6 +2705,10 @@ def _draw_page(win, body: ui.Rect, career: dict[str, Any] | None,
         _draw_table(win, body, career, app)
     elif page == "history" and career:
         _draw_history(win, body, career)
+    elif page == "team_talk" and career and career.get("live_match"):
+        _draw_team_talk(win, body, career, app)
+    elif page == "match_subs" and career and career.get("live_match"):
+        _draw_substitutions(win, body, career, app)
     elif page == "match" and career and career.get("live_match"):
         _draw_match(win, body, career, app)
     else:
@@ -2422,22 +2795,103 @@ def _handle_offer_key(key: int, career: dict[str, Any], app: dict[str, Any]) -> 
     return True
 
 
+def _handle_team_talk_key(key: int, career: dict[str, Any],
+                          app: dict[str, Any]) -> bool:
+    match = career.get("live_match")
+    if not match:
+        app["page"] = "home"
+        return True
+    if key == 27:
+        app["page"] = "home"
+        app["message"] = "Match paused before kickoff. M returns to the team talk."
+    elif key in (curses.KEY_UP, ord("k")):
+        app["talk_index"] = max(0, int(app.get("talk_index", 0)) - 1)
+    elif key in (curses.KEY_DOWN, ord("j")):
+        app["talk_index"] = min(len(content.TEAM_TALKS) - 1,
+                                 int(app.get("talk_index", 0)) + 1)
+    elif key in (10, 13, curses.KEY_ENTER):
+        index = int(clamp(app.get("talk_index", 0), 0, len(content.TEAM_TALKS) - 1))
+        delivered, message = _deliver_team_talk(
+            career, match, content.TEAM_TALKS[index]["id"])
+        app["message"] = message
+        if delivered:
+            app["page"] = "match"
+            app["match_view"] = "live"
+    return True
+
+
+def _handle_substitution_key(key: int, career: dict[str, Any],
+                             app: dict[str, Any]) -> bool:
+    match = career.get("live_match")
+    if not match:
+        app["page"] = "home"
+        return True
+    if key in (27, ord("q"), ord("Q")):
+        app["page"] = "match"
+        app["message"] = "No change made."
+        return True
+    if key in (9, getattr(curses, "KEY_BTAB", -99)):
+        app["sub_focus"] = "in" if app.get("sub_focus", "out") == "out" else "out"
+        return True
+
+    club_id = career["club_id"]
+    lineup = [career["players"][pid] for pid in match["lineups"][club_id]]
+    out_index = int(clamp(app.get("sub_out_index", 0), 0, max(0, len(lineup) - 1)))
+    outgoing = lineup[out_index] if lineup else None
+    bench = _sub_candidates(career, match, club_id, outgoing["id"] if outgoing else None)
+    in_index = int(clamp(app.get("sub_in_index", 0), 0, max(0, len(bench) - 1)))
+    focus = app.get("sub_focus", "out")
+    if key in (curses.KEY_UP, ord("k")):
+        if focus == "in":
+            app["sub_in_index"] = max(0, in_index - 1)
+        else:
+            app["sub_out_index"] = max(0, out_index - 1)
+            new_out = lineup[app["sub_out_index"]] if lineup else None
+            new_bench = _sub_candidates(
+                career, match, club_id, new_out["id"] if new_out else None)
+            app["sub_in_index"] = min(in_index, max(0, len(new_bench) - 1))
+    elif key in (curses.KEY_DOWN, ord("j")):
+        if focus == "in":
+            app["sub_in_index"] = min(max(0, len(bench) - 1), in_index + 1)
+        else:
+            app["sub_out_index"] = min(max(0, len(lineup) - 1), out_index + 1)
+            new_out = lineup[app["sub_out_index"]] if lineup else None
+            new_bench = _sub_candidates(
+                career, match, club_id, new_out["id"] if new_out else None)
+            app["sub_in_index"] = min(in_index, max(0, len(new_bench) - 1))
+    elif key in (10, 13, curses.KEY_ENTER):
+        outgoing = lineup[out_index] if lineup else None
+        if not outgoing or not bench:
+            app["message"] = "Select an eligible player on both sides before confirming."
+            return True
+        incoming = bench[in_index]
+        changed, message = _apply_substitution(
+            career, match, incoming["id"], outgoing["id"])
+        app["message"] = message
+        if changed:
+            app["page"] = "match"
+            app["match_view"] = "events"
+    return True
+
+
 def _handle_match_key(key: int, career: dict[str, Any], app: dict[str, Any]) -> bool:
     match = career.get("live_match")
     if not match:
         app["page"] = "home"
         return True
-    if app.get("submode"):
-        bench = app.get("bench", [])
-        if key in (27, ord("q"), ord("Q")):
-            app["submode"] = False
-        elif key in (curses.KEY_UP, ord("k")):
-            app["bench_index"] = max(0, app.get("bench_index", 0) - 1)
-        elif key in (curses.KEY_DOWN, ord("j")):
-            app["bench_index"] = min(max(0, len(bench) - 1), app.get("bench_index", 0) + 1)
-        elif key in (10, 13, curses.KEY_ENTER) and bench:
-            app["message"] = _apply_substitution(career, match, bench[app["bench_index"]])
-            app["submode"] = False
+    if key == 9:
+        view = app.get("match_view", "live")
+        app["match_view"] = MATCH_VIEWS[(MATCH_VIEWS.index(view) + 1) % len(MATCH_VIEWS)] \
+            if view in MATCH_VIEWS else MATCH_VIEWS[0]
+        return True
+    if app.get("match_view") == "events" and key in (
+            curses.KEY_UP, ord("k"), curses.KEY_DOWN, ord("j")):
+        event_count = len(match.get("events", []))
+        current = int(clamp(app.get("event_index", 0), 0,
+                            max(0, event_count - 1)))
+        direction = -1 if key in (curses.KEY_UP, ord("k")) else 1
+        app["event_index"] = int(clamp(current + direction, 0,
+                                       max(0, event_count - 1)))
         return True
     if match["finished"]:
         if key in (10, 13, curses.KEY_ENTER):
@@ -2467,11 +2921,7 @@ def _handle_match_key(key: int, career: dict[str, Any], app: dict[str, Any]) -> 
     elif key == ord("3"):
         app["message"] = _change_tactic(match["tactics"][career["club_id"]], "width")
     elif key == ord("4"):
-        if match["substitutions"][career["club_id"]] >= 5:
-            app["message"] = "All five substitutions have been used."
-        else:
-            app["submode"] = True
-            app["bench_index"] = 0
+        _open_substitutions(career, match, app)
     elif key == 27:
         app["page"] = "home"
         app["message"] = "Match paused. M resumes; the current score and period are saved."
@@ -2483,6 +2933,14 @@ def _route_key(key: int, career: dict[str, Any] | None,
     """Handle one key; return False only when the player exits cleanly."""
     page = app.get("page", "home")
     if key in (curses.KEY_RESIZE, -1):
+        return True
+    if page == "team_talk" and career:
+        _handle_team_talk_key(key, career, app)
+        _persist(save_data, career)
+        return True
+    if page == "match_subs" and career:
+        _handle_substitution_key(key, career, app)
+        _persist(save_data, career)
         return True
     if page == "match" and career:
         _handle_match_key(key, career, app)
@@ -2648,11 +3106,12 @@ def _run(stdscr) -> int:
             if not state.get("lineup") and state.get("roster"):
                 state["lineup"] = best_lineup(career, cid)
     app: dict[str, Any] = {
-        "page": "match" if career and career.get("live_match") else
-                "home" if career else "career_select",
+        "page": ("team_talk" if career and _needs_team_talk(career.get("live_match"))
+                 else "match" if career and career.get("live_match") else
+                 "home" if career else "career_select"),
         "club_index": 0, "squad_index": 0, "market_index": 0,
+        "match_view": "live",
         "message": "Choose a club and build a football life around its people.",
-        "match_footer": "Enter next 15'  ·  1 Press  2 Line  3 Width  4 Sub  Q Quick-sim  Esc Home",
     }
     app["career"] = career
     app["data"] = save_data

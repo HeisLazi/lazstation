@@ -148,6 +148,142 @@ class MatchRules(unittest.TestCase):
         self.assertGreater(direct_352, direct_442)
 
 
+class MatchdayDecisionRules(unittest.TestCase):
+    def setUp(self):
+        self.career = game.new_career("BRP", seed=611)
+        self.match = game.new_match(self.career, "BRP", "BWA", round_index=0,
+                                    match_seed=9812)
+
+    def test_team_talk_records_individual_morale_response_once_before_kickoff(self):
+        club_id = self.career["club_id"]
+        lineup = self.match["lineups"][club_id]
+        for player_id in lineup:
+            player = self.career["players"][player_id]
+            player["personality"] = "professional"
+            player["morale"] = 60
+        self.career["players"][lineup[0]]["morale"] = 99
+        before_skills = {player_id: self.career["players"][player_id]["passing"]
+                         for player_id in lineup}
+
+        delivered, summary = game._deliver_team_talk(self.career, self.match, "composed")
+
+        self.assertTrue(delivered)
+        self.assertIn("lifted", summary)
+        self.assertEqual(self.match["events"][0]["kind"], "team_talk")
+        self.assertEqual(self.match["events"][1]["kind"], "kickoff")
+        self.assertEqual(self.career["players"][lineup[0]]["morale"], 100)
+        self.assertEqual(self.career["players"][lineup[1]]["morale"], 62)
+        self.assertEqual(before_skills, {player_id: self.career["players"][player_id]["passing"]
+                                         for player_id in lineup})
+        morale_after = [self.career["players"][player_id]["morale"] for player_id in lineup]
+        repeated, _ = game._deliver_team_talk(self.career, self.match, "composed")
+        self.assertFalse(repeated)
+        self.assertEqual(morale_after,
+                         [self.career["players"][player_id]["morale"] for player_id in lineup])
+
+    def test_team_talk_is_not_available_after_play_starts(self):
+        game.simulate_period(self.career, self.match)
+        before = copy.deepcopy(self.career)
+        delivered, message = game._deliver_team_talk(self.career, self.match, "belief")
+        self.assertFalse(delivered)
+        self.assertIn("before kickoff", message)
+        self.assertEqual(self.career, before)
+
+    def test_substitution_uses_the_exact_confirmed_pair(self):
+        game.simulate_period(self.career, self.match)
+        club_id = self.career["club_id"]
+        outgoing_id = next(player_id for player_id in self.match["lineups"][club_id]
+                           if self.career["players"][player_id]["position"] != "GK")
+        bench = game._sub_candidates(self.career, self.match, club_id, outgoing_id)
+        incoming_id = bench[0]["id"]
+        before_size = len(self.match["lineups"][club_id])
+
+        changed, message = game._apply_substitution(
+            self.career, self.match, incoming_id, outgoing_id)
+
+        self.assertTrue(changed, message)
+        self.assertEqual(len(self.match["lineups"][club_id]), before_size)
+        self.assertNotIn(outgoing_id, self.match["lineups"][club_id])
+        self.assertIn(incoming_id, self.match["lineups"][club_id])
+        self.assertEqual(self.match["substitutions"][club_id], 1)
+        self.assertEqual(self.match["substitution_history"][-1]["incoming_id"], incoming_id)
+        self.assertEqual(self.match["substitution_history"][-1]["outgoing_id"], outgoing_id)
+        self.assertEqual(self.match["events"][-1]["target_id"], outgoing_id)
+
+    def test_invalid_substitution_is_atomic_and_goalkeepers_stay_paired(self):
+        game.simulate_period(self.career, self.match)
+        club_id = self.career["club_id"]
+        outgoing_id = next(player_id for player_id in self.match["lineups"][club_id]
+                           if self.career["players"][player_id]["position"] != "GK")
+        active_id = self.match["lineups"][club_id][2]
+        before_match = copy.deepcopy(self.match)
+        before_career = copy.deepcopy(self.career)
+
+        changed, message = game._apply_substitution(
+            self.career, self.match, active_id, outgoing_id)
+
+        self.assertFalse(changed)
+        self.assertIn("already on the pitch", message)
+        self.assertEqual(self.match, before_match)
+        self.assertEqual(self.career, before_career)
+
+        keeper_id = next(player_id for player_id in self.match["lineups"][club_id]
+                         if self.career["players"][player_id]["position"] == "GK")
+        outfield_bench = next(player["id"] for player in game._sub_candidates(
+            self.career, self.match, club_id, outgoing_id))
+        changed, message = game._apply_substitution(
+            self.career, self.match, outfield_bench, keeper_id)
+        self.assertFalse(changed)
+        self.assertIn("goalkeeper", message)
+        self.assertEqual(self.match, before_match)
+
+    def test_substitution_menu_confirms_after_both_sides_are_selected(self):
+        game.simulate_period(self.career, self.match)
+        self.career["live_match"] = self.match
+        app = {"page": "match", "match_view": "live"}
+        save_data = {"version": 2, "career": self.career}
+        with patch.object(game.ts, "save"):
+            game._route_key(ord("4"), self.career, save_data, app)
+            self.assertEqual(app["page"], "match_subs")
+            outgoing_id = self.match["lineups"]["BRP"][app["sub_out_index"]]
+            game._route_key(9, self.career, save_data, app)
+            self.assertEqual(app["sub_focus"], "in")
+            incoming_id = game._sub_candidates(
+                self.career, self.match, "BRP", outgoing_id)[app["sub_in_index"]]["id"]
+            game._route_key(10, self.career, save_data, app)
+        self.assertEqual(app["page"], "match")
+        self.assertEqual(app["match_view"], "events")
+        self.assertEqual(self.match["substitution_history"][-1]["incoming_id"], incoming_id)
+        self.assertEqual(self.match["substitution_history"][-1]["outgoing_id"], outgoing_id)
+
+    def test_match_views_cycle_without_changing_the_match(self):
+        game.simulate_period(self.career, self.match)
+        self.career["live_match"] = self.match
+        before = copy.deepcopy(self.match)
+        app = {"match_view": "live"}
+        for expected in ("events", "stats", "live"):
+            game._handle_match_key(9, self.career, app)
+            self.assertEqual(app["match_view"], expected)
+            self.assertEqual(self.match, before)
+
+    def test_event_view_browses_incidents_without_mutating_the_match(self):
+        game.simulate_period(self.career, self.match)
+        self.match["events"].extend([
+            {"kind": "chance", "minute": 10, "text": "Earlier incident"},
+            {"kind": "goal", "minute": 12, "text": "Latest incident"},
+        ])
+        self.career["live_match"] = self.match
+        before = copy.deepcopy(self.match)
+        app = {"match_view": "events", "event_index": 0}
+
+        game._handle_match_key(ord("j"), self.career, app)
+        self.assertEqual(app["event_index"], 1)
+        self.assertEqual(self.match, before)
+        game._handle_match_key(ord("k"), self.career, app)
+        self.assertEqual(app["event_index"], 0)
+        self.assertEqual(self.match, before)
+
+
 class CareerRules(unittest.TestCase):
     def test_escape_returns_from_management_page_to_home(self):
         career = game.new_career("BRP", seed=12)

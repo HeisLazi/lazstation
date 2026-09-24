@@ -73,6 +73,11 @@
       "wait": 0.06
     },
     {
+      "type": "key",
+      "key": "ENTER",
+      "wait": 0.06
+    },
+    {
       "type": "snapshot",
       "name": "match-01"
     },
@@ -88,6 +93,11 @@
     {
       "type": "key",
       "key": "M",
+      "wait": 0.06
+    },
+    {
+      "type": "key",
+      "key": "ENTER",
       "wait": 0.06
     },
     {
@@ -169,6 +179,11 @@
       "wait": 0.06
     },
     {
+      "type": "key",
+      "key": "ENTER",
+      "wait": 0.06
+    },
+    {
       "type": "snapshot",
       "name": "match-03"
     },
@@ -184,6 +199,11 @@
     {
       "type": "key",
       "key": "M",
+      "wait": 0.06
+    },
+    {
+      "type": "key",
+      "key": "ENTER",
       "wait": 0.06
     },
     {
@@ -265,6 +285,11 @@
       "wait": 0.06
     },
     {
+      "type": "key",
+      "key": "ENTER",
+      "wait": 0.06
+    },
+    {
       "type": "snapshot",
       "name": "match-05"
     },
@@ -280,6 +305,11 @@
     {
       "type": "key",
       "key": "M",
+      "wait": 0.06
+    },
+    {
+      "type": "key",
+      "key": "ENTER",
       "wait": 0.06
     },
     {
@@ -361,6 +391,11 @@
       "wait": 0.06
     },
     {
+      "type": "key",
+      "key": "ENTER",
+      "wait": 0.06
+    },
+    {
       "type": "snapshot",
       "name": "match-07"
     },
@@ -376,6 +411,11 @@
     {
       "type": "key",
       "key": "M",
+      "wait": 0.06
+    },
+    {
+      "type": "key",
+      "key": "ENTER",
       "wait": 0.06
     },
     {
@@ -457,6 +497,11 @@
       "wait": 0.06
     },
     {
+      "type": "key",
+      "key": "ENTER",
+      "wait": 0.06
+    },
+    {
       "type": "snapshot",
       "name": "match-09"
     },
@@ -472,6 +517,11 @@
     {
       "type": "key",
       "key": "M",
+      "wait": 0.06
+    },
+    {
+      "type": "key",
+      "key": "ENTER",
       "wait": 0.06
     },
     {
@@ -559,7 +609,7 @@
       },
       "match-01": {
         "contains": [
-          "MATCH EVENTS",
+          "LATEST MOMENT",
           "FULL TIME"
         ]
       },

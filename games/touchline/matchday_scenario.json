@@ -1,0 +1,46 @@
+{
+  "timeout": 12,
+  "events": [
+    {"type": "key", "key": "ENTER", "wait": 0.08},
+    {"type": "key", "key": "M", "wait": 0.08},
+    {"type": "snapshot", "name": "team-talk"},
+    {"type": "key", "key": "j", "wait": 0.06},
+    {"type": "snapshot", "name": "team-talk-belief"},
+    {"type": "key", "key": "ENTER", "wait": 0.08},
+    {"type": "snapshot", "name": "match-live"},
+    {"type": "key", "key": "TAB", "wait": 0.06},
+    {"type": "snapshot", "name": "match-events"},
+    {"type": "key", "key": "j", "wait": 0.06},
+    {"type": "snapshot", "name": "match-events-older"},
+    {"type": "key", "key": "TAB", "wait": 0.06},
+    {"type": "snapshot", "name": "match-stats"},
+    {"type": "key", "key": "ENTER", "wait": 0.08},
+    {"type": "key", "key": "TAB", "wait": 0.06},
+    {"type": "snapshot", "name": "match-live-after-window"},
+    {"type": "key", "key": "TAB", "wait": 0.06},
+    {"type": "snapshot", "name": "match-events-after-window"},
+    {"type": "key", "key": "TAB", "wait": 0.06},
+    {"type": "snapshot", "name": "match-stats-after-window"},
+    {"type": "key", "key": "4", "wait": 0.08},
+    {"type": "snapshot", "name": "changes"},
+    {"type": "key", "key": "TAB", "wait": 0.06},
+    {"type": "snapshot", "name": "changes-incoming"},
+    {"type": "key", "key": "ENTER", "wait": 0.08},
+    {"type": "snapshot", "name": "change-recorded"},
+    {"type": "key", "key": "Q", "wait": 0.10},
+    {"type": "snapshot", "name": "full-time"},
+    {"type": "key", "key": "ENTER", "wait": 0.10},
+    {"type": "snapshot", "name": "round-settled"},
+    {"type": "key", "key": "Q", "wait": 0.10}
+  ],
+  "assertions": {
+    "exit_code": 0,
+    "frames": {
+      "team-talk": {"contains": ["TEAM TALK", "UNSETTLED", "Amel"]},
+      "match-events-older": {"contains": ["TEAM TALK"]},
+      "match-stats": {"contains": ["MATCH DATA"]},
+      "changes": {"contains": ["MATCH CHANGES"]},
+      "full-time": {"contains": ["FULL TIME"]}
+    }
+  }
+}
