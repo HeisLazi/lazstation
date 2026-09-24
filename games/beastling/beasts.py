@@ -42,6 +42,41 @@ ABILITY_DESC = {
     "Vengeful": "Once per battle, at a quarter HP or less, its Atk rises.",
 }
 
+# --------------------------------------------------------------- synergy
+# 2v2 only: a bonus for fielding a specific PAIR of types on the same
+# side at once. Same restraint as abilities -- 3 named pairs out of the
+# 15 possible, not exhaustive coverage. Keyed by a frozenset so side
+# order doesn't matter; a pair not listed here gets no bonus, a real
+# design choice (not every combo needs to be "build-around good") not
+# an oversight.
+#
+# `desc` is kept to the short, in-battle-announcement phrasing on
+# purpose, not a fuller sentence -- a reviewed regression, the exact
+# same "verify the ACTUAL render path, not just that a string exists"
+# bug class Mending Berry hit twice earlier this session: the first
+# draft's fuller wording rendered fine in isolation but overflowed the
+# battle log line once the "<Side>'s <Name> is active -- " prefix was
+# counted, and only a live PTY run caught it. Checked against the real
+# stage width (62 cols at 66x24) with that exact prefix, both sides,
+# before landing on this wording.
+TYPE_SYNERGY = {
+    frozenset({"Ember", "Spark"}): {
+        "name": "Wildfire Storm",
+        "desc": "+15% damage.",
+        "dmg_mult": 1.15,
+    },
+    frozenset({"Tide", "Bloom"}): {
+        "name": "Rainforest Bond",
+        "desc": "Heals 4% HP/turn.",
+        "heal_pct": 0.04,
+    },
+    frozenset({"Stone", "Gloom"}): {
+        "name": "Bedrock Ambush",
+        "desc": "Much higher crits.",
+        "crit_bonus": 0.20,
+    },
+}
+
 # ---------------------------------------------------------------- moves
 # name: dict(type, power, accuracy, desc, priority, effect, sets_weather)
 #

@@ -14,8 +14,8 @@ import sys
 
 import termstation_sdk as ts
 from beasts import (ABILITY_DESC, CHAMPIONS, CHART, ITEMS, MOVES, ROUTES, SPECIES,
-                    STARTERS, TYPE_ABILITY, WEATHER_DESC, WEATHER_DURATION,
-                    WEATHER_EFFECTS)
+                    STARTERS, TYPE_ABILITY, TYPE_SYNERGY, WEATHER_DESC,
+                    WEATHER_DURATION, WEATHER_EFFECTS)
 
 # Vertical-centring target for `ts.tv_clear(page=PAGE)`. The real content
 # height of the worst-case battle screen is 17 print calls (verified by
@@ -203,6 +203,15 @@ def effectiveness(move_type: str, defender_type: str) -> float:
     return CHART.get(move_type, {}).get(defender_type, 1.0)
 
 
+def active_synergy(a: Beast | None, b: Beast | None) -> dict | None:
+    """2v2 only: the synergy bonus (if any) for a side's two active
+    beasts. Both must be alive and present -- a fainted or empty slot
+    breaks the pair, same as a real doubles team losing a partner."""
+    if a is None or b is None or not a.alive or not b.alive:
+        return None
+    return TYPE_SYNERGY.get(frozenset({a.type, b.type}))
+
+
 def effect_word(mult: float) -> str:
     if mult >= 2.0:
         return "It's super effective!"
@@ -216,7 +225,8 @@ CRIT_MULT = 1.5
 
 
 def damage(attacker: Beast, defender: Beast, move: str,
-           weather: str | None = None) -> tuple[int, float, bool, bool]:
+           weather: str | None = None, dmg_mult: float = 1.0,
+           crit_bonus: float = 0.0) -> tuple[int, float, bool, bool]:
     """Returns (damage, type multiplier, hit?, crit?).
 
     `weather` is field-wide, not tied to either beast, so it's a plain
@@ -224,6 +234,13 @@ def damage(attacker: Beast, defender: Beast, move: str,
     kept as a SEPARATE multiplier from `mult` (type effectiveness) since
     it drives no "It's super effective!"-style text of its own and
     shouldn't be folded into the number that does.
+
+    `dmg_mult`/`crit_bonus` exist for 2v2 type synergy (see
+    `active_synergy`) -- both default to a no-op so every existing 1v1
+    call site is unaffected. Synergy needed a crit-chance hook, not just
+    a flat damage multiplier, so it has to live inside `damage` itself
+    rather than being applied to the return value the way weather/item
+    multipliers are folded in below.
     """
     spec = MOVES[move]
     m_type, power, accuracy = spec["type"], spec["power"], spec["accuracy"]
@@ -232,7 +249,7 @@ def damage(attacker: Beast, defender: Beast, move: str,
     mult = effectiveness(m_type, defender.type)
     if m_type == attacker.type:
         mult *= 1.25                      # it suits them
-    crit = random.random() < CRIT_CHANCE
+    crit = random.random() < CRIT_CHANCE + crit_bonus
     # The divisor is tuned against these stat sizes: a neutral hit between
     # equal levels should take about five exchanges, so a super-effective
     # choice (two or three) is a real decision rather than a rounding error.
@@ -241,6 +258,7 @@ def damage(attacker: Beast, defender: Beast, move: str,
     dealt *= WEATHER_EFFECTS.get(weather, {}).get(m_type, 1.0)
     dealt *= ITEMS.get(attacker.item, {}).get("dmg_dealt", 1.0)
     dealt *= ITEMS.get(defender.item, {}).get("dmg_taken", 1.0)
+    dealt *= dmg_mult
     if defender.ability == "Thick Hide" and mult >= 2.0:
         dealt *= 0.75
     return max(1, int(dealt)), mult, True, crit
@@ -473,6 +491,34 @@ def beast_line(b: Beast, wild: bool = False) -> list[str]:
         f"   HP [{bar(b.hp, b.max_hp)}] {b.hp}/{b.max_hp}{status}"
         f"{ts.color(stages, 'grey')}  {ts.color(b.ability, 'grey')}",
     ]
+
+
+#: 2v2 only. Doubling the active count to 4 doesn't leave room for
+#: `beast_line`'s 2-lines-per-beast format (the 1v1 battle screen is
+#: already down to a single row of margin at the declared minimum, see
+#: the comment above `beast_line`) -- one line per beast, ability and
+#: stat stages dropped (they're a tap away on the team screen before the
+#: fight, not a live decision the way HP/status/type are), is the trade
+#: that keeps the whole screen on the right side of the row budget.
+#: Verified against the game's declared minimum by direct execution
+#: (`_row_probe_2v2.py`), same discipline as every other screen here.
+def compact_beast_line(b: Beast, wild: bool = False) -> str:
+    # No `None`/"-- fainted --" case -- battle_2v2 has no bench, so a
+    # downed active is still the same Beast object at 0 HP, never
+    # replaced with nothing to show.
+    tag = "Wild " if wild else ""
+    status = ""
+    if b.status and b.alive:
+        # A fainted beast's status is irrelevant (and, worse, stale --
+        # nothing clears it) -- showing e.g. "0/130 BRN" reads as a bug,
+        # not as "it died while burned."
+        word, colour = STATUS_TAG[b.status]
+        status = "  " + ts.color(word, colour)
+    # Pad the plain type text to a fixed width BEFORE colouring it --
+    # colouring first and padding after would pad against the string's
+    # raw length (escape bytes included), silently breaking alignment.
+    return (f"  {tag}{b.name[:11]:<11} {ts.color(b.type.ljust(5), 'cyan')} "
+            f"Lv{b.level:>3} [{bar(b.hp, b.max_hp, 8)}] {b.hp:>3}/{b.max_hp:<3}{status}")
 
 
 def show_log(lines: list[str], keep: int = 4) -> None:
@@ -745,6 +791,247 @@ class Game:
                 return "won"
 
             if not self.healthy():
+                return "lost"
+
+    # --------------------------------------------------------------- 2v2
+    def battle_2v2(self, foe_a: Beast, foe_b: Beast, wild: bool, title: str,
+                   trainer: str = "") -> str:
+        """Two actives per side, Temtem-style, with a type-synergy bonus
+        when a side's pair is a listed match (see `active_synergy`).
+
+        Deliberately scoped down from a full doubles system, the same
+        "additive, not a rewrite of the shared path" shape every prior
+        item took: your two actives are your first two healthy party
+        members, fixed for the whole encounter -- no bench, no swapping
+        in. If both of them faint, the encounter is a loss even if the
+        rest of your party is healthy. There's no catching here either
+        (Circuit's trainer battles never supported that anyway). `battle`
+        itself is untouched -- Story's wild/trainer 1v1 and all of
+        Circuit/Tournament keep using it exactly as before.
+
+        Default targeting is slot-mirrored (your first active vs. their
+        first, your second vs. their second) with no manual target
+        picker -- a second `ask_int` per attacker is a second silent-wipe
+        risk this project has spent the whole session chasing out of
+        every other screen, not something to reintroduce here for a
+        rarely-exercised choice. Once a side is down to one active,
+        both of the opposing side's attackers converge on it instead of
+        one hitting nothing; if the first of them kills it before the
+        second one's turn comes up, that second action simply has
+        nothing left to hit -- with only 2 actives per side there is
+        never a THIRD beast to redirect to, so this is a fizzle, not a
+        retarget (see the comment where it's checked).
+        """
+        healthy = self.healthy()
+        if len(healthy) < 2:
+            return "lost"          # call site is expected to gate entry
+        ally_a, ally_b = healthy[0], healthy[1]
+        self.seen.add(foe_a.slug)
+        self.seen.add(foe_b.slug)
+        for b in (foe_a, foe_b, ally_a, ally_b):
+            b.reset_combat_state()
+        log: list[str] = []
+        if wild:
+            log.append(f"Wild {foe_a.name} and {foe_b.name} appear!")
+        else:
+            log.append(f"{trainer} sends out {foe_a.name} and {foe_b.name}!")
+        # Synergy is static for a pair's whole lifetime (it can only end
+        # by one of them fainting, never turn-by-turn), so announcing it
+        # once here -- instead of spending a row on it every draw -- is
+        # correct, not just cheaper.
+        for owner, pair in (("Your side's", (ally_a, ally_b)), ("The foe's", (foe_a, foe_b))):
+            syn = active_synergy(*pair)
+            if syn:
+                log.append(f"{owner} {syn['name']} is active -- {syn['desc']}")
+
+        weather: str | None = None
+        weather_turns = 0
+
+        def draw() -> None:
+            self.header(title)
+            ts.tv_print(compact_beast_line(foe_a, wild=wild))
+            ts.tv_print(compact_beast_line(foe_b, wild=wild))
+            ts.tv_print(ts.rule("─"))
+            ts.tv_print(compact_beast_line(ally_a))
+            ts.tv_print(compact_beast_line(ally_b))
+            if weather:
+                ts.tv_print(ts.color(f"   {weather} ({weather_turns} left) -- "
+                                     f"{WEATHER_DESC[weather]}", "bright_yellow"))
+            else:
+                ts.tv_print(ts.rule("─"))
+            # keep=2, not the 4 the 1v1 screen affords -- doubling the
+            # active count already ate the row budget's slack; verified
+            # against the declared minimum with `_row_probe_2v2.py`
+            # before any of this loop was written, same order this
+            # project has learned the hard way to do things in.
+            for line in log[-2:]:
+                ts.tv_print(f"  {line}")
+            for _ in range(2 - len(log[-2:])):
+                ts.tv_print()
+            ts.tv_print(ts.rule("─"))
+
+        def initial_target(slot: str, defending_side: tuple[Beast, Beast]) -> Beast | None:
+            mirrored = defending_side[0] if slot == "a" else defending_side[1]
+            if mirrored.alive:
+                return mirrored
+            other = defending_side[1] if slot == "a" else defending_side[0]
+            return other if other.alive else None
+
+        while True:
+            weather_set_this_turn = False
+            for beast in (ally_a, ally_b, foe_a, foe_b):
+                if beast.alive:
+                    log.extend(check_vengeful(beast))
+                    log.extend(check_mending_berry(beast))
+
+            # ---- player picks a move for each of their alive actives;
+            # "run" (wild only) is offered on either prompt and, if
+            # taken, ends move-selection immediately for the whole side.
+            chosen: dict[str, str | None] = {"a": None, "b": None}
+            fled = False
+            for slot, beast in (("a", ally_a), ("b", ally_b)):
+                if not beast.alive:
+                    continue
+                draw()
+                for i, move in enumerate(beast.moves, 1):
+                    spec = MOVES[move]
+                    ts.tv_print(f"   {i}  {move.ljust(13)} {spec['type'].ljust(6)} "
+                                f"pow {spec['power']:>2}  acc {spec['accuracy']}")
+                n = len(beast.moves)
+                if wild:
+                    ts.tv_print(f"   {n + 1}  run")
+                    choice = ts.ask_int(f"{beast.name}'s move", 1, n + 1)
+                else:
+                    choice = ts.ask_int(f"{beast.name}'s move", 1, n)
+                if wild and choice == n + 1:
+                    fled = True
+                    break
+                chosen[slot] = beast.moves[choice - 1]
+
+            if fled:
+                if random.random() < 0.7:
+                    return "fled"
+                log.append("You couldn't get away!")
+                # Matches 1v1's failed-flee shape: the attempt spends
+                # both actives' turns, but the foes still get to act --
+                # `chosen` just stays empty rather than looping past them.
+
+            # ---- build this round's action order
+            order: list[tuple[Beast, Beast, str]] = []
+            for slot, beast in (("a", ally_a), ("b", ally_b)):
+                move = chosen[slot]
+                if beast.alive and move is not None:
+                    target = initial_target(slot, (foe_a, foe_b))
+                    if target is not None:
+                        order.append((beast, target, move))
+            for slot, beast in (("a", foe_a), ("b", foe_b)):
+                if beast.alive:
+                    target = initial_target(slot, (ally_a, ally_b))
+                    if target is not None:
+                        order.append((beast, target, choose_ai_move(beast, target)))
+            order.sort(key=lambda e: (-MOVES[e[2]]["priority"], -e[0].eff_spd))
+
+            for attacker, target, move in order:
+                if not attacker.alive:
+                    continue
+                defender = target
+                if not defender.alive:
+                    # With only 2 actives per side, mirrored targeting is
+                    # exclusive whenever both defenders are alive at
+                    # build time (ally_a always got foe_a, ally_b always
+                    # got foe_b) -- the only way a queued target is
+                    # already down here is that its side was ALREADY
+                    # reduced to this one survivor before the round
+                    # began, so both attackers on the other side were
+                    # assigned it, and the first of them just killed it.
+                    # There is, by construction, no third beast on that
+                    # side left to redirect to -- this can only fizzle,
+                    # never actually retarget. Written as a real lookup
+                    # instead of an unconditional `continue` anyway, so
+                    # it stays correct if 2v2 ever grows past 2 actives.
+                    other_side = (foe_a, foe_b) if defender in (foe_a, foe_b) else (ally_a, ally_b)
+                    survivor = next((b for b in other_side if b.alive), None)
+                    if survivor is None:
+                        continue
+                    defender = survivor
+                can_act, status_lines = may_act(attacker)
+                log.extend(status_lines)
+                if not can_act:
+                    continue
+                partner = (ally_b if attacker is ally_a else ally_a) if attacker in (ally_a, ally_b) \
+                    else (foe_b if attacker is foe_a else foe_a)
+                syn = active_synergy(attacker, partner)
+                dmg_mult = syn.get("dmg_mult", 1.0) if syn else 1.0
+                crit_bonus = syn.get("crit_bonus", 0.0) if syn else 0.0
+                dealt, mult, hit, crit = damage(attacker, defender, move, weather,
+                                                dmg_mult=dmg_mult, crit_bonus=crit_bonus)
+                if not hit:
+                    log.append(f"{attacker.name}'s {move} missed.")
+                    continue
+                defender.hp = max(0, defender.hp - dealt)
+                note = effect_word(mult)
+                if crit:
+                    note = ("A critical hit! " + note).strip()
+                log.append(f"{attacker.name} used {move}. {note}".strip())
+                log.append(f"  {defender.name} lost {dealt} HP.")
+                new_weather = MOVES[move]["sets_weather"]
+                if new_weather:
+                    fresh = new_weather != weather
+                    weather, weather_turns = new_weather, WEATHER_DURATION
+                    weather_set_this_turn = True
+                    log.append(f"  {new_weather} " + ("rolls in!" if fresh else "holds."))
+                if defender.alive:
+                    log.extend(apply_move_effect(attacker, defender, move))
+                log.extend(apply_ability_on_hit(attacker, defender))
+                log.extend(check_vengeful(defender))
+                log.extend(check_mending_berry(defender))
+                if not defender.alive:
+                    log.append(f"{defender.name} is out of the fight!")
+                # No break on a faint here (unlike 1v1's 2-combatant
+                # loop) -- with 4 combatants, one fainting must not
+                # cancel the other two attackers' turns.
+
+            for beast in (ally_a, ally_b, foe_a, foe_b):
+                if beast.alive:
+                    log.extend(resolve_status_upkeep(beast))
+            # Rainforest Bond's heal-over-time -- the only synergy that
+            # needs an end-of-turn hook rather than a per-hit one.
+            for pair in ((ally_a, ally_b), (foe_a, foe_b)):
+                syn = active_synergy(*pair)
+                if syn and "heal_pct" in syn:
+                    for b in pair:
+                        if b.alive and b.hp < b.max_hp:
+                            healed = max(1, int(b.max_hp * syn["heal_pct"]))
+                            b.hp = min(b.max_hp, b.hp + healed)
+                            log.append(f"  {b.name}'s {syn['name']} heals it for {healed} HP!")
+
+            if weather and not weather_set_this_turn:
+                weather_turns -= 1
+                if weather_turns <= 0:
+                    log.append(f"  {weather} fades.")
+                    weather = None
+
+            if not foe_a.alive and not foe_b.alive:
+                gained = 0
+                for f in (foe_a, foe_b):
+                    gained += max(4, int(f.level * 3.2))
+                    self.money += 8 + f.level * 2
+                # Split, not doubled -- two allies sharing one pool of XP
+                # from two foes lands close to 1v1's per-fight pacing
+                # instead of running it up.
+                each = max(1, gained // 2)
+                for ally in (ally_a, ally_b):
+                    if ally.alive:
+                        for note in ally.gain_xp(each):
+                            log.append(note)
+                self.header(title)
+                ts.tv_print()
+                show_log(log, keep=10)
+                ts.tv_print()
+                ts.tv_pause()
+                return "won"
+
+            if not ally_a.alive and not ally_b.alive:
                 return "lost"
 
     def capture(self, foe: Beast) -> None:
@@ -1135,6 +1422,14 @@ class Game:
             if self.badges < len(CHAMPIONS):
                 champ = CHAMPIONS[self.badges]
                 options.insert(1, f"Challenge {champ['name']}")
+            # Only offered with 2+ healthy party members -- battle_2v2's
+            # own entry gate returns an immediate loss below that count,
+            # so hiding the option is the right failure mode here, not
+            # showing it and then bouncing the player off a menu they
+            # could never actually use (same shape as "Challenge" only
+            # appearing once there's a badge left to challenge for).
+            if len(self.healthy()) >= 2:
+                options.append("Synergy Duel (2v2)")
             pick = ts.menu("Camp", options, back="Save and quit")
             if pick == -1:
                 self.store()
@@ -1159,6 +1454,29 @@ class Game:
                 self.box_screen()
             elif label == "Supplies":
                 self.shop()
+            elif label.startswith("Synergy Duel"):
+                self.synergy_duel()
+
+    def synergy_duel(self) -> None:
+        """A Story-mode-only way to try `battle_2v2` -- two wild foes at
+        roughly the party's own level, not tied to a specific route
+        (2v2 is an additional thing to try, not a systemic replacement
+        for 1v1 exploration -- Travel still only ever starts a 1v1
+        encounter). Needs 2 healthy party members; Camp only offers
+        this option when that's already true, so the entry gate inside
+        `battle_2v2` itself should never actually fire from here.
+        """
+        healthy = self.healthy()
+        if len(healthy) < 2:
+            return
+        avg_level = max(1, (healthy[0].level + healthy[1].level) // 2)
+        slug_a, slug_b = random.sample(list(SPECIES), 2)
+        foe_a = Beast(slug_a, avg_level)
+        foe_b = Beast(slug_b, avg_level)
+        result = self.battle_2v2(foe_a, foe_b, wild=True, title="Synergy Duel")
+        if result == "lost":
+            self.blackout()
+        self.store()
 
     def travel(self) -> None:
         # A clear before this menu, not just before explore()'s own screen:
