@@ -13,8 +13,9 @@ import random
 import sys
 
 import termstation_sdk as ts
-from beasts import (ABILITY_DESC, CHAMPIONS, CHART, MOVES, ROUTES, SPECIES, STARTERS,
-                    TYPE_ABILITY, WEATHER_DESC, WEATHER_DURATION, WEATHER_EFFECTS)
+from beasts import (ABILITY_DESC, CHAMPIONS, CHART, ITEMS, MOVES, ROUTES, SPECIES,
+                    STARTERS, TYPE_ABILITY, WEATHER_DESC, WEATHER_DURATION,
+                    WEATHER_EFFECTS)
 
 # Vertical-centring target for `ts.tv_clear(page=PAGE)`. The real content
 # height of the worst-case battle screen is 17 print calls (verified by
@@ -60,6 +61,8 @@ class Beast:
         self.xp = 0
         self.moves = self._known_moves()
         self.hp = self.max_hp
+        self.item: str | None = None         # persisted (see to_dict/from_dict) --
+                                              # a player equip choice, not combat state
         # --- transient combat state: never saved (see to_dict/from_dict),
         # always reset at the top of `Game.battle` and again on send-out,
         # so nothing leaks between encounters or between party members.
@@ -68,11 +71,13 @@ class Beast:
         self.def_stage = 0
         self.spd_stage = 0
         self.vengeful_used = False           # Vengeful triggers once per battle
+        self.item_used = False               # Mending Berry is once per battle too
 
     def reset_combat_state(self) -> None:
         self.status = None
         self.atk_stage = self.def_stage = self.spd_stage = 0
         self.vengeful_used = False
+        self.item_used = False
 
     @staticmethod
     def _stage_mult(stage: int) -> float:
@@ -94,6 +99,7 @@ class Beast:
     @property
     def eff_spd(self) -> float:
         mult = self._stage_mult(self.spd_stage)
+        mult *= ITEMS.get(self.item, {}).get("speed", 1.0)
         return self.spd * mult * (0.5 if self.status == "paralyze" else 1.0)
 
     # --- identity
@@ -175,7 +181,7 @@ class Beast:
     # --- persistence
     def to_dict(self) -> dict:
         return {"slug": self.slug, "level": self.level, "xp": self.xp,
-                "hp": self.hp, "nickname": self.nickname}
+                "hp": self.hp, "nickname": self.nickname, "item": self.item}
 
     @classmethod
     def from_dict(cls, data: dict) -> "Beast":
@@ -183,6 +189,8 @@ class Beast:
                 data.get("nickname", ""))
         b.xp = int(data.get("xp", 0))
         b.hp = max(0, min(int(data.get("hp", b.max_hp)), b.max_hp))
+        item = data.get("item")
+        b.item = item if item in ITEMS else None  # a renamed/removed item degrades to none
         return b
 
 
@@ -228,6 +236,8 @@ def damage(attacker: Beast, defender: Beast, move: str,
     base = ((2 * attacker.level / 5 + 2) * power * attacker.eff_atk / max(1, defender.eff_def)) / 26
     dealt = (base + 2) * mult * (CRIT_MULT if crit else 1.0) * random.uniform(0.85, 1.0)
     dealt *= WEATHER_EFFECTS.get(weather, {}).get(m_type, 1.0)
+    dealt *= ITEMS.get(attacker.item, {}).get("dmg_dealt", 1.0)
+    dealt *= ITEMS.get(defender.item, {}).get("dmg_taken", 1.0)
     if defender.ability == "Thick Hide" and mult >= 2.0:
         dealt *= 0.75
     return max(1, int(dealt)), mult, True, crit
@@ -311,6 +321,24 @@ def check_vengeful(beast: Beast) -> list[str]:
     return []
 
 
+def check_mending_berry(beast: Beast) -> list[str]:
+    """Once per battle, the instant a beast holding a Mending Berry drops
+    to a quarter HP or less, it heals back up -- single-use insurance
+    against being finished off, not a per-turn heal. Checked AFTER
+    `check_vengeful` at every call site: Vengeful's trigger is meant to
+    read as a reaction to actually being in danger, so it should see the
+    low HP that put the beast there, not an HP total the same event
+    already healed back up."""
+    spec = ITEMS.get(beast.item)
+    if (spec and "heal_threshold" in spec and not beast.item_used and beast.alive
+            and beast.hp <= beast.max_hp * spec["heal_threshold"]):
+        beast.item_used = True
+        healed = int(beast.max_hp * spec["heal_amount"])
+        beast.hp = min(beast.max_hp, beast.hp + healed)
+        return [f"  {beast.name}'s Mending Berry heals it for {healed} HP!"]
+    return []
+
+
 def resolve_status_upkeep(beast: Beast) -> list[str]:
     """End-of-turn status damage (burn only -- paralysis is checked at
     action time instead, via `may_act`)."""
@@ -322,7 +350,8 @@ def resolve_status_upkeep(beast: Beast) -> list[str]:
             line += f" {beast.name} is out of the fight!"
         lines = [line]
         if beast.alive:
-            lines.extend(check_vengeful(beast))  # burn can cross the threshold too
+            lines.extend(check_vengeful(beast))       # burn can cross the threshold too
+            lines.extend(check_mending_berry(beast))
         return lines
     return []
 
@@ -629,6 +658,7 @@ class Game:
                     log.extend(apply_move_effect(attacker, defender, move))
                 log.extend(apply_ability_on_hit(attacker, defender))
                 log.extend(check_vengeful(defender))
+                log.extend(check_mending_berry(defender))
                 if not defender.alive:
                     log.append(f"{defender.name} is out of the fight!")
                     break
@@ -814,39 +844,84 @@ class Game:
             if self.box:
                 ts.tv_print(f"  {len(self.box)} more waiting in the box at camp.")
             ts.tv_print()
-            pick = ts.menu("Team", ["Reorder (choose a leader)", "Read about one"],
-                           back="Back")
+            pick = ts.menu("Team", ["Reorder (choose a leader)", "Read about one",
+                                    "Equip an item"], back="Back")
             if pick == -1:
                 return
             if pick == 0:
                 self.swap_menu()
+            elif pick == 2:
+                self.equip_menu()
             else:
+                # Same bug class as swap_menu(), same fix: this used to
+                # draw straight on top of the roster listing above it,
+                # with no clear first -- found live via the items-pass PTY
+                # test, not by inspection.
+                ts.tv_clear()
                 which = ts.menu("Read about", [b.name for b in self.party], back="Back")
                 if which >= 0:
                     b = self.party[which]
                     self.header(b.name)
                     ts.tv_print()
+                    # No blank separators between sections here -- a real
+                    # row-budget overflow found live via the items-pass
+                    # PTY test: adding the two Item lines to what used to
+                    # fit was enough to push this panel past the danger
+                    # threshold at 66x24. Name/type/desc are still each
+                    # their own line (ts.box() truncates rather than
+                    # wraps, per the earlier ability-line regression), but
+                    # the vertical padding between them was pure cosmetic
+                    # cost this panel could no longer afford.
                     ts.tv_print(ts.box([
                         f"  {b.name}   {b.type}   Lv {b.level}",
-                        "",
                         f"  {SPECIES[b.slug]['flavour']}",
-                        "",
-                        f"  HP {b.max_hp}   ATK {b.atk}   DEF {b.dfn}   SPD {b.spd}",
-                        f"  XP {b.xp}/{b.xp_needed()} to the next level",
-                        "",
-                        # Split across two lines, not one combined
-                        # "Ability: NAME -- DESC" -- a reviewed regression:
-                        # ts.box() truncates rather than wraps, and the
-                        # combined line lost text on a stock 80-column
-                        # terminal (Vengeful's payoff -- " rises." --
-                        # disappeared entirely).
+                        f"  HP {b.max_hp}  ATK {b.atk}  DEF {b.dfn}  SPD {b.spd}  "
+                        f"XP {b.xp}/{b.xp_needed()}",
                         f"  Ability: {b.ability}",
-                        f"  {ABILITY_DESC[b.ability]}",
-                        "",
+                        f"    {ABILITY_DESC[b.ability]}",
+                        f"  Item: {b.item or '(none equipped)'}",
+                        *([f"    {ITEMS[b.item]['desc']}"] if b.item else []),
                         f"  Moves: {', '.join(b.moves)}",
                     ]))
                     ts.tv_print()
                     ts.tv_pause()
+
+    def equip_menu(self) -> None:
+        """One item slot per beast, free to change any time -- no shop
+        cost or inventory count. Adding a real item economy (buying/
+        finding/losing items) would be a second, separate system; this
+        pass is deliberately just the build-choice layer, same scope
+        boundary as leaving AI move selection weather-unaware."""
+        if not self.party:
+            return
+        # tv_clear() first, not left implicit -- team_screen()'s own
+        # roster listing already draws a fair amount; swap_menu() drawing
+        # straight on top of an existing screen with no clear first was a
+        # real bug found this session, and this is the same shape of call.
+        ts.tv_clear()
+        which = ts.menu("Equip which beast?",
+                        [f"{b.name}  ({b.item or 'no item'})" for b in self.party],
+                        back="Back")
+        if which == -1:
+            return
+        beast = self.party[which]
+        ts.tv_clear()
+        item_names = list(ITEMS)
+        options = [f"{name}  -- {ITEMS[name]['desc']}" for name in item_names]
+        options.append("Remove item")
+        pick = ts.menu(f"Equip on {beast.name}", options, back="Cancel")
+        if pick == -1:
+            return
+        ts.tv_clear()
+        if pick == len(item_names):
+            beast.item = None
+            ts.tv_print(f"  {beast.name}'s item removed.")
+        else:
+            beast.item = item_names[pick]
+            ts.tv_print(f"  {beast.name} is now holding {beast.item}.")
+        ts.tv_print()
+        ts.tv_pause()
+        self.store()
 
     def box_screen(self) -> None:
         if not self.box:
@@ -1037,17 +1112,24 @@ def run_story() -> None:
 def main() -> int:
     ts.tv("Beastling")
     while True:
+        # A real, freshly-found row-budget bug lived here, independent of
+        # every other fix this session -- this screen was never checked
+        # at the game's declared minimum before. `ts.title()` alone is 3
+        # lines, the old 6-line description box added 2 more for its
+        # border, and `ts.menu()` has its OWN undocumented leading blank
+        # line before the heading -- together that landed EXACTLY on the
+        # `_seat_cursor` silent-wipe threshold at 66x24 (traced directly:
+        # row 18 of a height-20 screen, threshold height-2=18), so this
+        # was the very first screen of the game and it was already
+        # invisible at the declared minimum. Compact header, short
+        # description -- same discipline as everywhere else this bug
+        # class has been found and fixed.
         ts.tv_clear(page=PAGE)
-        ts.tv_print(ts.title("B E A S T L I N G"))
+        ts.tv_print(ts.color("  B E A S T L I N G", "bright_cyan", bold=True))
+        ts.tv_print(ts.rule("─"))
         ts.tv_print()
-        ts.tv_print(ts.box([
-            "  Story Mode -- catch, raise and battle creatures in the",
-            "  Hollow Vale. Beat the five champions who keep the roads.",
-            "",
-            "  Tournament -- draft a squad from every known species and",
-            "  climb the Circuit. No catching required: create a",
-            "  trainer, draft a team, fight the bracket.",
-        ]))
+        ts.tv_print("  Story Mode -- catch, raise and battle in the Hollow Vale.")
+        ts.tv_print("  Tournament -- draft from every species. No catching needed.")
         ts.tv_print()
         pick = ts.menu("Beastling", ["Story Mode", "Tournament"], back="Quit")
         if pick == -1:

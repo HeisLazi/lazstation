@@ -80,6 +80,21 @@ WEATHER_DESC = {
     "Downpour": "Tide hits harder, Ember hits softer.",
 }
 
+# ------------------------------------------------------------------ items
+# One optional item slot per beast -- unlike abilities (fixed by type),
+# any beast can hold any item, so the choice is a real build decision:
+# a single slot forces picking ONE of offense/defense/speed/insurance,
+# not stacking all four. Four items, not more -- each a clearly distinct
+# archetype rather than minor variations on the same idea.
+ITEMS = {
+    "Power Band": {"desc": "Deals 20% more damage.", "dmg_dealt": 1.20},
+    "Guard Charm": {"desc": "Takes 20% less damage.", "dmg_taken": 0.80},
+    "Quick Charm": {"desc": "20% faster.", "speed": 1.20},
+    "Mending Berry": {"desc": "Once per battle, heals 20% max HP the "
+                              "instant it drops to a quarter HP or less.",
+                       "heal_threshold": 0.25, "heal_amount": 0.20},
+}
+
 MOVES = {
     "Tackle":      _move("Stone", 35, 95, "a plain running hit"),
     "Scratch":     _move("Stone", 30, 100, "quick claws", priority=1),
