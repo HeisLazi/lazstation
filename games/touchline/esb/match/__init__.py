@@ -1,0 +1,65 @@
+"""Game-local spatial football primitives, separate from the legacy match loop."""
+
+from .actions import (
+    InterceptionContest,
+    InterceptionWindow,
+    PassDelivery,
+    PassIntent,
+    PassKind,
+    TouchOutcome,
+    TouchResult,
+    execute_pass,
+    find_interception_window,
+    receive_ball,
+    resolve_interception_contest,
+    trace_pass,
+)
+from .ball import (
+    BALL_RADIUS_M,
+    DEFAULT_BALL_PHYSICS,
+    BallPhysics,
+    BallState,
+    advance_ball,
+    simulate_ball_ticks,
+)
+from .scenarios import PassScenario, PassScenarioTrace, replay_pass_scenario
+from .spatial import (
+    MotionLimits,
+    MovementIntent,
+    Pitch,
+    PlayerMotion,
+    advance_player,
+    limits_from_profile,
+    resolve_movement_snapshot,
+)
+
+__all__ = [
+    "BALL_RADIUS_M",
+    "DEFAULT_BALL_PHYSICS",
+    "BallPhysics",
+    "BallState",
+    "InterceptionContest",
+    "InterceptionWindow",
+    "MotionLimits",
+    "MovementIntent",
+    "PassDelivery",
+    "PassIntent",
+    "PassKind",
+    "PassScenario",
+    "PassScenarioTrace",
+    "Pitch",
+    "PlayerMotion",
+    "TouchOutcome",
+    "TouchResult",
+    "advance_ball",
+    "advance_player",
+    "execute_pass",
+    "find_interception_window",
+    "limits_from_profile",
+    "receive_ball",
+    "replay_pass_scenario",
+    "resolve_interception_contest",
+    "resolve_movement_snapshot",
+    "simulate_ball_ticks",
+    "trace_pass",
+]
