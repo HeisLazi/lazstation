@@ -54,3 +54,25 @@ claimed by this P00 completion record.
 ### P01 completion evidence
 
 P01 acceptance passed for the contracts implemented here. The command ledger and checkpoint codec are serializable values, not a disk persistence adapter; atomic file replacement, save migration and application to real career/match commands remain P08+ work. Command callbacks must remain deterministic and side-effect-free outside the supplied state. SplitMix64 is versioned for replay, not cryptographic use. No spatial match rules, calibrated distributions, UI integration or legacy-game changes are claimed.
+
+## P02 — distinct players and editable tactical intentions
+
+- Status: `complete`
+- Base SHA: `322486f15181a124e6db44bb6a18d7aa34ecc998`
+- Intended owned paths: `games/touchline/esb/model.py`; `games/touchline/esb/people/__init__.py`; `games/touchline/esb/tactics/__init__.py`, `models.py`, `validate.py`; `games/touchline/esb/content/__init__.py`, `proof_roster.py`, `proof_tactics.py`; `games/touchline/checks/test_profiles_tactics.py`; this status file.
+- Behavior: add distinct, provenanced football profiles with separate capability, physical fact, preference, readiness and action-tendency data; author two balanced 16-player synthetic squads; express the three shared proof-tactic families as component data; return explainable validation errors/warnings for missing references, contradictory assignments and invalid rule fallbacks.
+- Acceptance: PLAYER-01 (paired profiles hold execution capability constant while scanning/decision differ; no overall shortcut); P02-ROSTER (two balanced 11v11-capable squads with substitutes, GK depth and distinct player profiles survive versioned round-trip); P02-TAC (positional possession, man-oriented pressing and kickoff trap use shared phase/anchor/relationship/mark/press/rule/routine types, with priority, expiry, abort and fallback); P02-PROV (authored/inferred/measured origins are explicit; unknown history stays empty; profile data never relabels inferred values as historical measurements); P02-VALIDATION (warnings explain conflicts; malformed references are rejected before any engine use).
+- Verification: `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s games/touchline/checks -p 'test_*.py'` (16 tests, exit 0); `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest games.touchline.test_game` (13 tests, exit 0); explicit P02-owned-path diff and staged review.
+- Exclusions: no movement/action resolution, hidden formation bonuses, match outcomes, injury/medical simulation, scouting reports, UI/editor, legacy roster migration, `main.py` integration, shared SDK/platform changes or personal-save changes.
+
+### P02 work log
+
+- Began from P01 commit `322486f`. Added per-value provenance kinds, distinct player preference/readiness/action-tendency records, role-aware profile and squad validation, relative tactical anchors, coordinated duties, pressing/marking assignments, conditional rules, routines and explainable validation issues.
+- Authored two wholly fictional 16-player squads with two goalkeepers and cover across the supported roles. Each profile keeps identity facts, authored capability values, physical quantities with units, preferred foot, readiness and tendencies in separate records. No legacy roster is converted and no past biography is generated.
+- PLAYER-01 matched pair: Neri Vale and Neri Sela share every authored technical/physical/readiness/preference/tendency value while scanning, anticipation and decision quality differ. The test explicitly asserts execution values stay identical; there is no universal overall score.
+- Authored three reusable tactic templates: positional possession with width/inverted full-back/cover, a man-oriented press with support and marking handover, and a kickoff-to-touchline-trap routine. Each is data-only and has trigger/priority/tick expiry/abort/fallback where applicable. Shared validators accept all three without structural errors and surface a warning for deliberately contradictory instructions.
+- Regression: `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s games/touchline/checks -p 'test_*.py'` exited 0 (16 tests, 0.552 s); `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest games.touchline.test_game` exited 0 (13 tests, 1.911 s).
+
+### P02 completion evidence
+
+P02 acceptance passed for typed profile/tactic data and static validation. All roster values are fictional authored scenario inputs, not calibrated simulation parameters or observed history. The tactics describe intentions only: there is no engine action, movement, legality resolution, tactical bonus or match outcome yet. Unknown player history remains empty; legacy conversion remains unimplemented. Existing Touchline and all unrelated concurrent work stayed outside this package.

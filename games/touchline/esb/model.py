@@ -20,11 +20,37 @@ class HistoryKind(str, Enum):
     CULTURE = "culture"
 
 
+class ProvenanceKind(str, Enum):
+    AUTHORED = "authored"
+    MEASURED = "measured"
+    OBSERVED = "observed"
+    INFERRED = "inferred"
+    LEGACY_CONVERSION = "legacy_conversion"
+
+
+@dataclass(frozen=True)
+class DataProvenance:
+    kind: ProvenanceKind
+    source: str
+    evidence_date: WorldDate | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.kind, ProvenanceKind):
+            raise TypeError("provenance kind must be explicit")
+        if not isinstance(self.source, str) or not self.source.strip():
+            raise ValueError("data provenance requires an explicit source")
+        if self.evidence_date is not None and not isinstance(self.evidence_date, WorldDate):
+            raise TypeError("evidence date must be an explicit world date")
+        if self.kind in (ProvenanceKind.MEASURED, ProvenanceKind.OBSERVED) and self.evidence_date is None:
+            raise ValueError("measured and observed data require an evidence date")
+
+
 @dataclass(frozen=True)
 class Measurement:
     name: str
     value: float
     unit: str
+    provenance: DataProvenance | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.name, str) or not self.name.strip():
@@ -33,6 +59,8 @@ class Measurement:
             raise ValueError("measurement value must be finite")
         if not isinstance(self.unit, str) or not self.unit.strip():
             raise ValueError("measurement unit must be explicit")
+        if self.provenance is not None and not isinstance(self.provenance, DataProvenance):
+            raise TypeError("measurement provenance must use DataProvenance")
 
 
 @dataclass(frozen=True)
@@ -67,6 +95,7 @@ class Money:
 class Capability:
     name: str
     normalized_value: float
+    provenance: DataProvenance | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.name, str) or not self.name.strip():
@@ -75,6 +104,8 @@ class Capability:
             raise ValueError("normalized capability must be numeric")
         if not math.isfinite(self.normalized_value) or not 0.0 <= self.normalized_value <= 1.0:
             raise ValueError("normalized capability must be finite and in [0, 1]")
+        if self.provenance is not None and not isinstance(self.provenance, DataProvenance):
+            raise TypeError("capability provenance must use DataProvenance")
 
 
 @dataclass(frozen=True)
