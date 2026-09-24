@@ -514,13 +514,22 @@ class Game:
             # same turn, before the player's next screen ever painted it.
             weather_set_this_turn = False
             # Checked every time through, not just when hit: a Vengeful
-            # beast sent out (or swapped in) already below a quarter HP --
-            # this game keeps wounds across un-healed fights -- deserves
-            # the same trigger a mid-battle hit would give it. Idempotent
-            # and cheap thanks to `vengeful_used`, so checking on every
-            # loop pass rather than only at send-out is simplest and
-            # correct rather than needing a hook at every swap-in site.
+            # beast (or a Mending Berry holder) sent out (or swapped in)
+            # already below a quarter HP -- this game keeps wounds across
+            # un-healed fights -- deserves the same trigger a mid-battle
+            # hit would give it. Idempotent and cheap thanks to
+            # `vengeful_used`/`item_used`, so checking on every loop pass
+            # rather than only at send-out is simplest and correct rather
+            # than needing a hook at every swap-in site.
+            #
+            # A real bug lived here: Mending Berry was only wired to the
+            # OTHER two call sites `check_vengeful` uses (after a direct
+            # hit, and after burn's end-of-turn tick), missing this one --
+            # so a beast equipped with the berry and sent into a new fight
+            # already wounded (the exact "insurance" scenario the item
+            # exists for) never got the heal until its NEXT hit, if any.
             log.extend(check_vengeful(me))
+            log.extend(check_mending_berry(me))
 
             self.header(title)
             for line in beast_line(foe, wild=wild):
@@ -830,20 +839,23 @@ class Game:
     # ------------------------------------------------------------- menus
     def team_screen(self) -> None:
         while True:
+            # One line per beast, not two -- a real, pre-existing overflow
+            # found while PTY-verifying the items pass: at a full 6-beast
+            # party the old 2-line-per-beast listing (plus the header,
+            # blanks, and the menu below) pushed this screen well past the
+            # row budget at 66x24, silently wiping the roster right after
+            # showing it. Move details are already one tap away via "Read
+            # about one"; they don't need to duplicate onto this overview.
             self.header("Your team")
-            ts.tv_print()
             if not self.party:
                 ts.tv_print("  You have no beasts.")
             for i, b in enumerate(self.party, 1):
-                state = "" if b.alive else ts.color("  (down)", "bright_red")
-                ts.tv_print(f"  {i}. {b.name.ljust(13)} Lv {str(b.level).rjust(2)}  "
-                            f"{b.type.ljust(6)} [{bar(b.hp, b.max_hp, 12)}] "
+                state = "" if b.alive else ts.color(" (down)", "bright_red")
+                ts.tv_print(f"  {i}. {b.name.ljust(13)} Lv{str(b.level).rjust(3)} "
+                            f"{b.type.ljust(6)} [{bar(b.hp, b.max_hp, 10)}] "
                             f"{b.hp}/{b.max_hp}{state}")
-                ts.tv_print(f"     {ts.color('  '.join(b.moves), 'grey')}")
-            ts.tv_print()
             if self.box:
-                ts.tv_print(f"  {len(self.box)} more waiting in the box at camp.")
-            ts.tv_print()
+                ts.tv_print(f"  {len(self.box)} more in the box.")
             pick = ts.menu("Team", ["Reorder (choose a leader)", "Read about one",
                                     "Equip an item"], back="Back")
             if pick == -1:
@@ -891,7 +903,16 @@ class Game:
         cost or inventory count. Adding a real item economy (buying/
         finding/losing items) would be a second, separate system; this
         pass is deliberately just the build-choice layer, same scope
-        boundary as leaving AI move selection weather-unaware."""
+        boundary as leaving AI move selection weather-unaware.
+
+        Story-mode only, and deliberately not documented as an oversight:
+        this is `Game`'s own menu, and Circuit/Tournament mode's drafted
+        squads (`circuit.py`) never touch it or `Game.store()` -- a
+        drafted Beast's `item` stays None for the whole run. Whether
+        Ranked draft should eventually cost points for items too, same as
+        it already does for species, is a real future design question,
+        not something to guess at silently here.
+        """
         if not self.party:
             return
         # tv_clear() first, not left implicit -- team_screen()'s own
@@ -1007,8 +1028,14 @@ class Game:
 
     def camp(self) -> None:
         while True:
+            # One blank separator here, not two -- with the "Challenge"
+            # option present this screen was down to a single row of
+            # margin at the game's declared minimum (66x24), the same
+            # thin margin the main menu had before it actually overflowed.
+            # Not broken yet, but this is the screen every session opens
+            # on; worth a little real headroom rather than waiting for it
+            # to be the fourth thing found this way.
             self.header("Camp")
-            ts.tv_print()
             lead = self.lead()
             hurt = [b for b in self.party if b.hp < b.max_hp]
             ts.tv_print(f"  Badges {self.badges}/{len(CHAMPIONS)}    "

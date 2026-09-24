@@ -90,8 +90,12 @@ ITEMS = {
     "Power Band": {"desc": "Deals 20% more damage.", "dmg_dealt": 1.20},
     "Guard Charm": {"desc": "Takes 20% less damage.", "dmg_taken": 0.80},
     "Quick Charm": {"desc": "20% faster.", "speed": 1.20},
-    "Mending Berry": {"desc": "Once per battle, heals 20% max HP the "
-                              "instant it drops to a quarter HP or less.",
+    # Kept to ~56 chars -- a reviewed regression: the original wording
+    # (83 chars) exceeded the read-about panel's real inner width at the
+    # game's declared minimum terminal size and got silently truncated by
+    # ts.box(), the exact bug class this project keeps re-finding.
+    "Mending Berry": {"desc": "Once per battle, heals 20% HP at a "
+                              "quarter HP or less.",
                        "heal_threshold": 0.25, "heal_amount": 0.20},
 }
 
