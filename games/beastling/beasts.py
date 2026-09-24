@@ -39,7 +39,7 @@ ABILITY_DESC = {
     "Thick Hide": "Takes less damage from a super-effective hit.",
     "Unshaken": "Its own stats can't be lowered by a foe's move.",
     "Static Charge": "A small chance to paralyze whatever hits it.",
-    "Vengeful": "The first time it drops below a quarter HP, its Atk rises.",
+    "Vengeful": "Once per battle, at a quarter HP or less, its Atk rises.",
 }
 
 # ---------------------------------------------------------------- moves

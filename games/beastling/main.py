@@ -201,6 +201,14 @@ def damage(attacker: Beast, defender: Beast, move: str) -> tuple[int, float, boo
 STAGE_NAME = {"atk": "Atk", "def": "Def", "spd": "Spd"}
 
 
+def status_immune(beast: Beast, status: str) -> bool:
+    """Single source of truth for ability-granted status immunity -- used
+    by both the move-effect path and the on-hit ability-proc path, so a
+    future third burn source (or a new immunity) only needs to be taught
+    here once."""
+    return status == "burn" and beast.ability == "Riptide"
+
+
 def apply_move_effect(attacker: Beast, defender: Beast, move: str) -> list[str]:
     """Rolls and applies a move's secondary effect, if it has one and the
     roll succeeds. Returns log lines, empty if nothing happened."""
@@ -211,7 +219,7 @@ def apply_move_effect(attacker: Beast, defender: Beast, move: str) -> list[str]:
         _, status, _ = effect
         if defender.status is not None or not defender.alive:
             return []
-        if status == "burn" and defender.ability == "Riptide":
+        if status_immune(defender, status):
             return [f"  {defender.name}'s Riptide keeps it from burning!"]
         defender.status = status
         verb = "is burned!" if status == "burn" else "is paralyzed!"
@@ -243,9 +251,12 @@ def apply_ability_on_hit(attacker: Beast, defender: Beast) -> list[str]:
     acted."""
     lines: list[str] = []
     if (attacker.ability == "Tinder" and defender.status is None and defender.alive
-            and defender.ability != "Riptide" and random.random() < TINDER_CHANCE):
-        defender.status = "burn"
-        lines.append(f"  {attacker.name}'s Tinder catches {defender.name} alight!")
+            and random.random() < TINDER_CHANCE):
+        if status_immune(defender, "burn"):
+            lines.append(f"  {defender.name}'s Riptide keeps it from burning!")
+        else:
+            defender.status = "burn"
+            lines.append(f"  {attacker.name}'s Tinder catches {defender.name} alight!")
     if (defender.ability == "Static Charge" and defender.alive and attacker.status is None
             and random.random() < STATIC_CHARGE_CHANCE):
         attacker.status = "paralyze"
@@ -330,9 +341,14 @@ def beast_line(b: Beast, wild: bool = False) -> list[str]:
     if b.status:
         word, colour = STATUS_TAG[b.status]
         status = "  " + ts.color(word, colour)
+    # Ability gets its own line rather than sharing the name/type line --
+    # a real reviewed regression: cramming it on with the existing 44-char
+    # name/level field clipped "Static Charge" down to "St" at the SDK's
+    # own documented 60-column floor. Ability names are short enough (<=13
+    # chars) that even "   Static Charge" alone is never at risk.
     return [
-        f"{head}{lv.rjust(max(1, 44 - len(head)))}  {ts.color(b.type, 'cyan')}"
-        f" {ts.color('· ' + b.ability, 'grey')}",
+        f"{head}{lv.rjust(max(1, 44 - len(head)))}  {ts.color(b.type, 'cyan')}",
+        f"   {ts.color(b.ability, 'grey')}",
         f"   HP [{bar(b.hp, b.max_hp)}] {b.hp}/{b.max_hp}{status}{ts.color(stages, 'grey')}",
     ]
 
@@ -411,6 +427,14 @@ class Game:
             me = self.lead()
             if me is None:
                 return "lost"
+            # Checked every time through, not just when hit: a Vengeful
+            # beast sent out (or swapped in) already below a quarter HP --
+            # this game keeps wounds across un-healed fights -- deserves
+            # the same trigger a mid-battle hit would give it. Idempotent
+            # and cheap thanks to `vengeful_used`, so checking on every
+            # loop pass rather than only at send-out is simplest and
+            # correct rather than needing a hook at every swap-in site.
+            log.extend(check_vengeful(me))
 
             self.header(title)
             for line in beast_line(foe, wild=wild):
@@ -516,12 +540,22 @@ class Game:
                     note = ("A critical hit! " + note).strip()
                 log.append(f"{attacker.name} used {move}. {note}".strip())
                 log.append(f"  {defender.name} lost {dealt} HP.")
+                # The move's own intended effect resolves BEFORE ability
+                # procs, not after -- a reviewed ordering hazard: both
+                # `apply_move_effect`'s status branch and Tinder already
+                # guard on `defender.status is None`, so whichever runs
+                # first wins the status. With abilities running first, an
+                # on-hit status ability could silently pre-empt and
+                # overwrite the move's own, more specific, intended status.
+                # Harmless today (Tinder and Ember's only status move both
+                # inflict burn) but a live trap for the next status pass.
+                if defender.alive:
+                    log.extend(apply_move_effect(attacker, defender, move))
                 log.extend(apply_ability_on_hit(attacker, defender))
                 log.extend(check_vengeful(defender))
                 if not defender.alive:
                     log.append(f"{defender.name} is out of the fight!")
                     break
-                log.extend(apply_move_effect(attacker, defender, move))
 
             for b in (foe, me):
                 if b.alive:
@@ -711,7 +745,14 @@ class Game:
                         f"  HP {b.max_hp}   ATK {b.atk}   DEF {b.dfn}   SPD {b.spd}",
                         f"  XP {b.xp}/{b.xp_needed()} to the next level",
                         "",
-                        f"  Ability: {b.ability} -- {ABILITY_DESC[b.ability]}",
+                        # Split across two lines, not one combined
+                        # "Ability: NAME -- DESC" -- a reviewed regression:
+                        # ts.box() truncates rather than wraps, and the
+                        # combined line lost text on a stock 80-column
+                        # terminal (Vengeful's payoff -- " rises." --
+                        # disappeared entirely).
+                        f"  Ability: {b.ability}",
+                        f"  {ABILITY_DESC[b.ability]}",
                         "",
                         f"  Moves: {', '.join(b.moves)}",
                     ]))
