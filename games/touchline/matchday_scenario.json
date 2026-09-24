@@ -36,10 +36,10 @@
   "assertions": {
     "exit_code": 0,
     "frames": {
-      "team-talk": {"contains": ["TEAM TALK", "UNSETTLED", "Amel"]},
+      "team-talk": {"contains": ["MATCHDAY / TEAM TALK", "TEAM TALK", "UNSETTLED", "Amel"]},
       "match-events-older": {"contains": ["TEAM TALK"]},
       "match-stats": {"contains": ["MATCH DATA"]},
-      "changes": {"contains": ["MATCH CHANGES"]},
+      "changes": {"contains": ["MATCHDAY / CHANGES", "MATCH CHANGES"]},
       "full-time": {"contains": ["FULL TIME"]}
     }
   }

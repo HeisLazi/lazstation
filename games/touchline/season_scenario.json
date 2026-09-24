@@ -583,6 +583,8 @@
       "home": {
         "contains": [
           "EKSE SLAAN BALL",
+          "[1 HOME]",
+          "M MATCH",
           "NEXT MATCH",
           "╔",
           "╗",
@@ -592,6 +594,7 @@
       },
       "tactics": {
         "contains": [
+          "[3 PLAN]",
           "MATCH PLAN",
           "4-3-3"
         ]

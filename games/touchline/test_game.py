@@ -292,6 +292,60 @@ class CareerRules(unittest.TestCase):
             self.assertTrue(game._route_key(27, career, {}, app))
         self.assertEqual(app["page"], "home")
 
+    def test_section_bar_browse_open_and_number_jump(self):
+        career = game.new_career("BRP", seed=19)
+        app = {"page": "home", "nav_index": 0}
+        save_data = {"career": career}
+        with patch.object(game.ts, "save"):
+            game._route_key(game.curses.KEY_RIGHT, career, save_data, app)
+            self.assertEqual((app["page"], app["nav_index"]), ("home", 1))
+            game._route_key(10, career, save_data, app)
+            self.assertEqual((app["page"], app["nav_index"]), ("squad", 1))
+            game._route_key(ord("3"), career, save_data, app)
+            self.assertEqual((app["page"], app["nav_index"]), ("tactics", 2))
+            game._route_key(game.curses.KEY_RIGHT, career, save_data, app)
+            self.assertEqual((app["page"], app["nav_index"]), ("tactics", 3))
+            game._route_key(10, career, save_data, app)
+        self.assertEqual((app["page"], app["nav_index"]), ("training", 3))
+
+    def test_section_bar_match_item_starts_matchday(self):
+        career = game.new_career("BRP", seed=21)
+        app = {"page": "history", "nav_index": 6}
+        save_data = {"career": career}
+        with patch.object(game.ts, "save"):
+            game._route_key(game.curses.KEY_RIGHT, career, save_data, app)
+            self.assertEqual((app["page"], app["nav_index"]), ("history", game.MATCH_NAV_INDEX))
+            game._route_key(10, career, save_data, app)
+        self.assertEqual(app["page"], "team_talk")
+        self.assertIsNotNone(career["live_match"])
+
+    def test_tactic_focus_adjusts_with_plus_minus_not_section_arrows(self):
+        career = game.new_career("BRP", seed=23)
+        tactic = career["clubs"]["BRP"]["tactics"]
+        starting_press = tactic["press"]
+        app = {"page": "tactics", "nav_index": 2, "tactic_focus": "P"}
+        with patch.object(game.ts, "save"):
+            game._route_key(game.curses.KEY_RIGHT, career, {"career": career}, app)
+            self.assertEqual(tactic["press"], starting_press)
+            self.assertEqual(app["nav_index"], 3)
+            game._route_key(ord("+"), career, {"career": career}, app)
+        self.assertNotEqual(tactic["press"], starting_press)
+        self.assertEqual(app["page"], "tactics")
+
+    def test_help_supports_direct_page_jumps_and_restores_page(self):
+        career = game.new_career("BRP", seed=29)
+        app = {"page": "home", "nav_index": 0}
+        with patch.object(game.ts, "save"):
+            game._route_key(ord("?"), career, {"career": career}, app)
+            game._route_key(ord("6"), career, {"career": career}, app)
+            self.assertEqual((app["page"], app["nav_index"]), ("table", 5))
+
+        app = {"page": "home", "nav_index": 0}
+        with patch.object(game.ts, "save"):
+            game._route_key(ord("?"), career, {"career": career}, app)
+            game._route_key(27, career, {"career": career}, app)
+        self.assertEqual((app["page"], app["nav_index"]), ("home", 0))
+
     def test_training_and_scouting_resolve_with_bounded_costs(self):
         career = game.new_career("BRP", seed=17)
         player_id = "FA-06"

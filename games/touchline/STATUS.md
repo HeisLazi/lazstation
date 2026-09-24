@@ -106,3 +106,19 @@ Follow-up after adding incident browsing: the focused UI test now also checks ol
 Final recheck: matchday and full-season PTY scenarios exited 0 at both 80x24 and 110x30, the local game doctor found all 8 manifests, and the 20 game tests plus 16 contract/profile checks passed. Inspected current captures are under `/tmp/touchline-mud-final.zzGvzH/`.
 
 The current managed-match flow has an actionable pre-match talk, player-selected substitution pairings and three read-only match views, verified in unit and PTY paths. No schema-version bump was needed; legacy mid-match saves without the optional talk/history keys still use defaults. Free-placement formation creation remains intentionally unimplemented until custom coordinates can affect the spatial match engine instead of serving as a decorative legacy diagram. Next: P03 movement, ball flight and receiving, then integrate the requested free-placement editor with that spatial state.
+
+## UI-01 — clearer navigation and compact terminal layout
+
+- Status: `complete`
+- Owned paths: `games/touchline/main.py`, `games/touchline/test_game.py`, `games/touchline/manual.md`, `games/touchline/season_scenario.json`, `games/touchline/matchday_scenario.json`, and this status file.
+- Behavior: replace the clipped shortcut footer with a focused section bar; browse sections with Left/Right and open with Enter while retaining 1–7, Tab and M shortcuts; add matchday/help breadcrumbs; shorten the header to fit the active terminal width; reclaim one body row; remove inner panel borders below 88 columns; focus the managed club in the Home standings; clarify tactical +/- adjustment keys.
+- Acceptance: NAV-01 (arrow focus is independent of the active page, Enter opens the focused section or starts Matchday, shortcuts stay synchronized); UI-80 (80-column header/footer and section bar are visible, narrow pages flatten their internal boxes); UI-110 (roomier layout remains framed and readable); REG-01 (matchday and full-season flows remain operable).
+- Verification: `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest games.touchline.test_game` (24 tests); `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s games/touchline/checks -p 'test_*.py'` (16 tests); `season_scenario.json` and `matchday_scenario.json` PTY runs at 80x24 and 110x30 (all exit 0 and assertions pass); layout snapshots inspected under `/tmp/touchline-ui-pass.OgmlG1/`; `git diff --check`.
+- Exclusions: the game cannot resize the host terminal font or resolution, and no shared TerminalStation bezel/SDK changes were made. Use the terminal emulator's zoom or maximize controls for physically larger text. Free-placement formations remain dependent on the later spatial-engine slice.
+
+### UI-01 work log
+
+- Added a compact, focused navigation strip whose current section and keyboard focus are distinct. Left/Right browse the seven desk pages plus Matchday; Enter opens the focused destination; 1–7 and Tab remain fast paths. Help now handles direct jumps and matches its displayed controls. Unit tests cover browse/open routing; PTY runs cover layout, shortcuts and matchday/season flows.
+- Replaced the narrow-width nested boxes with headings and separators, shortened the responsive game header, and moved the footer to the final available row. Wider terminals retain the framed panel treatment. The Home table now highlights the player's club rather than the league leader.
+- Tactical instruction letters still cycle their setting; `-`/`+` adjust the focused setting so Left/Right can consistently browse the section bar. Updated the manual, in-game guide and screen assertions.
+- At both terminal sizes the full season and live matchday replay passed, including talk, report views, selected substitutions and round settlement. The UI change does not touch shared bezel code or alter the game simulation.

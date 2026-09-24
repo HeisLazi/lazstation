@@ -39,6 +39,16 @@ LEVELS = ("low", "mid", "high")
 TRAINING_INTENSITIES = ("low", "normal", "high")
 MATCH_MINUTES = 90
 MATCH_VIEWS = ("live", "events", "stats")
+SECTION_PAGES = ("home", "squad", "tactics", "training", "market", "table", "history")
+SECTION_LABELS = ("HOME", "SQUAD", "PLAN", "TRAIN", "MARKET", "TABLE", "LOGS")
+MATCH_NAV_INDEX = len(SECTION_PAGES)
+PAGE_BREADCRUMBS = {
+    "career_select": "NEW CAREER / CHOOSE A CLUB",
+    "help": "HELP / GAME CONTROLS",
+    "team_talk": "MATCHDAY / TEAM TALK · PRE-KICKOFF",
+    "match_subs": "MATCHDAY / CHANGES · SELECT A PAIR",
+    "offer": "MARKET / CONTRACT NEGOTIATION",
+}
 
 
 def clamp(value: float, low: float, high: float) -> float:
@@ -1635,6 +1645,51 @@ def _team_result(stats: dict[str, Any], cid: str) -> str:
     return f"{stats[cid]['shots']} shots · {float(stats[cid]['xg']):.2f} xG"
 
 
+def _page_nav_index(page: str) -> int:
+    return SECTION_PAGES.index(page) if page in SECTION_PAGES else 0
+
+
+def _draw_section_nav(win, safe_width: int, page: str,
+                      app: dict[str, Any], career: dict[str, Any] | None) -> None:
+    if page not in SECTION_PAGES or not career:
+        crumb = PAGE_BREADCRUMBS.get(page)
+        if page == "match" and career:
+            match = career.get("live_match")
+            view = "FULL-TIME REPORT" if match and match.get("finished") else \
+                app.get("match_view", "live").upper()
+            crumb = f"MATCHDAY / {view}"
+        if crumb:
+            ui.draw_text(win, 0, 1, crumb, safe_width, _pair(3, bold=True))
+        else:
+            ui.draw_rule(win, 0, 1, safe_width, "─", _pair(2))
+        return
+
+    active = _page_nav_index(page)
+    focused = int(clamp(app.get("nav_index", active), 0, MATCH_NAV_INDEX))
+    x = 0
+    for index, label in enumerate(SECTION_LABELS):
+        text = f"{index + 1} {label}"
+        selected = index == focused
+        if selected:
+            text = f"[{text}]"
+        elif index == active:
+            text = f"›{text}"
+        attr = _pair(1 if selected and index == active else
+                     2 if selected else 3 if index == active else 6,
+                     bold=selected or index == active)
+        ui.draw_text(win, x, 1, text, safe_width - x, attr)
+        x += len(text)
+        if index < len(SECTION_LABELS) - 1:
+            ui.draw_text(win, x, 1, "  ", safe_width - x, _pair(6, dim=True))
+            x += 2
+    match_text = "M MATCH" if focused != MATCH_NAV_INDEX else "[M MATCH]"
+    ui.draw_text(win, x, 1, "   ", safe_width - x, _pair(6, dim=True))
+    x += 3
+    ui.draw_text(win, x, 1, match_text, safe_width - x,
+                 _pair(1 if focused == MATCH_NAV_INDEX else 6,
+                       bold=focused == MATCH_NAV_INDEX))
+
+
 def _draw_frame(win, career: dict[str, Any] | None, app: dict[str, Any]) -> ui.Rect:
     win.erase()
     height, width = win.getmaxyx()
@@ -1646,20 +1701,28 @@ def _draw_frame(win, career: dict[str, Any] | None, app: dict[str, Any]) -> ui.R
         state = career["clubs"][career["club_id"]]
         when = (f"S{career['season']} END" if career["season_complete"]
                 else f"S{career['season']} · W{career['round'] + 1:02d}/{content.SEASON_ROUNDS:02d}")
-        header = (f"EKSE SLAAN BALL  /  {club['name']} · {division_name(division_id(career))}  /  {when}  /  "
-                  f"BOARD {state['board_confidence']}  /  {_money(state['finance']['transfer_budget'])} TRANSFER")
+        division = division_name(division_id(career))
+        confidence = state["board_confidence"]
+        funds = _money(state["finance"]["transfer_budget"])
+        headers = (
+            f"EKSE SLAAN BALL · {club['name']} · {division} · {when} · BOARD {confidence} · {funds}",
+            f"EKSE SLAAN BALL · {club['name']} · {when} · BOARD {confidence}",
+            f"EKSE SLAAN BALL · {club['name']} · {when} · BD {confidence}",
+        )
+        header = next((candidate for candidate in headers if len(candidate) <= safe_width),
+                      headers[-1])
     else:
         header = "EKSE SLAAN BALL  /  SABLE COAST FOOTBALL PYRAMID"
     ui.draw_text(win, 0, 0, header, safe_width, _pair(1, bold=True))
-    ui.draw_rule(win, 0, 1, safe_width, "─", _pair(2))
-    body = ui.Rect(0, 2, safe_width, max(1, height - 5))
-    message_y = max(2, height - 3)
-    footer_y = max(2, height - 2)
+    page = app.get("page", "home")
+    _draw_section_nav(win, safe_width, page, app, career)
+    body = ui.Rect(0, 2, safe_width, max(1, height - 4))
+    message_y = max(2, height - 2)
+    footer_y = max(2, height - 1)
     msg = app.get("message", "")
     if msg:
         ui.draw_text(win, 0, message_y, f"» {msg}", safe_width, _pair(1))
-    page = app.get("page", "home")
-    footer = "1 Home  2 Squad  3 Plan  4 Train  5 Market  6 Table  7 Logs  M Match  ? Help  Q Quit"
+    footer = "←/→ browse · Enter open · 1–7 jump · M matchday · ? help · Q quit"
     if page == "team_talk":
         footer = "↑/↓ choose message  ·  Enter deliver & kick off  ·  Esc pause"
     elif page == "match_subs":
@@ -1673,9 +1736,9 @@ def _draw_frame(win, career: dict[str, Any] | None, app: dict[str, Any]) -> ui.R
     if page == "career_select":
         footer = "Up/Down choose club  Enter begin career  Q back"
     elif page == "help":
-        footer = "Any page: 1-7 jump  Tab next page  Esc return  Q quit"
+        footer = "1–7 jump · Tab next page · Esc return · Q quit"
     elif page == "offer":
-        footer = "Left/Right fee ±£10k  Up/Down wage ±£0.1k  C accept counter  Enter submit  Esc cancel"
+        footer = "←/→ fee · ↑/↓ wage · C counter · Enter offer · Esc cancel"
     ui.draw_text(win, 0, footer_y, footer, safe_width, _pair(2, bold=True))
     return body
 
@@ -1686,6 +1749,13 @@ def _draw_hint(win, body: ui.Rect, text: str) -> None:
 
 
 def _draw_panel_heading(win, rect: ui.Rect, title: str) -> ui.Rect:
+    if win.getmaxyx()[1] < 88:
+        ui.draw_text(win, rect.x, rect.y, title.upper(), rect.width,
+                     _pair(1, bold=True))
+        if rect.height > 1:
+            ui.draw_rule(win, rect.x, rect.y + 1, rect.width, "─", _pair(2))
+        return ui.Rect(rect.x, rect.y + min(2, rect.height), rect.width,
+                       max(0, rect.height - min(2, rect.height)))
     ui.draw_panel(win, rect, title, _pair(2), _pair(1, bold=True))
     return rect.inset(1)
 
@@ -1776,8 +1846,13 @@ def _draw_home(win, body: ui.Rect, career: dict[str, Any], app: dict[str, Any]) 
                          _pair(3, bold=True))
 
     inner_right = _draw_panel_heading(win, right, division_name(division_id(career)).upper())
-    concise = [[row[0], row[1], row[2], row[7], row[8]] for row in table_rows(career)]
-    table = ui.TableView(["#", "Club", "P", "GD", "Pts"], concise)
+    standings = table_rows(career)
+    concise = [[row[0], row[1], row[2], row[7], row[8]] for row in standings]
+    managed_name = club_by_id(career["club_id"])["name"]
+    managed_row = next((index for index, row in enumerate(standings)
+                        if row[1] == managed_name), 0)
+    table = ui.TableView(["#", "Club", "P", "GD", "Pts"], concise,
+                         selected=managed_row)
     table.draw(win, ui.Rect(inner_right.x, inner_right.y,
                             inner_right.width, min(8, inner_right.height)),
                header_attr=_pair(1, bold=True), selected_attr=_pair(3, bold=True))
@@ -1799,7 +1874,7 @@ def _draw_home(win, body: ui.Rect, career: dict[str, Any], app: dict[str, Any]) 
             ui.draw_text(win, inner_right.x, news_y, "LATEST", inner_right.width, _pair(1, bold=True))
             ui.draw_text(win, inner_right.x, news_y + 1,
                          latest["text"], inner_right.width, _pair(6))
-    _draw_hint(win, body, "M matchday · visit Squad, Plan, Train or Market before kickoff")
+    _draw_hint(win, body, "Pre-kickoff: review the XI, shape and weekly training plan")
 
 
 def _player_rows(career: dict[str, Any], club_id: str) -> list[dict[str, Any]]:
@@ -1855,7 +1930,7 @@ def _draw_squad(win, body: ui.Rect, career: dict[str, Any], app: dict[str, Any])
         elif selected["id"] in content.PLAYER_REPORT_NOTES:
             ui.draw_text(win, dossier.x, min(body.bottom - 2, y + 1),
                          content.PLAYER_REPORT_NOTES[selected["id"]], dossier.width, _pair(2))
-    _draw_hint(win, body, "↑/↓ browse · X toggle starter · V accept a sale offer · injured players cannot start")
+    _draw_hint(win, body, "↑/↓ browse · X toggle starter · V list for sale · ! injured")
 
 
 def _draw_tactics(win, body: ui.Rect, career: dict[str, Any], app: dict[str, Any]) -> None:
@@ -1915,7 +1990,7 @@ def _draw_tactics(win, body: ui.Rect, career: dict[str, Any], app: dict[str, Any
         ui.draw_text(win, zones.x, y, f"{key.title()}: {desc}", zones.width,
                      _pair(6))
         y += 1
-    _draw_hint(win, body, "I/O phase shapes · P press · L line · W width · B build · T tempo · M matchday")
+    _draw_hint(win, body, "I/O/P/L/W/B/T cycle · -/+ adjust · ←/→ menu")
 
 
 def _draw_training(win, body: ui.Rect, career: dict[str, Any], app: dict[str, Any]) -> None:
@@ -1950,7 +2025,7 @@ def _draw_training(win, body: ui.Rect, career: dict[str, Any], app: dict[str, An
         ui.draw_text(win, impact.x, plans.y + 10,
                      "The plan applies once when you start this week's matchday.",
                      impact.width, _pair(6))
-    _draw_hint(win, body, "↑/↓ choose focus · Enter set plan · I cycle intensity · matchday applies it once")
+    _draw_hint(win, body, "↑/↓ focus · Enter set · I intensity · applied at matchday")
 
 
 def _draw_recruitment(win, body: ui.Rect, career: dict[str, Any], app: dict[str, Any]) -> None:
@@ -2015,7 +2090,7 @@ def _draw_recruitment(win, body: ui.Rect, career: dict[str, Any], app: dict[str,
             break
         ui.draw_text(win, dossier.x, y, text, dossier.width, _pair(pair, bold=pair == 1))
         y += 1
-    _draw_hint(win, body, "↑/↓ target · S scout (cost £2k, repeat for confidence) · O negotiate · V list squad player for sale")
+    _draw_hint(win, body, "↑/↓ target · S scout · O negotiate · V to Squad to list a player for sale")
 
 
 def _draw_offer(win, body: ui.Rect, career: dict[str, Any], app: dict[str, Any]) -> None:
@@ -2117,12 +2192,15 @@ def _draw_history(win, body: ui.Rect, career: dict[str, Any]) -> None:
 def _draw_help(win, body: ui.Rect) -> None:
     lines = [
         ("THE MANAGER'S DESK", 1),
-        ("1-7 jump straight to Home, Squad, Plan, Training, Market, Table and Logs.", 0),
-        ("M opens or resumes matchday. Before kickoff, choose and deliver a team talk.", 0),
+        ("←/→ browse the section bar; Enter opens the focused page.", 0),
+        ("Brackets show keyboard focus; › marks the page you are on.", 0),
+        ("1-7 jump to Home, Squad, Plan, Training, Market, Table and Logs.", 0),
+        ("M starts or resumes matchday; ? opens this guide.", 0),
+        ("Before kickoff, choose and deliver a team talk.", 0),
         ("Match: Tab views; Event arrows browse; Enter +15'; 1-3 tactics; 4 Changes.", 0),
         ("Changes: Tab switches lists; arrows choose who comes off/on; Enter confirms.", 0),
         ("Squad: arrows select; X toggles a starter; V accepts a fair outgoing offer.", 0),
-        ("Plan: I/O phase shapes; P/L/W/B/T change press, line, width, build and tempo.", 0),
+        ("Plan: I/O/P/L/W/B/T cycle settings; -/+ adjusts the focused one.", 0),
         ("Training: arrows choose focus, Enter sets it, I cycles intensity.", 0),
         ("Market: scout for uncertainty ranges; negotiate fee and weekly wage separately.", 0),
         ("Tactical keys alter the actions the match engine can produce, not a hidden win bonus.", 0),
@@ -2135,7 +2213,7 @@ def _draw_help(win, body: ui.Rect) -> None:
         if y >= body.bottom - 1:
             break
         ui.draw_text(win, body.x, y, text, body.width, _pair(pair, bold=pair == 1))
-    _draw_hint(win, body, "Esc returns to the last page · the full manual is available from the game hub")
+    _draw_hint(win, body, "Esc returns to the last page · full controls are in manual.md")
 
 
 def _wrap_words(text: str, width: int) -> list[str]:
@@ -2763,6 +2841,7 @@ def _handle_offer_key(key: int, career: dict[str, Any], app: dict[str, Any]) -> 
     if key in (27, curses.KEY_BACKSPACE):
         app["offer"] = None
         app["page"] = "market"
+        app["nav_index"] = SECTION_PAGES.index("market")
         app["message"] = "Negotiation closed without an offer."
     elif key == curses.KEY_LEFT:
         offer["fee"] = max(0, int(offer["fee"]) - 10)
@@ -2784,6 +2863,7 @@ def _handle_offer_key(key: int, career: dict[str, Any], app: dict[str, Any]) -> 
             app["message"] = f"Deal done: {career['players'][offer['player_id']]['name']} joins the squad."
             app["offer"] = None
             app["page"] = "market"
+            app["nav_index"] = SECTION_PAGES.index("market")
         else:
             offer["message"] = result["reason"]
             offer["accepted"] = False
@@ -2800,9 +2880,11 @@ def _handle_team_talk_key(key: int, career: dict[str, Any],
     match = career.get("live_match")
     if not match:
         app["page"] = "home"
+        app["nav_index"] = 0
         return True
     if key == 27:
         app["page"] = "home"
+        app["nav_index"] = 0
         app["message"] = "Match paused before kickoff. M returns to the team talk."
     elif key in (curses.KEY_UP, ord("k")):
         app["talk_index"] = max(0, int(app.get("talk_index", 0)) - 1)
@@ -2825,6 +2907,7 @@ def _handle_substitution_key(key: int, career: dict[str, Any],
     match = career.get("live_match")
     if not match:
         app["page"] = "home"
+        app["nav_index"] = 0
         return True
     if key in (27, ord("q"), ord("Q")):
         app["page"] = "match"
@@ -2878,6 +2961,7 @@ def _handle_match_key(key: int, career: dict[str, Any], app: dict[str, Any]) -> 
     match = career.get("live_match")
     if not match:
         app["page"] = "home"
+        app["nav_index"] = 0
         return True
     if key == 9:
         view = app.get("match_view", "live")
@@ -2897,13 +2981,16 @@ def _handle_match_key(key: int, career: dict[str, Any], app: dict[str, Any]) -> 
         if key in (10, 13, curses.KEY_ENTER):
             resolved = complete_user_match(career, match)
             app["page"] = "home"
+            app["nav_index"] = 0
             app["message"] = (f"Round settled: {len(resolved)} matches, table and player states updated."
                               if resolved else "This round was already recorded.")
         elif key == 27:
             app["page"] = "home"
+            app["nav_index"] = 0
             app["message"] = "Full-time report saved. M returns to this match."
         elif key == ord("6"):
             app["page"] = "table"
+            app["nav_index"] = SECTION_PAGES.index("table")
         return True
     if key in (10, 13, curses.KEY_ENTER, ord(" ")):
         simulate_period(career, match)
@@ -2924,6 +3011,7 @@ def _handle_match_key(key: int, career: dict[str, Any], app: dict[str, Any]) -> 
         _open_substitutions(career, match, app)
     elif key == 27:
         app["page"] = "home"
+        app["nav_index"] = 0
         app["message"] = "Match paused. M resumes; the current score and period are saved."
     return True
 
@@ -2969,28 +3057,65 @@ def _route_key(key: int, career: dict[str, Any] | None,
             app["page"] = app.pop("previous_page", "home")
         elif key in (ord("q"), ord("Q")):
             return False
+        elif key == 9:
+            index = (_page_nav_index(app.get("previous_page", "home")) + 1) % len(SECTION_PAGES)
+            app["page"] = SECTION_PAGES[index]
+            app["nav_index"] = index
+        elif ord("1") <= key <= ord("7"):
+            index = key - ord("1")
+            app["page"] = SECTION_PAGES[index]
+            app["nav_index"] = index
+        elif key in (ord("m"), ord("M")) and career:
+            app["nav_index"] = MATCH_NAV_INDEX
+            _start_matchday(career, app)
         _persist(save_data, career)
         return True
     if key == 27:
         app["page"] = "home"
+        app["nav_index"] = 0
         _persist(save_data, career)
         return True
     if key in (ord("q"), ord("Q")):
         _persist(save_data, career)
         return False
+    if key in (curses.KEY_LEFT, curses.KEY_RIGHT):
+        current_focus = int(clamp(app.get("nav_index", _page_nav_index(page)),
+                                  0, MATCH_NAV_INDEX))
+        direction = -1 if key == curses.KEY_LEFT else 1
+        app["nav_index"] = (current_focus + direction) % (MATCH_NAV_INDEX + 1)
+        _persist(save_data, career)
+        return True
+    if key in (10, 13, curses.KEY_ENTER):
+        focus = int(clamp(app.get("nav_index", _page_nav_index(page)),
+                          0, MATCH_NAV_INDEX))
+        current = _page_nav_index(page)
+        if focus == MATCH_NAV_INDEX and career:
+            _start_matchday(career, app)
+            _persist(save_data, career)
+            return True
+        if focus != current and focus < len(SECTION_PAGES):
+            app["page"] = SECTION_PAGES[focus]
+            app["message"] = ""
+            _persist(save_data, career)
+            return True
     if key == ord("?"):
         app["previous_page"] = page
         app["page"] = "help"
     elif key == 9:
-        pages = ("home", "squad", "tactics", "training", "market", "table", "history")
-        app["page"] = pages[(pages.index(page) + 1) % len(pages)] if page in pages else "home"
+        index = (_page_nav_index(page) + 1) % len(SECTION_PAGES)
+        app["page"] = SECTION_PAGES[index]
+        app["nav_index"] = index
     elif ord("1") <= key <= ord("7"):
-        app["page"] = {"1": "home", "2": "squad", "3": "tactics", "4": "training",
-                       "5": "market", "6": "table", "7": "history"}[chr(key)]
+        index = key - ord("1")
+        app["page"] = SECTION_PAGES[index]
+        app["nav_index"] = index
     elif page == "home" and key in (10, 13, curses.KEY_ENTER) and career and career["season_complete"]:
         _advance_season_from_ui(career, app)
     elif key in (ord("m"), ord("M")) and career:
+        app["nav_index"] = MATCH_NAV_INDEX
         _start_matchday(career, app)
+        if app.get("page") in SECTION_PAGES:
+            app["nav_index"] = _page_nav_index(app["page"])
     elif page == "squad" and career:
         players = _player_rows(career, career["club_id"])
         if key in (curses.KEY_UP, ord("k")):
@@ -3018,9 +3143,9 @@ def _route_key(key: int, career: dict[str, Any] | None,
             if tactic_key == "in_shape":
                 career["clubs"][career["club_id"]]["lineup"] = best_lineup(
                     career, career["club_id"], tactic["in_shape"])
-        elif key in (curses.KEY_LEFT, ord("h"), curses.KEY_RIGHT, ord("l")):
+        elif key in (ord("-"), ord("+"), ord("=")):
             selected_key = app.get("tactic_focus", "P").lower()
-            direction = -1 if key in (curses.KEY_LEFT, ord("h")) else 1
+            direction = -1 if key == ord("-") else 1
             if selected_key in names:
                 app["message"] = _change_tactic(tactic, names[selected_key], direction)
                 if selected_key == "i":
@@ -3059,6 +3184,7 @@ def _route_key(key: int, career: dict[str, Any] | None,
                 _begin_offer(career, app)
             elif key in (ord("v"), ord("V")):
                 app["page"] = "squad"
+                app["nav_index"] = SECTION_PAGES.index("squad")
                 app["message"] = "Use V on the selected squad player to list them and take a fair incoming bid."
     elif page == "table" and career:
         if key in (curses.KEY_UP, ord("k")):
@@ -3086,6 +3212,7 @@ def _create_selected_career(save_data: dict[str, Any], app: dict[str, Any]) -> b
     ts.save(save_data)
     app["career"] = career
     app["page"] = "home"
+    app["nav_index"] = 0
     app["message"] = f"You take charge at {club_by_id(club_id)['name']}. The squad, board and season are ready."
     app["data"] = save_data
     return True
@@ -3109,6 +3236,7 @@ def _run(stdscr) -> int:
         "page": ("team_talk" if career and _needs_team_talk(career.get("live_match"))
                  else "match" if career and career.get("live_match") else
                  "home" if career else "career_select"),
+        "nav_index": (MATCH_NAV_INDEX if career and career.get("live_match") else 0),
         "club_index": 0, "squad_index": 0, "market_index": 0,
         "match_view": "live",
         "message": "Choose a club and build a football life around its people.",

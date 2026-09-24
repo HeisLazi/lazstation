@@ -14,10 +14,11 @@ news. The save updates after each decision and match window.
 | Key | Page or action |
 |---|---|
 | `1`–`7` | Home, Squad, Plan, Training, Market, Table, Logs |
-| `M` | Start or resume matchday |
+| Left/Right, `Enter` | Browse the section bar, then open the focused page or Matchday |
+| `M` | Start or resume matchday from any desk page |
 | `?` | In-game controls and system guide |
 | `Q` | Save and quit |
-| `Tab` | Move to the next main page |
+| `Tab` | Move to the next main page; number keys remain direct jumps |
 
 ## Squad and selection
 
@@ -44,7 +45,11 @@ The Plan page changes the shape in and out of possession independently:
 | `W` | Width |
 | `B` | Build-up style |
 | `T` | Tempo |
-| Left/Right | Move the currently focused instruction |
+| `-` / `+` | Adjust the currently focused instruction |
+
+Left/Right now browse the section bar. Press one of `I/O/P/L/W/B/T` to focus
+and cycle that instruction directly, or use `-`/`+` to adjust the last focused
+instruction in either direction.
 
 Every plan has a visible trade-off. High pressure can create high regains but
 uses more energy. A high line compresses space while giving direct balls a
