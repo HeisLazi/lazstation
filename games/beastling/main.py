@@ -17,17 +17,31 @@ from beasts import (ABILITY_DESC, CHAMPIONS, CHART, MOVES, ROUTES, SPECIES, STAR
                     TYPE_ABILITY, WEATHER_DESC, WEATHER_DURATION, WEATHER_EFFECTS)
 
 # Vertical-centring target for `ts.tv_clear(page=PAGE)`. The real content
-# height of a battle screen is closer to 17-18 rows, NOT 19 -- but do not
-# "fix" this to match that number. `tv_clear`'s centring offset is
-# `max(0, (screen.height - page) // 2)`, and at this game's own declared
-# minimum terminal size the inner height is exactly 20: at PAGE=19 that's
-# already `max(0, (20-19)//2) == 0` (no offset -- content starts at row 0,
-# maximum available room). Correcting PAGE to 17 would introduce a real
-# 1-row offset at that same size and reopen the exact row-budget bug this
-# constant is protecting against, silently and with no test to catch it
-# unless re-verified against the declared minimum directly (see
-# `game.toml`'s min_cols/min_rows, and the DEVLOG-equivalent commit
-# history for the row-budget saga this survived).
+# height of the worst-case battle screen is 17 print calls (verified by
+# direct execution, not arithmetic -- an earlier pass here claimed 15 and
+# was wrong by 2). Do not "fix" PAGE to 17 to match that. `tv_clear`'s
+# centring offset is `max(0, (screen.height - page) // 2)`, and at this
+# game's declared minimum terminal size (game.toml: 66x24, inner height
+# 20) PAGE=19 already gives `max(0, (20-19)//2) == 0` -- no offset, content
+# starts at row 0. That leaves a real but THIN margin of 1 row before
+# `_seat_cursor`'s own silent-clear threshold (height-2). Correcting PAGE
+# to 17 would introduce a real 1-row centring offset at that same size and
+# consume that entire margin, reopening the exact bug this constant is
+# protecting against -- silently, since no test suite exists for this
+# project to catch it.
+#
+# Known, accepted, out-of-scope limitation: nothing in termstation
+# actually enforces a game's declared min_cols/min_rows (`Game.fits()` in
+# termstation/library.py has zero callers anywhere in the console), so a
+# real terminal smaller than the declared minimum -- a raw 66x22 or 66x23,
+# both ordinary tmux/terminal sizes -- still hits the same silent wipe
+# today. That's a termstation-wide gap (no game here enforces its own
+# minimum), not something one game's code can fix by itself. Separately,
+# `Game.fits()`'s own semantics check the declared min against the
+# BEZEL-INNER size, not raw terminal size, while this file's min_rows was
+# raised against the RAW reading -- the two disagree with each other. Both
+# are real, both are pre-existing/project-wide, and fixing either belongs
+# in termstation's own launcher code, not here.
 PAGE = 19
 PARTY_MAX = 6
 BAR_W = 16
