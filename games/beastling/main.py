@@ -16,7 +16,19 @@ import termstation_sdk as ts
 from beasts import (ABILITY_DESC, CHAMPIONS, CHART, MOVES, ROUTES, SPECIES, STARTERS,
                     TYPE_ABILITY, WEATHER_DESC, WEATHER_DURATION, WEATHER_EFFECTS)
 
-PAGE = 19          # rows a battle screen uses, for vertical centring
+# Vertical-centring target for `ts.tv_clear(page=PAGE)`. The real content
+# height of a battle screen is closer to 17-18 rows, NOT 19 -- but do not
+# "fix" this to match that number. `tv_clear`'s centring offset is
+# `max(0, (screen.height - page) // 2)`, and at this game's own declared
+# minimum terminal size the inner height is exactly 20: at PAGE=19 that's
+# already `max(0, (20-19)//2) == 0` (no offset -- content starts at row 0,
+# maximum available room). Correcting PAGE to 17 would introduce a real
+# 1-row offset at that same size and reopen the exact row-budget bug this
+# constant is protecting against, silently and with no test to catch it
+# unless re-verified against the declared minimum directly (see
+# `game.toml`'s min_cols/min_rows, and the DEVLOG-equivalent commit
+# history for the row-budget saga this survived).
+PAGE = 19
 PARTY_MAX = 6
 BAR_W = 16
 
@@ -651,6 +663,13 @@ class Game:
                    for b in self.party]
         if len(options) < 2:
             return False
+        # A real, adjacent bug surfaced by the weather-pass row-budget
+        # review: this used to draw straight on top of whatever was
+        # already on screen -- the full battle display, already close to
+        # the row budget on its own -- with no clear first. A party of
+        # even 2-3 beasts was enough to push it over the edge and blank
+        # the screen the same way travel()/the draft screen once did.
+        ts.tv_clear()
         pick = ts.menu("Send out which beast?", options, back="Cancel")
         if pick == -1 or pick == 0:
             # pick == 0 is already the active lead -- selecting it is a
