@@ -20,6 +20,7 @@ The world must accommodate both elite clubs and modest local clubs. Namibian and
 - Unequal information infrastructure across clubs and competitions, generally correlated with resources and league level.
 - Players whose physical characteristics, capabilities, judgment, habits and learning make them suitable for different tasks.
 - Persistent owners, board members, executives and football staff with meaningful responsibilities.
+- Individual player personalities, preferences, relationships and changing emotional states, with media and public attention as supporting influences on football and career decisions.
 - Distinct head-coach and manager careers, governed by negotiated responsibilities rather than job title alone.
 - Future domestic, continental and international football, including African competition pathways; build the foundations before authoring that world.
 - Existing original content remains the playable dataset. Real clubs, players and competition branding are not introduced by this plan.
@@ -119,11 +120,38 @@ Routines describe coordinated intentions with branches, not guaranteed action sc
 
 These are scenario families, not special-case implementations. All three must use the public tactic components.
 
+### 3.6 Broader tactical coverage
+
+The initial proof cases favour possession and pressing. Extend the validation suite so alternative football works through equally concrete mechanisms:
+
+| Family | Required behavior |
+|---|---|
+| Compact mid-block | Collective shifting, central denial, selective pressure and deliberate passing concessions. |
+| Deep defending and counters | Box protection, meaningful clearances, preserved outlets and timed supporting runs. |
+| Direct play and second balls | Targeted delivery, aerial contests, controlled knockdowns and organised support around the landing area. |
+| Fluid combinations | Players combine around the ball, exchange positions and preserve selected structural responsibilities. |
+| Vertical combinations | A receiver, layoff and third-player run exploit orientation and timing. |
+| Wide isolation and crossing | Create a favourable duel, select a delivery and coordinate distinct box arrivals. |
+| Spare-defender/sweeper systems | Cover behind stepping defenders or tracking markers; compensate for exposed space. |
+| Set-piece-led attack | Seek useful territory and restarts, execute varied routines and protect against counters. |
+
+These families share the tactical language. Smaller clubs are not required to imitate elite possession football. Opponent rotations, dribbles and direct passes must test the costs of strict man-marking; well-executed blocks must test the patience and movement of possession teams.
+
+### 3.7 Objectives, autonomy and tactical memory
+
+Match objectives include pursuing a win, protecting a draw or aggregate lead, chasing a required margin and conserving selected players for another fixture. Risk preferences respond to the competition situation and available personnel. Protecting a lead can mean retaining possession or preserving an attacking outlet; it does not automatically mean retreating.
+
+Distinguish individual understanding, unit coordination, team organisation and rehearsed alternatives. Instruction familiarity is specific enough that learning one system does not instantly master every variant. Opposing staff learn from available match evidence and can counter a recurring routine; there is no arbitrary penalty for using a successful tactic repeatedly.
+
+Players retain bounded autonomy. They may identify an opportunity, abandon an impossible assignment or improvise within their judgment, habits and granted freedom. A sensible decision can fail. Analysis distinguishes instruction quality, execution and improvisation rather than treating obedience or a successful outcome as proof of a good decision.
+
 ## 4. Match engine and matchday
 
 ### 4.1 Simulation model
 
 Maintain player/ball positions, orientation, movement, acceleration, ball travel, pressure, interception opportunities, offside state, assignments and restart state. Internal granularity must be chosen by prototype profiling; a coarse presentation grid must not dictate the physics model.
+
+Add ball height, flight and bounce to the two-dimensional player model. Distinguish driven/floated/chipped delivery, receiving to feet or into a path, controlled knockdowns, deflections and second balls. A full three-dimensional renderer is unnecessary. The flight model must support consistent interception, aerial, goalkeeper and restart rules.
 
 Resolve perception → feasible options → decision → attempted action → contested execution → new state. Players have incomplete perception and differing decision speed. Simultaneous movement must not depend on which team is processed first. Use stable update ordering and separate reproducible random streams where needed.
 
@@ -189,6 +217,47 @@ Separate short-term fitness, sharpness, accumulated fatigue, injury and rehabili
 Support attribute-specific aging, plateaus, late development, position changes, decline and retirement. Youth evaluation considers maturation and observation bias without treating body size, nationality or early dominance as destiny. Preserve development history and uncertainty in forecasts.
 
 Promises, trust, contract satisfaction, settlement and role expectations have separate causes. People respond to their interests and history, with explicit promise deadlines and conditions. Avoid repeated morale multipliers that make small confidence changes dominate football ability.
+
+### 5.5 Individual identity, preferences and relationships
+
+Players are persistent people with partially known preferences and histories. Avoid a handful of personality labels that determine every reaction. Use several interacting tendencies, revealed gradually through conversations, conduct and working relationships.
+
+| Layer | Examples | Timescale and effect |
+|---|---|---|
+| Values and ambitions | Trophies, financial security, belonging, leadership, playing time, family stability, legacy. | Usually persistent but can evolve; shape competing career choices. |
+| Working preferences | Direct feedback, private reassurance, clear assignments, creative freedom, predictable routines. | Inform coaching and communication; no universally correct tone. |
+| Social tendencies | Comfort with attention, willingness to speak, trust, competitiveness, need for belonging. | Affect how situations are interpreted, without diagnosing a person. |
+| Environment preferences | Warm/cool weather, familiar language, a preferred living environment or routine. | Affect comfort and settlement when relevant; adaptation and support matter. |
+| Football identity | Favoured roles, play habits, trusted combinations, strengths and weaknesses. | Influences choices, role satisfaction and what the player can execute. |
+| Current emotional state | Confidence, frustration, motivation, perceived pressure, belonging and trust. | Changes with events and recovery at different rates; not one global morale meter. |
+
+Preferences are not universal attribute modifiers. Enjoying warm weather does not make a player immune to heat load or less capable whenever it rains. Separate preference, acclimatisation and physical demands; never infer them from nationality or ancestry. A disliked condition may matter for relocation or comfort more than the next shot.
+
+Relationships are directed and contextual. Two players can respect each other's football while competing for minutes; friendship need not imply tactical coordination. Track trust, affinity, respect and unresolved conflict only where they affect decisions. Shared work, support, leadership, competition and broken promises create memories. Memories have salience, context and decay rather than accumulating permanent penalties indefinitely.
+
+Players can like particular teammates, coaches and clubs, dislike a communication style or feel let down by a specific decision. Moving a trusted teammate can affect settlement, but it does not automatically trigger a dressing-room revolt. People retain agency: request a discussion, explain a preference, seek a move, accept a difficult role or rally a teammate.
+
+Positive everyday experiences belong alongside conflict: an academy welcome, a captain's encouragement, shared humour, an earned responsibility or a coach recognising progress. Use concise state-based moments, not an endless stream of private-life interruptions.
+
+### 5.6 State changes and bounded football effects
+
+Use a traceable chain: event → what the player actually learns → personal appraisal → emotional response → coping/support → bounded behavior change → later reassessment. Personality influences possible reactions without prescribing one outcome. State updates are deterministic for the same save inputs and seed; uncertainty in presentation reflects what the manager can know.
+
+Praise might build confidence, raise expectations, feel embarrassing or have little effect. Criticism might create doubt, determination, frustration or disengagement. A competitive response is not permanent immunity to distress. Ambition is not equivalent to disloyalty, public confidence is not proof of wellbeing, and a quiet player is not automatically fragile.
+
+Emotional state can influence action selection, hesitation, communication, willingness to attempt risk, training engagement or recovery routines where the model supports those effects. It must not rewrite established technical ability after a headline. Show uncertainty in explanations of form; tactical fit, opposition, health and random variation remain substantial causes.
+
+Define a shared effect budget before tuning: avoid applying the same pressure through confidence, form, morale and composure multipliers four times. Bound feedback, allow habituation/decay and prevent a bad game → criticism → worse game loop from becoming inevitable. Even excellent support cannot guarantee the next performance, and success does not automatically resolve every concern.
+
+Support includes private conversations, clear role expectations, reasonable workload, trusted teammates, player-care staff, qualified professional support and reduced media commitments. Offer choices with the player's preferences in mind. Sensitive concerns are not public scouting attributes; the manager receives relevant disclosures and advice, not omniscient access to private thoughts.
+
+Do not assign clinical diagnoses through hidden personality scores or reproduce speculative explanations of real players' lives. Fictional careers can produce recovery, setbacks, ambition, injury disruption and resilience without asserting a single cause for a real person's form. Deliberate humiliation or abuse must not become an optimal training shortcut.
+
+### 5.7 Shared time and squad compatibility
+
+Use one calendar for training, recovery, travel, rehabilitation, staff assignments, media duties, negotiations and competition deadlines. Small clubs may have part-time players, combined staff jobs and limited sessions/facilities. Elite clubs have more resources but also congestion and absences. Complexity requires preparation and continuity, not a universal penalty on lower-tier tactical intelligence.
+
+Recruitment evaluates the change to the whole squad: complementary traits, shared receiving spaces, covering relationships, adaptation time and dependence on other signings. Show whether a tactic remains viable when a key player is absent. A useful backup or versatile player can be more valuable than a higher-rated specialist who leaves the squad structurally fragile.
 
 ## 6. Scouting and analytics as a complete information system
 
@@ -308,10 +377,60 @@ Career offers display responsibilities, objectives, resources, reporting line, a
 | Doctor / physiotherapist / rehabilitation staff | Diagnosis, treatment, return-to-play assessments and rehabilitation. |
 | Player-care / psychology function | Settlement, communication and wellbeing support within appropriate professional boundaries. |
 | Operations / commercial function | Travel, facilities, matchday operations and authorised revenue activities. |
+| Communications / press officer | Briefings, media scheduling, accurate transcripts, corrections, monitoring and agreed public responses. |
 
 Functions can be combined in small clubs; the model must not require an elite-sized staff to field a team. People have skills, availability, workload, wages, contracts, relationships and working preferences. Hiring ten analysts cannot generate ten independent observations from one match recording.
 
 Tasks consume capacity and time, produce attributable outputs and compete for resources. Delegation specifies objectives, limits, exceptions and escalation. Staff explain proposals and decisions; users can inspect a decision log. Conflicts between a coach and sporting director arise from incompatible priorities or evidence, not arbitrary mood rolls.
+
+### 7.4 Media, pundits and social attention
+
+Model a fictional football information ecosystem: local reporters, national outlets, specialist analysts, pundits, club channels, supporter accounts and high-reach sports accounts. Each has reach, interests, reliability, editorial tendencies, relationships and a history. They observe public events and attributed information; they cannot read private save state.
+
+| Participant | Typical focus | Possible football connections |
+|---|---|---|
+| Local reporter / community outlet | Selection, local identity, club finances and familiar people. | Supporter relationships and intense personal visibility despite limited reach. |
+| National broadcaster / pundit | Major results, tactics, selection debates, standout players. | Reputation, expectation, recruitment attention and manager scrutiny. |
+| Specialist analyst | Patterns, statistics and supported tactical interpretations. | Public football debate, with coverage limits and possible analytical mistakes. |
+| Supporter accounts / groups | Loyalty, belonging, grievances, celebrations and rivalries. | Different fan constituencies respond differently; fans are not one mood value. |
+| Sports / transfer accounts | Breaking developments, negotiations and shareable stories. | Rumours, demand, agent strategies and pressure to clarify a position. |
+| Club and player channels | Official announcements, player voice and community contact. | Communication, identity and relationships within agreed responsibilities. |
+
+Stories originate from matches, interviews, public actions, actual rumours or explicit leak events. A leak requires a plausible knowledgeable source and an event record; private promises cannot simply appear online. Keep facts, quotations, opinion, speculation and fabricated claims distinct in the underlying model and appropriately labelled in the interface.
+
+The player sees a filtered digest with provenance, reach, trend and relevant decisions. Pundits can be wrong, accounts can repeat one another, and large engagement need not represent most supporters. Positive attention, humour, community pride and ordinary reporting should be more than background decoration around crises.
+
+### 7.5 Exposure, response and scale
+
+Exposure depends on club/competition visibility, personal fame, the event's importance, national-team attention and the player's media habits. Elite careers generally face more continuous scrutiny. Lower-level careers have less coverage and fewer formal obligations, but local relationships can be personally important and a cup upset or viral moment can cause a temporary spike. Promotion changes exposure gradually alongside the club's support capacity.
+
+Publication does not mean every player reads every post. Model whether information reaches someone directly, through teammates, agents or staff, and whether they consider the source credible. A wave of reposts is one developing story, not hundreds of independent morale hits. Apply bounded amplification, deduplication, decay and recovery opportunities. No platform APIs or live social accounts are required.
+
+Responses can differ within a squad. Public praise of a prospect may encourage them while increasing their sense of expectation; a teammate may be supportive, indifferent or concerned about their own role. Team effects travel through explicit conversations, leadership and relationships, not an automatic identical penalty to every player.
+
+Media can affect reputation, supporter expectations, sponsorship interest and negotiating leverage. It must not directly alter true ability or turn popularity into scouting evidence. Clubs with good analysis can disagree with a fashionable public narrative. Agents and executives may care about attention for different reasons from coaches.
+
+Abusive coverage is a distinct category from football criticism. If represented, summarise its nature and consequences rather than generating slur-filled feeds. Provide club support and reporting/protection responses; stronger coping can coexist with harm and must not make abuse a source of automatic improvement. FIFPRO's work informs the need for support, not a numerical formula for individual performance.
+
+### 7.6 Press conferences and public/private communication
+
+Questions refer to actual events and the journalist's knowledge. A response is structured around subject, stance, tone, attribution, commitment and disclosure. The interface previews the literal statement and any promise before confirmation. Start with authored composable responses rather than requiring a language model to judge arbitrary text.
+
+Allow the manager to defend a player, accept responsibility, explain a tactical choice, praise an effort, challenge a premise, correct a claim, defer a private matter or delegate within their role. Repeated canned praise is not a universal solution: credibility depends on wording, evidence, relationship and subsequent actions.
+
+Store the exact transcript. Headlines may select a provocative part or omit context, with source reliability and incentives influencing framing. A purported direct quote must use the recorded words unless an explicitly modelled false-report event is flagged as such. The simulation cannot invent a promise and punish the manager for making it.
+
+Players react to the statement they encounter, their trust in the speaker and later clarification. A private explanation can matter even when a headline remains unhelpful. Offering support publicly and repeatedly breaking private commitments erodes credibility. Correcting a story may help, attract further attention or have little effect; disagreement is not always solved through a press conference.
+
+Press staff provide briefings, handle routine corrections and recommend responses. The player can delegate most routine appearances and set communication preferences. Preserve decisions with meaningful stakes; avoid mandatory repetitive questions after every fixture. Head-coach and manager authority still limits what they can promise about transfers, contracts or club policy.
+
+### 7.7 Illustrative connected story and guardrails
+
+A young winger attracts attention after a cup performance. Their own staff see limited minutes and uncertain consistency; a pundit calls them the club's next star. An agent asks about a new contract, the player receives more attention, and an established teammate worries about selection. The manager can set a clear development plan, discuss expectations privately, share credit publicly and arrange support. Subsequent training, selection and communication matter more than finding one perfect press-conference answer.
+
+Alternative players in that situation might enjoy the spotlight, prefer privacy or remain mostly focused on training. None is guaranteed to flourish or decline. The same event links scouting uncertainty, role promises, negotiation, squad relationships and match decisions without dictating the result.
+
+Acceptance requires quiet weeks, positive stories, recovery from setbacks and successful careers with delegated media. This layer adds texture and consequential choices; it must not become the primary determinant of football outcomes or overwhelm tactics, health and squad quality.
 
 ## 8. Recruitment, contracts, loans and finance
 
@@ -376,5 +495,7 @@ Sources below inform mechanisms; proposed implementation details are our design 
 - [FIFA on the head coach](https://www.fifatrainingcentre.com/en/environment/interviews/the-team-behind-the-team/the-role-of-the-head-coach.php): football preparation and match responsibility. Our authority matrix is a configurable game design, not a universal organisational rule.
 - [Statsbomb on expected goals](https://www.hudl.com/blog/upgrading-expected-goals): positional context informs chance assessment. A game-generated model still needs independent calibration.
 - [FM finance and squad building](https://www.footballmanager.com/features/smarter-transfers-squad-building-and-finance) and [FM26 recruitment](https://www.footballmanager.com/fm26/features/powered-transferroom-fm26s-recruitment-revamp): connected squad needs, recruitment and financial commitments.
+- [FIFPRO on supporting players facing online abuse](https://www.fifpro.org/en/articles/2023/07/how-fifpro-is-combatting-social-media-abuse-of-footballers): attention can involve harmful exposure and requires support. It does not establish a deterministic relationship between criticism and a particular player's form.
+- [FIFA mid-block analysis](https://www.fifatrainingcentre.com/en/fwc2022/technical-and-tactical-analysis/controlling-the-game-without-the-ball--the-mid-block-and-compactness.php) and [goalkeeper distribution analysis](https://www.fifatrainingcentre.com/en/game/individual-qualities/goalkeeping/distribution-opportunities-from-a-long-goal-kick.php): compact defending and varied distribution deserve explicit tactical coverage.
 
 No proprietary dataset, licensed video, paid scouting service or real-world roster is required for the foundation. Generated football supplies observations; information access and analysis are simulated club capabilities.
