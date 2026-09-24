@@ -1,17 +1,22 @@
 [game]
 name = "Beastling"
 slug = "beastling"
-version = "1.1.0"
+version = "1.2.0"
 author = "lazi"
 description = """
-Catch, raise and battle creatures in the Hollow Vale.
+Catch, raise and battle creatures in the Hollow Vale -- or skip the
+catching and draft on The Circuit.
 
-Twenty species across six types, levelling and evolution,
-lures and a field journal, six routes and five champions
-who keep the roads. Status ailments, stat swings, priority
-moves and crits give the fights real teeth -- and the Circuit
-tournament mode lets you pick a squad of up to six and run a
-generated bracket with no healing between rounds."""
+Story Mode: twenty species across six types, levelling and evolution,
+lures and a field journal, six routes and five champions who keep
+the roads. Status ailments, stat swings, priority moves and crits
+give the fights real teeth.
+
+The Circuit: a separate trainer profile, no catching required. Draft
+a squad from every known species -- Free mode picks freely, Ranked
+mode drafts under a points budget so a team has to be built, not just
+stacked -- then run a generated bracket with no healing between
+rounds and climb the rank tiers."""
 tags = ["rpg", "creatures", "turn-based"]
 entry = ["{python}", "main.py"]
 min_cols = 66
@@ -41,9 +46,9 @@ description = "Beat every champion in the Hollow Vale"
 [[awards]]
 key = "circuit-contender"
 title = "Circuit Contender"
-description = "Reached round 4 of a tournament"
+description = "Reached round 4 of a Circuit run"
 
 [[awards]]
 key = "circuit-champion"
 title = "Circuit Champion"
-description = "Won a full tournament run"
+description = "Won a full Circuit run"

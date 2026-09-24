@@ -14,7 +14,6 @@ import sys
 
 import termstation_sdk as ts
 from beasts import CHAMPIONS, CHART, MOVES, ROUTES, SPECIES, STARTERS
-from tournament import generate_bracket
 
 PAGE = 19          # rows a battle screen uses, for vertical centring
 PARTY_MAX = 6
@@ -306,7 +305,6 @@ class Game:
         self.caught = set(save.get("caught", []))
         self.lures = int(save.get("lures", 8))
         self.money = int(save.get("money", 300))
-        self.best_tournament_round = int(save.get("best_tournament_round", 0))
 
     # --- persistence
     def store(self) -> None:
@@ -314,8 +312,7 @@ class Game:
             party=[b.to_dict() for b in self.party],
             box=[b.to_dict() for b in self.box],
             badges=self.badges, seen=sorted(self.seen), caught=sorted(self.caught),
-            lures=self.lures, money=self.money,
-            best_tournament_round=self.best_tournament_round)
+            lures=self.lures, money=self.money)
         self.save["_summary"] = (f"{self.badges} badges · {len(self.caught)} caught")
         ts.save(self.save)
 
@@ -611,126 +608,6 @@ class Game:
         ts.tv_pause()
         self.store()
 
-    # ------------------------------------------------------------- tournament
-    def pick_squad(self) -> list[Beast] | None:
-        """Choose up to PARTY_MAX beasts from the full roster (party + box)
-        for a tournament run. Returns None on cancel."""
-        roster = self.party + self.box
-        if not roster:
-            return None
-        chosen: list[Beast] = []
-        while True:
-            self.header("Choose your squad")
-            ts.tv_print()
-            ts.tv_print(f"  {len(chosen)}/{PARTY_MAX} chosen. No healing between rounds --")
-            ts.tv_print("  pick beasts that can go the distance, not just the strongest one.")
-            ts.tv_print()
-            labels = []
-            for b in roster:
-                mark = "☑" if b in chosen else "☐"
-                down = ts.color("  (down)", "bright_red") if not b.alive else ""
-                labels.append(f"{mark} {b.name.ljust(13)} Lv {str(b.level).rjust(2)}  "
-                              f"{b.type.ljust(6)} {b.hp}/{b.max_hp} HP{down}")
-            options = list(labels)
-            if chosen:
-                options.append(ts.color("Begin the tournament", "bright_green"))
-            pick = ts.menu("Squad", options, back="Cancel")
-            if pick == -1:
-                return None
-            if chosen and pick == len(labels):
-                return chosen
-            beast = roster[pick]
-            if beast in chosen:
-                chosen.remove(beast)
-            elif len(chosen) >= PARTY_MAX:
-                ts.tv_print(ts.color(f"  Squads are capped at {PARTY_MAX}.", "bright_red"))
-                ts.tv_pause()
-            else:
-                chosen.append(beast)
-
-    def tournament(self) -> None:
-        squad = self.pick_squad()
-        if not squad:
-            return
-        avg_level = max(1, sum(b.level for b in squad) // len(squad))
-        bracket = generate_bracket(avg_level)
-
-        self.header("The Circuit")
-        ts.tv_print()
-        ts.tv_print(ts.box([
-            f"  {len(bracket)} rounds. No healing between them.",
-            "",
-            f"  Your squad ({len(squad)}): " + ", ".join(b.name for b in squad),
-            "",
-            f"  Best run so far: round {self.best_tournament_round}/{len(bracket)}"
-            if self.best_tournament_round else "  You haven't finished a round before.",
-        ]))
-        ts.tv_print()
-        if not ts.confirm("  Enter the circuit?", default=True):
-            return
-
-        old_party, old_box = self.party, self.box
-        self.party = squad
-        reached = 0
-        try:
-            for i, rival in enumerate(bracket, 1):
-                self.header(f"Round {i}/{len(bracket)}")
-                ts.tv_print()
-                ts.tv_print(ts.box([
-                    f"  {rival['name']}  —  {'/'.join(rival['types'])}",
-                    "",
-                    f"  {rival['blurb']}",
-                    "",
-                    f"  Team of {len(rival['team'])}.",
-                ]))
-                ts.tv_print()
-                if not self.healthy():
-                    break
-                ts.tv_pause("press enter to fight")
-
-                won_round = True
-                for slug, level in rival["team"]:
-                    foe = Beast(slug, level)
-                    result = self.battle(foe, wild=False, title=f"Round {i} · {rival['name']}",
-                                         trainer=rival["name"])
-                    if result == "lost":
-                        won_round = False
-                        break
-                if not won_round:
-                    break
-                reached = i
-        finally:
-            self.party, self.box = old_party, old_box
-
-        if reached > self.best_tournament_round:
-            self.best_tournament_round = reached
-        outcome = "champion" if reached == len(bracket) else "lost"
-
-        self.header("The Circuit")
-        ts.tv_print()
-        if outcome == "champion":
-            prize = 150 + 40 * len(bracket)
-            self.money += prize
-            ts.unlock("circuit-champion", "Circuit Champion",
-                      "Won a full tournament run")
-            ts.tv_print(ts.box([
-                "  You cleared the whole circuit.",
-                "",
-                f"  +{prize} coins.",
-            ], fg="yellow"))
-        else:
-            ts.tv_print(ts.box([
-                f"  Your squad went down in round {reached + 1}/{len(bracket)}.",
-                "",
-                f"  Best run: round {self.best_tournament_round}/{len(bracket)}.",
-            ]))
-            if reached >= 3:
-                ts.unlock("circuit-contender", "Circuit Contender",
-                          "Reached round 4 of a tournament")
-        ts.tv_print()
-        ts.tv_pause()
-        self.store()
-
     def blackout(self) -> None:
         self.header("Camp")
         ts.tv_print()
@@ -883,7 +760,7 @@ class Game:
                 ts.tv_print(ts.color(f"  {len(hurt)} of your team are hurt.", "yellow"))
             ts.tv_print()
 
-            options = ["Travel", "Tournament", "Rest (heal the team)", "Your team",
+            options = ["Travel", "Rest (heal the team)", "Your team",
                        "Field notes", "The box", "Supplies"]
             if self.badges < len(CHAMPIONS):
                 champ = CHAMPIONS[self.badges]
@@ -895,8 +772,6 @@ class Game:
             label = options[pick]
             if label == "Travel":
                 self.travel()
-            elif label == "Tournament":
-                self.tournament()
             elif label.startswith("Challenge"):
                 self.challenge(CHAMPIONS[self.badges])
             elif label.startswith("Rest"):
@@ -937,8 +812,7 @@ class Game:
         self.explore(open_routes[pick])
 
 
-def main() -> int:
-    ts.tv("Beastling")
+def run_story() -> None:
     save = ts.load({"party": [], "box": [], "badges": 0, "seen": [], "caught": [],
                     "lures": 8, "money": 300, "version": 1})
     game = Game(save)
@@ -972,7 +846,32 @@ def main() -> int:
         f"  team       {', '.join(b.name for b in game.party) or 'nobody'}",
     ], fg="yellow"))
     ts.tv_print()
-    return 0
+    ts.tv_pause()
+
+
+def main() -> int:
+    ts.tv("Beastling")
+    while True:
+        ts.tv_clear(page=PAGE)
+        ts.tv_print(ts.title("B E A S T L I N G"))
+        ts.tv_print()
+        ts.tv_print(ts.box([
+            "  Story Mode -- catch, raise and battle creatures in the",
+            "  Hollow Vale. Beat the five champions who keep the roads.",
+            "",
+            "  Tournament -- draft a squad from every known species and",
+            "  climb the Circuit. No catching required: create a",
+            "  trainer, draft a team, fight the bracket.",
+        ]))
+        ts.tv_print()
+        pick = ts.menu("Beastling", ["Story Mode", "Tournament"], back="Quit")
+        if pick == -1:
+            return 0
+        if pick == 0:
+            run_story()
+        else:
+            import circuit
+            circuit.run()
 
 
 if __name__ == "__main__":
