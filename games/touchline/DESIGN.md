@@ -259,6 +259,46 @@ Use one calendar for training, recovery, travel, rehabilitation, staff assignmen
 
 Recruitment evaluates the change to the whole squad: complementary traits, shared receiving spaces, covering relationships, adaptation time and dependence on other signings. Show whether a tactic remains viable when a key player is absent. A useful backup or versatile player can be more valuable than a higher-rated specialist who leaves the squad structurally fragile.
 
+### 5.8 Places, lifestyle and settlement
+
+Players can have preferences for particular leagues, clubs, countries, cities and towns, as well as features of a place: pace of life, privacy, entertainment, climate, language, proximity to important people, commuting and family circumstances. A familiar league or a childhood aspiration can matter independently of its sporting strength.
+
+Represent both destination-specific attachments and underlying preferences. Locations have editable characteristics; avoid treating an entire country as one lifestyle. A player can enjoy city amenities while choosing a quiet home, or value a small-town community while wanting elite competition. Nationality does not prescribe preferences. Preferences can change with experience and life stage.
+
+Before a transfer, the player has an imperfect expectation of the destination. Settlement after arrival depends on the actual situation: housing, travel, language learning, role clarity, relationships, routine and practical support. A club's player-care service can help with introductions, relocation and suitable arrangements. It cannot erase every incompatibility or guarantee happiness.
+
+Separate football adaptation, social belonging and practical settlement. Someone can learn the tactic quickly but feel isolated, or love the town while struggling with the pace of the league. Each progresses through its own evidence and events. A move, loan return or change of coach does not reset personality, injury history or relationship memories.
+
+Recruitment reports show known destination preferences and uncertainty. Players and agents can explain concerns in negotiations and request relevant support. A preferred location can make a smaller offer attractive; an unfavourable location can be outweighed by minutes, ambition or family circumstances. No single preference mechanically decides every offer.
+
+### 5.9 Personal milestones and ordinary life
+
+Include occasional authored event families for parenthood, family visits, relocation, personal achievements, a satisfying purchase such as a new car, celebrations and other everyday changes. Events belong to persistent people and arise at credible frequencies; they are not a weekly requirement or a private-life management game.
+
+Record the event, who knows about it, practical consequences, the player's interpretation, any request and its follow-up. Public disclosure is distinct from the manager learning something privately. Do not send every event into the media system automatically.
+
+A new purchase might bring enjoyment, mean little after a few days or create a practical distraction. Parenthood could bring pride, changing priorities, fatigue, a wish for stability, requests for time away, renewed motivation or a mixture. Different players and circumstances produce different responses. Do not encode a universal parenthood performance bonus or imply that players without children are less motivated.
+
+Leave requests can involve dates, travel, expected availability and flexible return arrangements. Duration follows the individual situation and authored employment rules, not a fixed absence for every birth or family event. The manager's choices operate within their authority; required leave and medical restrictions cannot be overridden through a discipline setting. The player-care team can coordinate practical support and keep the football staff informed about availability without disclosing irrelevant private details.
+
+Responses might include approving discretionary time, agreeing a later return, changing a training schedule, arranging support or discussing a workable alternative. The player can disagree and remember how the conversation was handled. A supportive decision may build trust without producing immediate better football; a denied request may disappoint someone without making them deliberately play badly.
+
+Personal events feed the existing state model through specific paths such as motivation, rest, attention, belonging and availability. They never directly add finishing or passing points. Effects decay or become a lasting change in priorities where justified. Prevent reward farming through repeated purchases, gifts, conversations or leave approvals. Most ordinary life resolves quietly, with a digest or no interruption unless a meaningful decision is needed.
+
+### 5.10 Individual injury susceptibility and rehabilitation
+
+Individual susceptibility must be substantive but probabilistic. Keep a persistent medical history with affected area, injury type, onset, severity, exposure, treatment/recovery stages, recurrence and time missed. Model relevant predispositions separately from current load and an accidental contact injury; avoid a single visible label that predicts every future injury.
+
+Risk depends on the relevant exposure: match/training minutes, sprinting, changes of direction, challenges, current conditioning, accumulated fatigue, recovery and prior injury where supported by the calibrated model. A repeatedly injured player can have a healthy spell; a usually durable player can suffer a serious incident. Do not draw a second independent injury simply because the UI displays another performance period.
+
+Distinguish acute contact events, non-contact events, developing complaints and recurrence. A medical report estimates risk and a recovery range from available information. Clubs with better medical/science capacity can assess and manage more effectively, without knowing the future or eliminating injury risk.
+
+Use staged rehabilitation: unavailable, individual work, partial training, full training, medically cleared and match-readiness rebuilding, with appropriate transitions for the injury. Setbacks update the forecast and plan. Return-to-play eligibility and expected performance are different; being cleared does not instantly restore conditioning or confidence in an affected movement. The coach can select workload within medical constraints and discuss plans with staff and player.
+
+Medical history affects recruitment due diligence, backup requirements, expected availability, workload plans and contract discussions. Compare injuries relative to exposure rather than treating a high appearance count plus several injuries as automatically worse than a short, sparsely observed career. Uncertain or incomplete records stay uncertain. Availability forecasts inform decisions without declaring a player's career doomed.
+
+Injury interruption can change opportunities, relationships, motivation, finances and development. Long-term physical changes require specific recovery/development mechanics rather than a blanket ability reduction for every absence. Personal preference, public pressure and medical state remain distinguishable causes in staff reports.
+
 ## 6. Scouting and analytics as a complete information system
 
 ### 6.1 Truth is not the club's database
@@ -432,6 +472,22 @@ Alternative players in that situation might enjoy the spotlight, prefer privacy 
 
 Acceptance requires quiet weeks, positive stories, recovery from setbacks and successful careers with delegated media. This layer adds texture and consequential choices; it must not become the primary determinant of football outcomes or overwhelm tactics, health and squad quality.
 
+### 7.8 Coaching philosophy, club policies and reputation
+
+The manager can establish a working environment through distinct policies rather than one strict/lenient slider. Options include punctuality, match-eve curfews, rest-day flexibility, discretionary holidays, nutrition support and agreed food rules, meeting/training routines, media obligations, feedback style and how exceptions are handled. Tactical freedom and off-field discipline are separate dimensions.
+
+Each policy has a purpose, scope, timing, responsible staff member, communication record, exception process and proportionate response to a breach. Club/board employment rules, protected leave and medical decisions remain constraints. A head coach may control football routines while requiring executive approval for broader employment policies. Explain those limits in the appointment agreement.
+
+Players judge both the rules and their application. Some value structure; others value flexibility. Clear reasons, respectful treatment, consistency, private discussion and practical accommodation affect acceptance. A strict coach can be trusted and supportive; a relaxed coach can maintain high standards. Preferential treatment of a star or an unexplained midseason rule change can matter more than the policy's nominal severity.
+
+Examples: a blanket fast-food ban may be unwelcome, while a player accepts a personalised nutrition plan; a match-eve curfew may suit someone who dislikes restrictions on every free evening. Do not equate one meal with an immediate fitness penalty or liberal policies with inevitable poor preparation. Model actual adherence, rest and sustained habits only to the extent needed for meaningful football decisions, with staff handling routine details.
+
+Requests and breaches should create contextual conversations, not punishment farming. Record known facts and the player's account; avoid omniscient surveillance of private life. A refusal, warning, agreed exception or disciplinary response has consequences through trust, practical preparation and reputation. Disliking a policy need not mean disobeying it or intentionally underperforming.
+
+Coaching reputation grows from repeated conduct, player/staff testimony and public reporting. It travels with the manager but has source confidence and can change. Prospective signings consider known routines and authority arrangements alongside playing time, finances, place and tactical role. Some players decline a club because of a credible lifestyle mismatch; others actively seek that environment. Policy commitments made during recruitment are inspectable promises.
+
+Changing clubs or inheriting another manager's staff creates a transition: explain what will change, negotiate the remit and allow adaptation. The simulation supports demanding, flexible and mixed approaches with different squads; no policy preset is universally optimal or a permanent team-wide buff/debuff.
+
 ## 8. Recruitment, contracts, loans and finance
 
 Maintain squad plans for tactical requirements, depth, succession, eligibility and development. AI clubs run the same processes under their own authority and information limits.
@@ -447,6 +503,18 @@ Loans distinguish parent ownership/contract from borrowing registration and matc
 Finances distinguish cash, operating results, authorised budgets and future commitments. Use a ledger and scheduled payments for payroll, transfers, bonuses, revenues, facilities and debt. Forecast sporting scenarios without inventing precision. Instalments, conditional obligations and relegation risks must appear before approval. Apply income and costs consistently to human and AI clubs.
 
 Facility investment has time, capacity and recurring costs. Sponsors, matchday income and competition distributions have schedules and terms. Financial trouble produces explainable warnings and remedies under authored rules. Board control and executive action must follow the same authority model as ordinary operations.
+
+### 8.1 A transfer changes a player's situation
+
+Treat a signing as the beginning of a transition. Track expected versus actual role, minutes, tactical demands, destination fit, squad relationships, coaching environment and public expectations. Preserve pre-transfer histories so a new club can provide different opportunities without magically curing every existing problem.
+
+Transfer-related pressure reflects the fee relative to the club's means and records, wage/status, promised role, publicity, the player being replaced and existing reputation. Different audiences can expect different things. A record signing at a modest club can face substantial pressure, and a free academy graduate can face enormous expectations. A lower fee does not automatically mean a lower-pressure destination.
+
+Route the expectation through the existing exposure/appraisal/state model. Some players embrace the challenge, some feel burdened and some barely react. The same person can respond differently with clearer duties, trusted teammates, better health or a different coach. Technical ability is not directly reduced by the fee, and changing the fee alone cannot guarantee a transformation.
+
+Provide a first-months integration plan: practical settlement, tactical onboarding, agreed role, introductions, workload and communication. Staff report separate progress and uncertainties rather than one adaptation percentage. A quiet start does not prove a transfer failed; strong early form does not remove future risks.
+
+Scouts and directors evaluate football fit, likely adaptation, known working preferences, expected availability and total commitment together. A player thriving after a move can result from role fit, opportunities, preparation, relationships, changing expectations and variance. The game should let those stories emerge without copying or claiming a definitive explanation for any real player's career.
 
 ## 9. Global football foundations; content expansion deferred
 
@@ -497,5 +565,7 @@ Sources below inform mechanisms; proposed implementation details are our design 
 - [FM finance and squad building](https://www.footballmanager.com/features/smarter-transfers-squad-building-and-finance) and [FM26 recruitment](https://www.footballmanager.com/fm26/features/powered-transferroom-fm26s-recruitment-revamp): connected squad needs, recruitment and financial commitments.
 - [FIFPRO on supporting players facing online abuse](https://www.fifpro.org/en/articles/2023/07/how-fifpro-is-combatting-social-media-abuse-of-footballers): attention can involve harmful exposure and requires support. It does not establish a deterministic relationship between criticism and a particular player's form.
 - [FIFA mid-block analysis](https://www.fifatrainingcentre.com/en/fwc2022/technical-and-tactical-analysis/controlling-the-game-without-the-ball--the-mid-block-and-compactness.php) and [goalkeeper distribution analysis](https://www.fifatrainingcentre.com/en/game/individual-qualities/goalkeeping/distribution-opportunities-from-a-long-goal-kick.php): compact defending and varied distribution deserve explicit tactical coverage.
+- [FIFPRO, Playing with Cultures](https://fifpro.org/media/n3odzjwi/fifpro-playing-with-cultures.pdf): relocation and cultural adjustment deserve support and individual context; specific settlement mechanics here are design proposals.
+- [UEFA Elite Club Injury Study](https://www.uefa.com/news-media/news/021e-0e8f3044e06d-e05490549c2c-1000--2013-14-elite-club-injury-study/) and [survey of team medical officers](https://pubmed.ncbi.nlm.nih.gov/26795611/): exposure, history and workload inform injury assessment. The survey records perceived risks, not a validated individual prediction formula; injury probabilities require separate calibration.
 
 No proprietary dataset, licensed video, paid scouting service or real-world roster is required for the foundation. Generated football supplies observations; information access and analysis are simulated club capabilities.

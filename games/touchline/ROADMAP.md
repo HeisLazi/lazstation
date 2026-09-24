@@ -47,6 +47,7 @@ Use headless verification for rules and `tools/ptytest.py` at 80×24 and 110×30
 - Complete legal match states: fouls, cards, offside, substitutions, set pieces, stoppage time and configured extra time/shootouts.
 - Add conditional rule priority, abort/fallback behavior, conflict warnings and instruction delays.
 - Add tactical learning, unit familiarity and physical load without duplicating penalties.
+- Add persistent injury histories, relevant exposure and staged rehabilitation; distinguish medical eligibility, match readiness and uncertain availability forecasts.
 - Add explicit match objectives, rehearsed alternatives and bounded player improvisation. Opponent adaptation follows observable evidence.
 - Establish a shared preparation calendar and test squad compatibility/resilience when a key player is absent.
 - Offer key/extended/quick viewing over the same engine and recorded tactical replay.
@@ -65,6 +66,7 @@ Use headless verification for rules and `tools/ptytest.py` at 80×24 and 110×30
 - Add staff capacity, costs and deadlines needed for report production; fuller organisational behavior follows in F4.
 - Use the hybrid player presentation and prove that changing rating format reveals no hidden information.
 - Distinguish public reputation, media claims and popularity from observed football evidence; reports cannot expose private emotional state or infer personality from nationality.
+- Include exposure-aware availability reviews and known destination/working preferences, showing missing records and uncertain adaptation rather than categorical injury or personality labels.
 
 **Gate:** the same prospect can have materially different but defensible dossiers at two clubs. A wealthy club cannot query nonexistent coverage. Local knowledge can create an advantage. Reports improve through new evidence; repeated purchases cannot manufacture certainty. An opposition brief changes a real preparation decision.
 
@@ -81,6 +83,9 @@ Use headless verification for rules and `tools/ptytest.py` at 80×24 and 110×30
 - Give different players different appraisals of the same praise/criticism, including negligible reactions. Bound and deduplicate football effects.
 - Include positive and ordinary experiences, regional climate preferences, settlement and trusted relationships without identity-based stereotypes or blanket performance modifiers.
 - Scale ongoing media coverage with exposure/resources while supporting local scrutiny and temporary attention spikes.
+- Add sparse personal milestones and leave requests with calendar consequences, different appraisals and player-care support. Ordinary life should usually resolve without a managerial interruption.
+- Make coaching policies independently configurable within the appointment mandate; implement clear scope, exceptions, consistency, private discussions and reputation from actual conduct.
+- Test preferences for particular leagues/places and lifestyle features without treating whole countries as one culture or assigning preferences from nationality.
 
 **Gate:** the same recruitment case follows different legitimate paths for head coach and manager. Delegation never expands authority. A sporting director can propose an alternative with reasons. A finance lead can flag future risk. A tiny club can still complete a season with combined staff roles.
 
@@ -91,6 +96,7 @@ Use headless verification for rules and `tools/ptytest.py` at 80×24 and 110×30
 **Deliver:** timed negotiations, competing buyers, expiring contracts, loan pathways, payment schedules and forecasts.
 
 - Implement player/agent interests, total-cost comparisons and medical/registration outcomes.
+- Add destination/policy compatibility to negotiations and a post-signing integration plan. Transfer expectations reflect club-relative cost, role and publicity through the existing player/media model.
 - Add renewal/expiry, free agency, clauses and promises with deadlines.
 - Add loan ownership/registration separation, monitoring, recall and purchase options/obligations.
 - Use ledger-backed scheduled payroll and other financial events, including AI clubs.
@@ -121,6 +127,10 @@ Use headless verification for rules and `tools/ptytest.py` at 80×24 and 110×30
 | Counterplay | Each proof tactic encounters plausible opposing solutions; no preset dominates every matchup and squad. |
 | Player distinction | Controlled changes to anticipation, acceleration, touch or passing affect different stages/actions rather than one overall success multiplier. |
 | Personality and autonomy | Stable preferences, personal history and current context shape different responses while preserving credible improvisation and the player's technical profile. |
+| Transfer adaptation | Fee, expectations, role, location and relationships influence separate transition processes; lower fees never guarantee lower pressure or improved ability. |
+| Personal events | The same event can have different or negligible effects; leave updates availability; repeated purchases/support cannot farm performance bonuses. |
+| Coaching environment | A known policy can attract or deter a signing; consistency and exceptions matter; neither strictness nor leniency dominates every squad. |
+| Medical individuality | Injury risk responds to relevant exposure/history with uncertainty; recurrence and rehabilitation survive saves; susceptibility is not destiny and cleared is not fully match-ready. |
 | Emotional effects | One event cannot be counted through multiple overlapping modifiers; recovery/decay and bounded feedback prevent inevitable form spirals. |
 | Media integrity | Every story has a source; exposure is required for a reaction; repeats are deduplicated; quotes/promises reconcile to transcripts. |
 | Context and privacy | Climate preference differs from physical heat load; lower-tier attention differs from elite exposure; reports do not reveal private thoughts or infer traits from origin. |
@@ -151,6 +161,7 @@ Separate correctness, plausibility and enjoyment. Passing invariants does not es
 - Simulate long careers and inspect wage/cash distributions, squad viability, contract churn, youth opportunities, competitive balance and save size.
 - Evaluate whether users can explain their team's behavior, act on a scouting report and complete routine weeks without repetitive administration.
 - Run paired media/player-life scenarios with identical football inputs. Measure effect sizes, recurrence, recovery and interruption frequency; reject tuning where press-conference choices systematically overpower tactical/player-quality differences.
+- Test a high-expectation signing under different football/support conditions, a player declining a known policy mismatch, a personal-leave return and an injury recurrence/rehabilitation path. Include healthy spells for susceptible players and setbacks despite sensible management; no selected narrative may be guaranteed.
 - Record engine/rules version, seeds, dataset, measurements and known limitations with each milestone. Establish performance targets from F0 measurements and remeasure when fidelity/world size changes.
 
 ## First implementation handoff
