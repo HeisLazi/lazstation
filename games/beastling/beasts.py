@@ -43,7 +43,7 @@ ABILITY_DESC = {
 }
 
 # ---------------------------------------------------------------- moves
-# name: dict(type, power, accuracy, desc, priority, effect)
+# name: dict(type, power, accuracy, desc, priority, effect, sets_weather)
 #
 # `priority`: +1 moves resolve before normal-priority moves regardless of
 # speed -- a real answer to "the enemy is faster and about to finish me."
@@ -55,21 +55,43 @@ ABILITY_DESC = {
 # Exactly one flagship move per type carries a stat-stage effect and Ember/
 # Spark each get a dedicated status-inflicting move, so every type has a
 # distinct non-damage identity without touching every move in the list.
-def _move(m_type, power, accuracy, desc, priority=0, effect=None):
+#
+# `sets_weather`: a field-wide effect, not a per-beast one -- unlike
+# `effect`, this always triggers on a hit (no separate roll; missing the
+# move already means no weather, same as a real Pokemon weather move).
+# Deliberately only two moves carry this, on flagship-adjacent picks that
+# otherwise had no secondary effect at all, rather than retrofitting it
+# onto every move of the two types.
+def _move(m_type, power, accuracy, desc, priority=0, effect=None, sets_weather=None):
     return dict(type=m_type, power=power, accuracy=accuracy, desc=desc,
-                priority=priority, effect=effect)
+                priority=priority, effect=effect, sets_weather=sets_weather)
 
+
+#: field-wide, multi-turn, affects EVERY hit of the given move type on
+#: either side -- not a per-beast effect. Exactly two states (not one per
+#: type): real depth without a 6-way combinatorial mess to balance.
+WEATHER_EFFECTS = {
+    "Blaze": {"Ember": 1.2, "Tide": 0.8},
+    "Downpour": {"Tide": 1.2, "Ember": 0.8},
+}
+WEATHER_DURATION = 5  # turns
+WEATHER_DESC = {
+    "Blaze": "Ember hits harder, Tide hits softer.",
+    "Downpour": "Tide hits harder, Ember hits softer.",
+}
 
 MOVES = {
     "Tackle":      _move("Stone", 35, 95, "a plain running hit"),
     "Scratch":     _move("Stone", 30, 100, "quick claws", priority=1),
     "Cinder Spit": _move("Ember", 40, 95, "a gob of hot ash",
                          effect=("status", "burn", 0.20)),
-    "Flare Rush":  _move("Ember", 65, 85, "charges wreathed in flame"),
+    "Flare Rush":  _move("Ember", 65, 85, "charges wreathed in flame",
+                         sets_weather="Blaze"),
     "Magma Slam":  _move("Ember", 85, 75, "brings down molten weight",
                          effect=("stage", "def", -1, "foe", 0.30)),
     "Bubble":      _move("Tide", 38, 100, "a stream of stinging bubbles"),
-    "Tide Pull":   _move("Tide", 62, 90, "drags the foe off balance"),
+    "Tide Pull":   _move("Tide", 62, 90, "drags the foe off balance",
+                         sets_weather="Downpour"),
     "Deluge":      _move("Tide", 88, 75, "a wall of black water",
                          effect=("stage", "spd", -1, "foe", 0.30)),
     "Vine Whip":   _move("Bloom", 40, 95, "a quick lash"),

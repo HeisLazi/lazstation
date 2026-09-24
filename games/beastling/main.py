@@ -14,7 +14,7 @@ import sys
 
 import termstation_sdk as ts
 from beasts import (ABILITY_DESC, CHAMPIONS, CHART, MOVES, ROUTES, SPECIES, STARTERS,
-                    TYPE_ABILITY)
+                    TYPE_ABILITY, WEATHER_DESC, WEATHER_DURATION, WEATHER_EFFECTS)
 
 PAGE = 19          # rows a battle screen uses, for vertical centring
 PARTY_MAX = 6
@@ -178,8 +178,16 @@ CRIT_CHANCE = 1 / 16   # Gen-1-flavoured: rare enough to feel earned, not spammy
 CRIT_MULT = 1.5
 
 
-def damage(attacker: Beast, defender: Beast, move: str) -> tuple[int, float, bool, bool]:
-    """Returns (damage, type multiplier, hit?, crit?)."""
+def damage(attacker: Beast, defender: Beast, move: str,
+           weather: str | None = None) -> tuple[int, float, bool, bool]:
+    """Returns (damage, type multiplier, hit?, crit?).
+
+    `weather` is field-wide, not tied to either beast, so it's a plain
+    parameter here rather than something read off attacker/defender --
+    kept as a SEPARATE multiplier from `mult` (type effectiveness) since
+    it drives no "It's super effective!"-style text of its own and
+    shouldn't be folded into the number that does.
+    """
     spec = MOVES[move]
     m_type, power, accuracy = spec["type"], spec["power"], spec["accuracy"]
     if random.randint(1, 100) > accuracy:
@@ -193,6 +201,7 @@ def damage(attacker: Beast, defender: Beast, move: str) -> tuple[int, float, boo
     # choice (two or three) is a real decision rather than a rounding error.
     base = ((2 * attacker.level / 5 + 2) * power * attacker.eff_atk / max(1, defender.eff_def)) / 26
     dealt = (base + 2) * mult * (CRIT_MULT if crit else 1.0) * random.uniform(0.85, 1.0)
+    dealt *= WEATHER_EFFECTS.get(weather, {}).get(m_type, 1.0)
     if defender.ability == "Thick Hide" and mult >= 2.0:
         dealt *= 0.75
     return max(1, int(dealt)), mult, True, crit
@@ -423,6 +432,13 @@ class Game:
         else:
             log.append(f"{trainer} sends out {foe.name}!")
 
+        # Field-wide, not tied to either beast -- local to this one battle,
+        # same as `log`, rather than living on `self` (nothing about it
+        # should survive past this encounter) or on a Beast (it affects
+        # both sides equally, not one creature).
+        weather: str | None = None
+        weather_turns = 0
+
         while True:
             me = self.lead()
             if me is None:
@@ -442,6 +458,9 @@ class Game:
             ts.tv_print()
             for line in beast_line(me):
                 ts.tv_print(line)
+            if weather:
+                ts.tv_print(ts.color(f"   {weather} ({weather_turns} left) -- "
+                                     f"{WEATHER_DESC[weather]}", "bright_yellow"))
             ts.tv_print(ts.rule("─"))
             show_log(log)
             ts.tv_print(ts.rule("─"))
@@ -450,9 +469,10 @@ class Game:
             for i, move in enumerate(me.moves, 1):
                 spec = MOVES[move]
                 quick = ts.color(" quick", "bright_yellow") if spec["priority"] > 0 else ""
+                wx = ts.color(f" {spec['sets_weather']}", "bright_yellow") if spec["sets_weather"] else ""
                 ts.tv_print(f"   {ts.color(str(i), 'bright_cyan')}  "
                             f"{move.ljust(13)} {spec['type'].ljust(6)} "
-                            f"pow {spec['power']:>2}  acc {spec['accuracy']}{quick}")
+                            f"pow {spec['power']:>2}  acc {spec['accuracy']}{quick}{wx}")
                 options.append(str(i))
             extra = len(me.moves)
             tail = f"   {ts.color(str(extra + 1), 'bright_cyan')}  lure"
@@ -530,7 +550,7 @@ class Game:
                 if not may_act(attacker):
                     log.append(f"{attacker.name} is fully paralyzed! It can't move!")
                     continue
-                dealt, mult, hit, crit = damage(attacker, defender, move)
+                dealt, mult, hit, crit = damage(attacker, defender, move, weather)
                 if not hit:
                     log.append(f"{attacker.name}'s {move} missed.")
                     continue
@@ -540,6 +560,14 @@ class Game:
                     note = ("A critical hit! " + note).strip()
                 log.append(f"{attacker.name} used {move}. {note}".strip())
                 log.append(f"  {defender.name} lost {dealt} HP.")
+                new_weather = MOVES[move]["sets_weather"]
+                if new_weather:
+                    fresh = new_weather != weather
+                    weather, weather_turns = new_weather, WEATHER_DURATION
+                    if fresh:
+                        log.append(f"  {new_weather} rolls in!")
+                    else:
+                        log.append(f"  {new_weather} holds.")
                 # The move's own intended effect resolves BEFORE ability
                 # procs, not after -- a reviewed ordering hazard: both
                 # `apply_move_effect`'s status branch and Tinder already
@@ -560,6 +588,12 @@ class Game:
             for b in (foe, me):
                 if b.alive:
                     log.extend(resolve_status_upkeep(b))
+
+            if weather:
+                weather_turns -= 1
+                if weather_turns <= 0:
+                    log.append(f"  {weather} fades.")
+                    weather = None
 
             if not foe.alive:
                 gained = max(4, int(foe.level * 3.2))
