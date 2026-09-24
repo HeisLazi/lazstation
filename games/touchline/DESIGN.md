@@ -4,7 +4,7 @@
 **Scope:** the football, people, information and organisational foundations; large-world content is deferred.
 **Implementation baseline inspected:** `f036338` (playable game version 0.2.0).
 
-This is the current game design entry point. It supersedes the scope and architecture proposals in `wip/touchline/touchline/DESIGN.md`, which remains historical research. Neither document is evidence that a proposed mechanic exists. Read `docs/GAME-BRIEF.md` for console integration. The delivery order and acceptance gates are in [ROADMAP.md](ROADMAP.md).
+This is the current game design entry point. It supersedes the scope and architecture proposals in `wip/touchline/touchline/DESIGN.md`, which remains historical research. Neither document is evidence that a proposed mechanic exists. Read `docs/GAME-BRIEF.md` for console integration. The delivery order and acceptance gates are in [ROADMAP.md](ROADMAP.md); bounded engineering packages and the first implementation handoff are in [IMPLEMENTATION.md](IMPLEMENTATION.md).
 
 ## 1. Product direction and decisions
 
@@ -298,6 +298,26 @@ Use staged rehabilitation: unavailable, individual work, partial training, full 
 Medical history affects recruitment due diligence, backup requirements, expected availability, workload plans and contract discussions. Compare injuries relative to exposure rather than treating a high appearance count plus several injuries as automatically worse than a short, sparsely observed career. Uncertain or incomplete records stay uncertain. Availability forecasts inform decisions without declaring a player's career doomed.
 
 Injury interruption can change opportunities, relationships, motivation, finances and development. Long-term physical changes require specific recovery/development mechanics rather than a blanket ability reduction for every absence. Personal preference, public pressure and medical state remain distinguishable causes in staff reports.
+
+### 5.11 Personality development, leadership and cultural continuity
+
+Personality is persistent but changeable. Distinguish temperament, values, learned habits, interpersonal skills and the current emotional state. A player can become reliable about routines while remaining spontaneous or creatively adventurous on the pitch. Do not collapse discipline, obedience, ambition and leadership into one good/bad personality score.
+
+Long-term change follows repeated experiences over weeks, months and seasons: trusted coaching, consistent boundaries, meaningful feedback, mentorship, responsibility, consequences and the player's own interpretation. Record the experiences supporting a change, its direction and confidence. Habits may adapt sooner than values; progression can stall, reverse or remain local to a particular environment. Age influences opportunities and life stage but does not automatically make every older player disciplined or every young player unreliable.
+
+An academy player who initially dislikes rigid routines can gradually find value in preparation, build trust with a coach and captain, accept responsibility and eventually help newer players settle. This is a supported emergent path, not a scripted character upgrade. Another player may remain uncomfortable, negotiate a different arrangement or move to a better-fitting club. Coercion and repeated punishment must not guarantee beneficial transformation.
+
+Leadership is earned and contextual. Teammates may trust a quiet organiser, an encouraging senior player or someone who consistently prepares well. Selection as captain or mentor creates opportunities and expectations, not automatic influence. Track whether teammates actually respect the person, how they communicate and whether advice matches their conduct. A respected veteran can be influential without holding a formal role.
+
+Mentorship depends on compatibility, trust, contact time, demonstrated habits and willingness to engage. It can fail or have mixed effects; mentors do not copy their personality into mentees. Advice can work in both directions. Clubs can preserve preparation habits and values through people, routines and records even after the original coach leaves, while departures and new arrivals can gradually change that culture.
+
+Make mentorship an explicit development relationship with agreed focuses: preparation and punctuality, managing attention, tactical understanding, position-specific decisions, leadership, professional habits or settling into the club. A positional specialist might help a young defender recognise when to step out; a trusted captain might help them handle criticism. Learning a football habit requires relevant practice and feedback, while personal influence requires credible conduct and trust. Neither grants instant technique, athleticism or a guaranteed personality change.
+
+Allow informal role models as well as formal pairings and small groups. Pairings use interests, relationships, communication, demonstrated strengths and availability; shared nationality or position alone does not establish compatibility. Review progress through concrete observations and the participants' feedback. The younger player can learn selectively, question advice, change mentors or outgrow the arrangement. Mentors have limited attention, and a player can be a good example in one area and a poor example in another. An injured senior player can still offer guidance when available; a departed mentor can retain a relationship while losing daily contact. Harmful habits or cynicism may also spread through observed conduct, with opportunities for other people and club routines to counter that influence.
+
+Expose longitudinal evidence rather than hidden trait arithmetic: staff note a player increasingly taking responsibility, the player explains a changed priority, or teammates begin seeking their help. Keep historical reports so a reputation can lag behind actual change. Recruitment should allow someone to outgrow an old reputation when new evidence supports it.
+
+Required long-horizon scenario: follow an initially structure-averse academy player through mixed experiences, a trusted relationship, increasing responsibility and eventual mentorship of a new arrival. Verify possible alternative outcomes, credible timescales, retention of individual quirks, save/resume continuity and no instant personality gains from repeated dialogue or fines.
 
 ## 6. Scouting and analytics as a complete information system
 

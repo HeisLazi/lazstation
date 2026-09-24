@@ -1,7 +1,7 @@
 # Ekse Slaan Ball — foundation delivery and acceptance
 
 **Planning baseline:** 24 September 2026. All milestones below are planned, not delivered.
-Read [DESIGN.md](DESIGN.md) first. This roadmap turns the agreed direction into bounded implementation steps. It records future work; this planning change contains no gameplay edits.
+Read [DESIGN.md](DESIGN.md) first. This roadmap states milestone outcomes; [IMPLEMENTATION.md](IMPLEMENTATION.md) defines the engineering packages, dependencies and initial handoff. These documents record future work; this planning change contains no gameplay edits.
 
 ## Order and working rules
 
@@ -19,6 +19,7 @@ Use headless verification for rules and `tools/ptytest.py` at 80×24 and 110×30
 - Resolve unavailable-player fallback, contract expiry semantics, AI/human financial symmetry and migration of incomplete past seasons as explicit work items.
 - Define units, event chronology, RNG streams, rule versions and the distinction between world truth and club knowledge.
 - Define player identity/state/memory and story/exposure records, keeping personality, temporary mood, football capability and public reputation separate.
+- Make personality and culture histories versioned from the start so later development does not overwrite who a player used to be.
 - Choose a synthetic proof dataset with contrasting player profiles, tactics and information resources.
 
 **Gate:** documentation and executable baseline cases agree; no existing save is silently reinterpreted. Establish measured performance targets for F1 before claiming a world scale is feasible.
@@ -86,6 +87,8 @@ Use headless verification for rules and `tools/ptytest.py` at 80×24 and 110×30
 - Add sparse personal milestones and leave requests with calendar consequences, different appraisals and player-care support. Ordinary life should usually resolve without a managerial interruption.
 - Make coaching policies independently configurable within the appointment mandate; implement clear scope, exceptions, consistency, private discussions and reputation from actual conduct.
 - Test preferences for particular leagues/places and lifestyle features without treating whole countries as one culture or assigning preferences from nationality.
+- Introduce experience-driven habit/value development, earned leadership and compatible mentorship; preserve distinct temperaments and permit non-change or alternative paths.
+- Give mentoring explicit focuses, formal/informal relationships, contact limits and progress reviews; distinguish learning football decisions from copying a mentor's personality or ability.
 
 **Gate:** the same recruitment case follows different legitimate paths for head coach and manager. Delegation never expands authority. A sporting director can propose an alternative with reasons. A finance lead can flag future risk. A tiny club can still complete a season with combined staff roles.
 
@@ -110,6 +113,7 @@ Use headless verification for rules and `tools/ptytest.py` at 80×24 and 110×30
 **Deliver:** development/retirement, staff/manager movement, institutional history, competition formats and long-run simulation evidence.
 
 - Implement sustainable intake, exits, contract turnover, aging and progression.
+- Verify academy-to-leader-to-mentor paths across seasons, including cultural continuity after a manager departure and reputations catching up with changed behavior.
 - Add manager job changes and evolving club plans under visible objectives.
 - Validate domestic league/cup, continental qualification and national selection as separate relationships using small fictional fixtures.
 - Exercise mismatched calendars, registration deadlines, travel/rest and cup congestion.
@@ -127,6 +131,7 @@ Use headless verification for rules and `tools/ptytest.py` at 80×24 and 110×30
 | Counterplay | Each proof tactic encounters plausible opposing solutions; no preset dominates every matchup and squad. |
 | Player distinction | Controlled changes to anticipation, acceleration, touch or passing affect different stages/actions rather than one overall success multiplier. |
 | Personality and autonomy | Stable preferences, personal history and current context shape different responses while preserving credible improvisation and the player's technical profile. |
+| Personality development | Repeated meaningful experiences can change habits and values at credible rates; age, captaincy, mentorship assignment and punishment cannot guarantee transformation. |
 | Transfer adaptation | Fee, expectations, role, location and relationships influence separate transition processes; lower fees never guarantee lower pressure or improved ability. |
 | Personal events | The same event can have different or negligible effects; leave updates availability; repeated purchases/support cannot farm performance bonuses. |
 | Coaching environment | A known policy can attract or deter a signing; consistency and exceptions matter; neither strictness nor leniency dominates every squad. |
@@ -166,4 +171,4 @@ Separate correctness, plausibility and enjoyment. Passing invariants does not es
 
 ## First implementation handoff
 
-Start with F0 and a bounded F1 prototype after implementation is requested. Read the game brief, current design and code. Preserve unrelated console work. Resolve the documented module-organisation exception, record baseline behavior, then prove spatial possession and one coordinated tactical sequence with contrasting player profiles. Keep the observation boundary in the event design from the start. Do not begin continent authoring, real-club data imports or a complete finance rewrite during that slice.
+Use the first implementation handoff in [IMPLEMENTATION.md](IMPLEMENTATION.md). Execute its bounded starting package when gameplay implementation is requested; the current task is planning. Preserve unrelated console work and keep continent authoring and real-club data imports deferred.
