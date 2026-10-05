@@ -559,6 +559,24 @@ class Game:
         healthy = self.healthy()
         return healthy[0] if healthy else None
 
+    #: Circuit sets this False: its squads are fixed-level by design.
+    xp_share = True
+
+    def share_xp(self, active: Beast, gained: int, also: Beast | None = None) -> list[str]:
+        """Healthy party members who didn't fight get a third of the XP, so
+        catching things is worth more than a box of level-2 beasts. Only
+        level-ups are reported, to keep the win log short."""
+        if not self.xp_share:
+            return []
+        notes: list[str] = []
+        for b in self.healthy():
+            if b is active or b is also:
+                continue
+            for note in b.gain_xp(max(1, gained // 3)):
+                if "gained" not in note:
+                    notes.append(note)
+        return notes
+
     def heal_all(self) -> None:
         for b in self.party:
             b.hp = b.max_hp
@@ -655,7 +673,10 @@ class Game:
                             f"pow {spec['power']:>2}  acc {spec['accuracy']}{quick}{wx}")
                 options.append(str(i))
             extra = len(me.moves)
-            tail = f"   {ts.color(str(extra + 1), 'bright_cyan')}  lure"
+            lure_col = "bright_cyan" if self.lures > 0 else "grey"
+            tail = f"   {ts.color(str(extra + 1), lure_col)}  lure"
+            if self.lures <= 0:
+                tail += " (0)"
             if not wild:
                 tail = f"   {ts.color(str(extra + 1), 'grey')}  (no lures in a duel)"
             tail += f"    {ts.color(str(extra + 2), 'bright_cyan')}  swap"
@@ -672,7 +693,11 @@ class Game:
                     log.append("You can't lure another trainer's beast.")
                     continue
                 if self.lures <= 0:
-                    log.append("You are out of lures.")
+                    # Said once, not stacked: repeating this filled the whole
+                    # log, and it didn't cost a turn, so it read as a hang.
+                    msg = "No lures left -- buy more at camp (Supplies)."
+                    if not log or log[-1] != msg:
+                        log.append(msg)
                     continue
                 self.lures -= 1
                 chance = catch_chance(foe)
@@ -783,6 +808,7 @@ class Game:
                 self.money += 8 + foe.level * 2
                 for note in me.gain_xp(gained):
                     log.append(note)
+                log.extend(self.share_xp(me, gained))
                 self.header(title)
                 ts.tv_print()
                 show_log(log, keep=10)
@@ -1024,6 +1050,7 @@ class Game:
                     if ally.alive:
                         for note in ally.gain_xp(each):
                             log.append(note)
+                log.extend(self.share_xp(ally_a, each, also=ally_b))
                 self.header(title)
                 ts.tv_print()
                 show_log(log, keep=10)
@@ -1344,11 +1371,11 @@ class Game:
             ts.tv_print(f"  You have {ts.color(str(self.money), 'bright_yellow')} coins"
                         f" and {self.lures} lures.")
             ts.tv_print()
-            pick = ts.menu("Buy", ["Lure  — 40 coins", "Five lures — 180 coins"],
+            pick = ts.menu("Buy", ["Lure  — 25 coins", "Five lures — 110 coins"],
                            back="Back")
             if pick == -1:
                 return
-            cost, amount = (40, 1) if pick == 0 else (180, 5)
+            cost, amount = (25, 1) if pick == 0 else (110, 5)
             if self.money < cost:
                 ts.tv_print(ts.color("  Not enough coins.", "bright_red"))
                 ts.tv_pause()

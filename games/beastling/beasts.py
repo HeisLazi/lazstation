@@ -152,7 +152,7 @@ MOVES = {
                          effect=("stage", "spd", -1, "foe", 0.30)),
     "Vine Whip":   _move("Bloom", 40, 95, "a quick lash"),
     "Seed Volley": _move("Bloom", 60, 90, "a spray of hard seeds",
-                         effect=("status", "sleep", 0.20)),
+                         effect=("status", "sleep", 0.12)),
     "Bramblewall": _move("Bloom", 85, 75, "thorns burst from the ground",
                          effect=("stage", "def", 1, "self", 0.30)),
     "Rock Toss":   _move("Stone", 45, 90, "hurls a loose stone"),
