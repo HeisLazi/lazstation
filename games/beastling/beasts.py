@@ -168,11 +168,14 @@ SUPPLIES = {
 #: coin sink. Per-point step, per-stat cap, and an escalating price.
 TRAIN_STEP = {"hp": 4.0, "atk": 1.5, "dfn": 1.5, "spd": 1.5}
 TRAIN_LABEL = {"hp": "HP", "atk": "Atk", "dfn": "Def", "spd": "Spd"}
-TRAIN_CAP = 8
+TRAIN_CAP = 12     # points 9-12 are the 'mastery' tier, priced much higher
 
 
 def train_price(points_in_stat: int, total_points: int) -> int:
-    return 150 + 60 * points_in_stat + 20 * total_points
+    base = 150 + 60 * points_in_stat + 20 * total_points
+    if points_in_stat >= 8:
+        base += 400 + 200 * (points_in_stat - 8)       # mastery tier
+    return base
 
 #: Shop sections: (menu label, item names). Lures are handled separately.
 SHOP_SECTIONS = [
@@ -435,22 +438,33 @@ ROUTES = [
 #: Beat these in order. Each is a small team, hardest last.
 CHAMPIONS = [
     dict(name="Wren the Gardener", type="Bloom", blurb="Keeps the meadow. Fights like it.",
-         team=[("spindlebud", 7), ("pollenpuff", 8)],
+         team=[("spindlebud", 8), ("pollenpuff", 9)],
          win="\"You listened to them,\" she says. \"Most people talk.\""),
     dict(name="Ash of the Gully", type="Ember", blurb="Smells of woodsmoke and does not blink.",
-         team=[("ashfinch", 11), ("wickling", 12), ("magmaburrow", 13)],
+         team=[("ashfinch", 12), ("wickling", 13), ("magmaburrow", 15)],
          win="\"Good. Bank the fire and move on.\""),
     dict(name="Maren Tidewatch", type="Tide", blurb="Counts the tides out loud while she battles.",
-         team=[("mistfin", 15), ("pearlclam", 16), ("brinemaw", 17)],
+         team=[("mistfin", 17), ("pearlclam", 18), ("brinemaw", 19)],
          win="\"Six hours out, six hours back. You were quicker.\""),
     dict(name="Bhodi Stonewatch", type="Stone", blurb="Built like the cairns he guards.",
-         team=[("flintnose", 19), ("gritmouse", 19), ("quarrywyrm", 22)],
+         team=[("flintnose", 21), ("gritmouse", 21), ("quarrywyrm", 24)],
          win="He nods once, which from him is a parade."),
     dict(name="Sable", type="Gloom", blurb="You are fairly sure she was not there a moment ago.",
-         team=[("murkling", 24), ("nightveil", 25), ("shadecub", 25), ("hollowmaw", 28)],
+         team=[("murkling", 27), ("nightveil", 28), ("shadecub", 28), ("hollowmaw", 31)],
          win="\"The wood lets you leave,\" she says. \"That's rarer than winning.\""),
 ]
 
+#: Held gear per champion beast (same order as `team`): the aces carry
+#: shop-grade items, so beating them is no longer a pure level check.
+CHAMPION_GEAR = [
+    [None, "Mending Berry"],
+    ["Quick Charm", None, "Power Band"],
+    [None, "Mending Berry", "Guard Charm"],
+    [None, "Mending Berry", "Guard Charm"],
+    [None, "Focus Lens", None, "Power Band"],
+]
+for _champ, _gear in zip(CHAMPIONS, CHAMPION_GEAR):
+    _champ["gear"] = _gear
 for _champ, _reward in zip(CHAMPIONS, [("Lifeleaf", 1), ("Thorn Wrap", 1), ("Status Ward", 1),
                                         ("Last Stand", 1), ("Growth Candy", 3)]):
     _champ["reward"] = _reward

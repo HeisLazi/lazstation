@@ -1422,14 +1422,18 @@ class Game:
             "",
             f"  {champ['blurb']}",
             "",
-            f"  Team of {len(champ['team'])}. Beat them all without losing yours.",
+            f"  Team of {len(champ['team'])}, top level {max(l for _, l in champ['team'])}, "
+            f"and their aces carry gear.",
+            f"  Your best six average level {self.top_level()}.",
         ]))
         ts.tv_print()
         if not ts.confirm("  Challenge them?", default=True):
             return
 
-        for slug, level in champ["team"]:
+        for (slug, level), gear in zip(champ["team"], champ["gear"]):
             foe = Beast(slug, level)
+            foe.item = gear
+            foe.hp = foe.max_hp
             result = self.battle(foe, wild=False, title=champ["name"],
                                  trainer=champ["name"])
             if result in ("lost",):
@@ -1993,6 +1997,15 @@ class Game:
             prize = random.choice(RARE_DROPS)
             self.add_item(prize)
             lines.append(f"+{prize} (boss reward)")
+            # A rest stop after each boss: everyone heals halfway, the
+            # fallen come back at a quarter -- long climbs need a breather
+            # that isn't a free full reset.
+            for b in self.party:
+                if b.alive:
+                    b.hp = min(b.max_hp, b.hp + (b.max_hp - b.hp) // 2)
+                else:
+                    b.hp = max(1, b.max_hp // 4)
+            lines.append("Rest stop: the team heals halfway.")
         if floor % 10 == 0:
             self.add_item("Growth Candy", 2)
             self.add_item("Rare Scent")
