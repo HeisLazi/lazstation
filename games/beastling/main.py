@@ -15,7 +15,7 @@ import sys
 import termstation_sdk as ts
 from beasts import (ABILITY_DESC, CHAMPIONS, CHART, COMMON_DROPS, DROP_CHANCE, ITEMS,
                     MOVES, RARE_DROPS, ROUTES, SHOP_SECTIONS, SPECIES, SUPPLIES,
-                    TRAIN_CAP, TRAIN_LABEL, TRAIN_STEP, train_price,
+                    REMATCH, REMATCH_COINS, SPIRE_START_LEVEL, TRAIN_CAP, TRAIN_LABEL, TRAIN_STEP, train_price,
                     RARE_WEIGHT, STARTERS, TYPE_ABILITY, TYPE_SYNERGY, WEATHER_DESC,
                     WEATHER_DURATION, WEATHER_EFFECTS)
 
@@ -604,6 +604,9 @@ class Game:
         self.seen = set(save.get("seen", []))
         self.caught = set(save.get("caught", []))
         self.lures = int(save.get("lures", 8))
+        self.rematches: dict[str, int] = {k: int(v) for k, v in save.get("rematches", {}).items()
+                                           if k in REMATCH}
+        self.spire_best = int(save.get("spire_best", 0))
         raw_bag = save.get("inventory", {"Potion": 3})
         self.inventory: dict[str, int] = {
             k: int(v) for k, v in raw_bag.items()
@@ -616,7 +619,8 @@ class Game:
             party=[b.to_dict() for b in self.party],
             box=[b.to_dict() for b in self.box],
             badges=self.badges, seen=sorted(self.seen), caught=sorted(self.caught),
-            lures=self.lures, money=self.money, inventory=dict(self.inventory))
+            lures=self.lures, money=self.money, inventory=dict(self.inventory),
+            rematches=dict(self.rematches), spire_best=self.spire_best)
         self.save["_summary"] = (f"{self.badges} badges · {len(self.caught)} caught")
         ts.save(self.save)
 
@@ -1855,6 +1859,8 @@ class Game:
             # appearing once there's a badge left to challenge for).
             if len(self.healthy()) >= 2:
                 options.append("Synergy Duel (2v2)")
+            if self.badges >= len(CHAMPIONS):
+                options.append("Champion's Hall")
             pick = ts.menu("Camp", options, back="Save and quit")
             if pick == -1:
                 self.store()
@@ -1886,6 +1892,183 @@ class Game:
                 self.shop()
             elif label.startswith("Synergy Duel"):
                 self.synergy_duel()
+            elif label.startswith("Champion's Hall"):
+                self.champions_hall()
+
+    # ------------------------------------------------------------ post-game
+    def top_level(self) -> int:
+        levels = sorted((b.level for b in self.party), reverse=True)[:6]
+        return sum(levels) // max(1, len(levels))
+
+    def champions_hall(self) -> None:
+        """Opens once all five champions are beaten: scaling rematches and
+        the Battle Spire, the two things to do after the story."""
+        while True:
+            self.header("Champion's Hall")
+            ts.tv_print()
+            ts.tv_print("  The champions want a rematch -- and they've been training.")
+            ts.tv_print()
+            options = [f"Rematch {c['name']}  (won {self.rematches.get(c['name'], 0)}x)"
+                       for c in CHAMPIONS]
+            options.append(f"Battle Spire  (best floor {self.spire_best})")
+            pick = ts.menu("Champion's Hall", options, back="Back")
+            if pick == -1:
+                return
+            if pick == len(CHAMPIONS):
+                self.spire()
+            else:
+                self.rematch(CHAMPIONS[pick])
+
+    def rematch(self, champ: dict) -> None:
+        name = champ["name"]
+        wins = self.rematches.get(name, 0)
+        level = max(40, min(80, self.top_level() + 2 + 2 * wins))
+        team = REMATCH[name]
+        self.header(name)
+        ts.tv_print()
+        ts.tv_print(ts.box([
+            f"  {name}  --  rematch #{wins + 1}",
+            "",
+            f"  {len(team)} beasts, all about level {level}, all geared.",
+            f"  Purse: {REMATCH_COINS + 150 * wins} coins"
+            + ("  +  a Growth Candy (first win)" if wins == 0 else "  +  maybe a treasure"),
+        ]))
+        ts.tv_print()
+        if not ts.confirm("  Take them on?", default=True):
+            return
+        for slug, item in team:
+            foe = Beast(slug, level)
+            foe.item = item
+            foe.hp = foe.max_hp
+            result = self.battle(foe, wild=False, title=name, trainer=name)
+            if result == "lost":
+                self.blackout()
+                return
+            if result == "fled":
+                return
+        self.rematches[name] = wins + 1
+        coins = REMATCH_COINS + 150 * wins
+        self.money += coins
+        lines = [f"  You beat {name} again.", "", f"  +{coins} coins"]
+        if wins == 0:
+            self.add_item("Growth Candy")
+            lines.append("  +1 Growth Candy")
+        elif random.random() < 0.4:
+            prize = random.choice(RARE_DROPS)
+            self.add_item(prize)
+            lines.append(f"  +{prize}")
+        self.header(name)
+        ts.tv_print()
+        ts.tv_print(ts.box(lines, fg="yellow"))
+        ts.tv_print()
+        ts.tv_pause()
+        self.store()
+
+    def spire_team(self, floor: int) -> list[tuple[str, int, str | None]]:
+        """Floor n: level 40 + 2n, 3 beasts (+1 per 8 floors, max 5). Every
+        5th floor is a boss: one more beast and EVERYTHING is geared. From
+        floor 6 regular foes sometimes carry gear; from 12 that includes
+        treasures."""
+        evolved = [s for s, d in SPECIES.items() if any(
+            v["evolve"] and v["evolve"][1] == s for v in SPECIES.values())]
+        boss = floor % 5 == 0
+        size = min(5, 3 + floor // 8) + (1 if boss else 0)
+        pool = [n for n, d in ITEMS.items() if d["price"] > 0]
+        if floor >= 12:
+            pool += RARE_DROPS
+        level = SPIRE_START_LEVEL + 2 * floor
+        team = []
+        for _ in range(size):
+            item = None
+            if pool and (boss or (floor >= 6 and random.random() < 0.35)):
+                item = random.choice(pool)
+            team.append((random.choice(evolved), level, item))
+        return team
+
+    def spire_rewards(self, floor: int) -> list[str]:
+        coins = 100 + 40 * floor
+        self.money += coins
+        lines = [f"+{coins} coins"]
+        if floor % 5 == 0:
+            prize = random.choice(RARE_DROPS)
+            self.add_item(prize)
+            lines.append(f"+{prize} (boss reward)")
+        if floor % 10 == 0:
+            self.add_item("Growth Candy", 2)
+            self.add_item("Rare Scent")
+            lines.append("+2 Growth Candy, +1 Rare Scent")
+        elif random.random() < 0.15:
+            lines.extend(l.strip() for l in self.roll_drops(Beast("pebbleton", 5), False))
+        return lines
+
+    def spire(self) -> None:
+        """Endless climb. No resting between floors (items work), each
+        cleared floor pays out immediately and you can retreat with it;
+        losing ends the run with a free heal -- the Spire isn't a fine."""
+        self.header("Battle Spire")
+        ts.tv_print()
+        ts.tv_print(ts.box([
+            "  Floor after floor, each tougher than the last.",
+            "  No resting between floors -- bring potions.",
+            "  Every floor pays; every 5th is a geared boss.",
+            "  Retreat after any clear, or fall and be healed free.",
+        ]))
+        ts.tv_print()
+        if not ts.confirm("  Climb?", default=True):
+            return
+        floor = 1
+        while True:
+            team = self.spire_team(floor)
+            boss = floor % 5 == 0
+            self.header(f"Spire floor {floor}")
+            ts.tv_print()
+            ts.tv_print(ts.box([
+                f"  Floor {floor}" + ("  --  BOSS" if boss else ""),
+                "",
+                f"  {len(team)} beasts, level {team[0][1]}"
+                + (", all geared." if boss else "."),
+                f"  Your best: floor {self.spire_best}.",
+            ], fg="yellow" if boss else "amber"))
+            ts.tv_print()
+            ts.tv_pause("press enter to fight")
+            beaten = True
+            for slug, level, item in team:
+                foe = Beast(slug, level)
+                foe.item = item
+                foe.hp = foe.max_hp
+                result = self.battle(foe, wild=False, title=f"Spire {floor}", trainer="The Spire")
+                if result != "won":
+                    beaten = False
+                    break
+            if not beaten:
+                self.heal_all()
+                self.header("Battle Spire")
+                ts.tv_print()
+                ts.tv_print(ts.color(f"  The Spire spits you out on floor {floor}.", "bright_red"))
+                ts.tv_print(f"  Best floor: {self.spire_best}.  Your team is patched up, free.")
+                ts.tv_print()
+                ts.tv_pause()
+                self.store()
+                return
+            self.spire_best = max(self.spire_best, floor)
+            rewards = self.spire_rewards(floor)
+            self.store()
+            while True:
+                standing = len(self.healthy())
+                self.header(f"Spire floor {floor} cleared")
+                ts.tv_print()
+                for r in rewards:
+                    ts.tv_print(ts.color(f"  {r}", "bright_green"))
+                ts.tv_print(f"  {standing}/{len(self.party)} standing.   Best floor: {self.spire_best}.")
+                pick = ts.menu("What now?", [f"Climb to floor {floor + 1}", "Use an item",
+                                             "Retreat"], back=None)
+                if pick == 1:
+                    self.use_item_menu()
+                    continue
+                break
+            if pick == 2:
+                return
+            floor += 1
 
     def synergy_duel(self) -> None:
         """A Story-mode-only way to try `battle_2v2` -- two wild foes at

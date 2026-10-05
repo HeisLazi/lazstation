@@ -454,3 +454,28 @@ CHAMPIONS = [
 for _champ, _reward in zip(CHAMPIONS, [("Lifeleaf", 1), ("Thorn Wrap", 1), ("Status Ward", 1),
                                         ("Last Stand", 1), ("Growth Candy", 3)]):
     _champ["reward"] = _reward
+
+
+# ------------------------------------------------------------ post-game
+#: Rematch teams: the champion returns with a full, geared team. Entries
+#: are (species, held item). Levels are not stored here -- they scale with
+#: your own best six (see Game.rematch_level), so a rematch stays a fight.
+REMATCH = {
+    "Wren the Gardener": [("orchidreign", "Lifeleaf"), ("thornwood", "Guard Charm"),
+                          ("bloomcrest", "Power Band"), ("pyrelisk", "Quick Charm"),
+                          ("moatshell", None)],
+    "Ash of the Gully": [("emberhawk", "Quick Charm"), ("magmaburrow", "Power Band"),
+                         ("pyrelisk", "Ember Sash"), ("cragjaw", "Thorn Wrap"),
+                         ("nightveil", None)],
+    "Maren Tidewatch": [("moatshell", "Guard Charm"), ("brinemaw", "Vigor Seed"),
+                        ("haarscale", "Tide Sash"), ("voltlynx", "Focus Lens"),
+                        ("thornwood", None)],
+    "Bhodi Stonewatch": [("quarrywyrm", "Last Stand"), ("cragjaw", "Guard Charm"),
+                         ("cairnhorn", "Thorn Wrap"), ("brinemaw", "Power Band"),
+                         ("pyrelisk", None)],
+    "Sable": [("hollowmaw", "Last Stand"), ("umbrafang", "Power Band"),
+              ("nightveil", "Gloom Sash"), ("pyrelisk", "Status Ward"),
+              ("voltlynx", "Focus Lens"), ("cragjaw", "Lifeleaf")],
+}
+REMATCH_COINS = 500          # + 150 per previous win over that champion
+SPIRE_START_LEVEL = 40       # floor 1 is level 42; +2 per floor
