@@ -45,9 +45,18 @@ from beasts import (ABILITY_DESC, CHAMPIONS, CHART, ITEMS, MOVES, ROUTES, SPECIE
 # in termstation's own launcher code, not here.
 PAGE = 19
 PARTY_MAX = 6
-#: Most copies of one species a player can hold (party + box). The box
-#: used to fill with a dozen of whatever the route spawns most.
+#: Most beasts from one evolution family a player can hold (party + box).
+#: The box used to fill with a dozen of whatever the route spawns most.
+#: Counted per family, not per slug: otherwise 3 Pebbletons + 3 Cragjaws
+#: (or two forms evolving into the same thing) slips past the cap.
 MAX_COPIES = 3
+_PARENT = {d["evolve"][1]: s for s, d in SPECIES.items() if d["evolve"]}
+
+
+def family_root(slug: str) -> str:
+    while slug in _PARENT:
+        slug = _PARENT[slug]
+    return slug
 BAR_W = 16
 
 
@@ -563,7 +572,8 @@ class Game:
         return healthy[0] if healthy else None
 
     def copies(self, slug: str) -> int:
-        return sum(1 for b in self.party + self.box if b.slug == slug)
+        root = family_root(slug)
+        return sum(1 for b in self.party + self.box if family_root(b.slug) == root)
 
     #: Circuit sets this False: its squads are fixed-level by design.
     xp_share = True
@@ -708,7 +718,7 @@ class Game:
                         log.append(msg)
                     continue
                 if self.copies(foe.slug) >= MAX_COPIES:
-                    msg = f"You already have {MAX_COPIES} {foe.name} -- no room for more."
+                    msg = f"You already have {MAX_COPIES} of this family -- no room for more."
                     if not log or log[-1] != msg:
                         log.append(msg)
                     continue
