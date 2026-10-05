@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Beastling -- catch, raise and battle creatures in the Hollow Vale.
+"""Poke and Mon -- catch, raise and battle creatures in the Hollow Vale.
 
 Line-based: everything is printed into the TV picture and read with prompts,
 which keeps the systems (types, growth, evolution, catching) the interesting
@@ -1376,7 +1376,7 @@ class Game:
     # ------------------------------------------------------------- start
     def choose_starter(self) -> None:
         ts.tv_clear(page=PAGE)
-        ts.tv_print(ts.title("B E A S T L I N G"))
+        ts.tv_print(ts.title("P O K E   A N D   M O N"))
         ts.tv_print()
         ts.tv_print("  Three of them are awake and looking at you.")
         ts.tv_print()
@@ -1507,7 +1507,7 @@ def run_story() -> None:
 
     if not game.party:
         ts.tv_clear(page=PAGE)
-        ts.tv_print(ts.title("B E A S T L I N G"))
+        ts.tv_print(ts.title("P O K E   A N D   M O N"))
         ts.tv_print()
         ts.tv_print(ts.box([
             "  The Hollow Vale is full of creatures and short of people",
@@ -1525,7 +1525,7 @@ def run_story() -> None:
     game.camp()
 
     ts.tv_clear(page=14)
-    ts.tv_print(ts.title("B E A S T L I N G"))
+    ts.tv_print(ts.title("P O K E   A N D   M O N"))
     ts.tv_print()
     ts.tv_print(ts.box([
         f"  badges     {game.badges}/{len(CHAMPIONS)}",
@@ -1538,7 +1538,7 @@ def run_story() -> None:
 
 
 def main() -> int:
-    ts.tv("Beastling")
+    ts.tv("Poke and Mon")
     while True:
         # A real, freshly-found row-budget bug lived here, independent of
         # every other fix this session -- this screen was never checked
@@ -1553,13 +1553,13 @@ def main() -> int:
         # description -- same discipline as everywhere else this bug
         # class has been found and fixed.
         ts.tv_clear(page=PAGE)
-        ts.tv_print(ts.color("  B E A S T L I N G", "bright_cyan", bold=True))
+        ts.tv_print(ts.color("  P O K E   A N D   M O N", "bright_cyan", bold=True))
         ts.tv_print(ts.rule("─"))
         ts.tv_print()
         ts.tv_print("  Story Mode -- catch, raise and battle in the Hollow Vale.")
         ts.tv_print("  Tournament -- draft from every species. No catching needed.")
         ts.tv_print()
-        pick = ts.menu("Beastling", ["Story Mode", "Tournament"], back="Quit")
+        pick = ts.menu("Poke and Mon", ["Story Mode", "Tournament"], back="Quit")
         if pick == -1:
             return 0
         if pick == 0:
