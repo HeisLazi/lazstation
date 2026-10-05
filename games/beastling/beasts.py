@@ -9,12 +9,15 @@ not borrowed from anyone.
 TYPES = ["Ember", "Tide", "Bloom", "Stone", "Spark", "Gloom"]
 
 #: attacker -> {defender: multiplier}. Anything unlisted is 1.0.
+#: Ember/Spark used to resist-and-be-resisted their way to the bottom of a
+#: 1v1 round-robin (41-46% vs Stone 55-62%); Ember now also beats Gloom,
+#: and Spark has fewer resisted matchups. Per-type win rates are now 45-53%.
 CHART = {
-    "Ember": {"Bloom": 2.0, "Tide": 0.5, "Stone": 0.5, "Ember": 0.5},
+    "Ember": {"Bloom": 2.0, "Gloom": 2.0, "Tide": 0.5, "Ember": 0.5},
     "Tide":  {"Ember": 2.0, "Stone": 2.0, "Bloom": 0.5, "Tide": 0.5},
     "Bloom": {"Tide": 2.0, "Stone": 2.0, "Ember": 0.5, "Spark": 0.5, "Bloom": 0.5},
     "Stone": {"Spark": 2.0, "Ember": 2.0, "Tide": 0.5, "Bloom": 0.5},
-    "Spark": {"Tide": 2.0, "Bloom": 0.5, "Stone": 0.5, "Spark": 0.5},
+    "Spark": {"Tide": 2.0, "Spark": 0.5},
     "Gloom": {"Bloom": 2.0, "Spark": 2.0, "Ember": 0.5, "Stone": 0.5},
 }
 
@@ -197,7 +200,7 @@ SPECIES = {
         flavour="Tunnels collapse behind it, sealed by the heat of its passing."),
     "wickling": dict(
         name="Wickling", type="Ember", hp=38, atk=15, dfn=8, spd=14, glyph="╹◉╹",
-        learn=[(1, "Cinder Spit"), (11, "Flare Rush")], evolve=(18, "pyrelisk"),
+        learn=[(1, "Cinder Spit"), (9, "Flare Rush")], evolve=(18, "pyrelisk"),
         flavour="A small flame that learned to walk. It never sleeps in the rain."),
     "pyrelisk": dict(
         name="Pyrelisk", type="Ember", hp=62, atk=24, dfn=13, spd=20, glyph="◤◉◢",
@@ -272,14 +275,14 @@ SPECIES = {
         flavour="The old stories give it three shadows and no reflection."),
     "ashfinch": dict(
         name="Ashfinch", type="Ember", hp=36, atk=14, dfn=8, spd=18, glyph="^◉^",
-        learn=[(1, 'Flame Dash'), (1, 'Cinder Spit'), (14, 'Flare Rush')], evolve=(17, 'emberhawk'),
+        learn=[(1, 'Flame Dash'), (1, 'Cinder Spit'), (10, 'Flare Rush')], evolve=(17, 'emberhawk'),
         flavour="Nests in cooling hearths. It darts out before the smoke clears."),
     "emberhawk": dict(
         name="Emberhawk", type="Ember", hp=58, atk=24, dfn=12, spd=25, glyph="◣▲◢",
         learn=[(1, 'Flame Dash'), (1, 'Flare Rush'), (26, 'Magma Slam')], evolve=None,
         flavour="Rides the heat above a gully and drops on whatever moves."),
     "pearlclam": dict(
-        name="Pearlclam", type="Tide", hp=50, atk=9, dfn=18, spd=6, glyph="(◉)",
+        name="Pearlclam", type="Tide", hp=48, atk=11, dfn=17, spd=7, glyph="(◉)",
         learn=[(1, 'Bubble'), (1, 'Undertow'), (14, 'Tide Pull')], evolve=(18, 'moatshell'),
         flavour="Shuts like a vault. What it keeps inside is its own business."),
     "moatshell": dict(
@@ -295,8 +298,8 @@ SPECIES = {
         learn=[(1, 'Spore Cloud'), (1, 'Seed Volley'), (25, 'Bramblewall')], evolve=None,
         flavour="A court of petals around one very patient face."),
     "gritmouse": dict(
-        name="Gritmouse", type="Stone", hp=44, atk=12, dfn=15, spd=12, glyph="◖▪◗",
-        learn=[(1, 'Rock Toss'), (1, 'Grit Storm'), (13, 'Cragfall')], evolve=(18, 'quarrywyrm'),
+        name="Gritmouse", type="Stone", hp=44, atk=13, dfn=14, spd=12, glyph="◖▪◗",
+        learn=[(1, 'Rock Toss'), (8, 'Grit Storm'), (13, 'Cragfall')], evolve=(18, 'quarrywyrm'),
         flavour="Eats gravel and sneezes dust. Hard to hit, easy to underestimate."),
     "quarrywyrm": dict(
         name="Quarrywyrm", type="Stone", hp=76, atk=24, dfn=24, spd=12, glyph="▟▓▓▙",
