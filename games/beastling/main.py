@@ -45,6 +45,9 @@ from beasts import (ABILITY_DESC, CHAMPIONS, CHART, ITEMS, MOVES, ROUTES, SPECIE
 # in termstation's own launcher code, not here.
 PAGE = 19
 PARTY_MAX = 6
+#: Most copies of one species a player can hold (party + box). The box
+#: used to fill with a dozen of whatever the route spawns most.
+MAX_COPIES = 3
 BAR_W = 16
 
 
@@ -559,6 +562,9 @@ class Game:
         healthy = self.healthy()
         return healthy[0] if healthy else None
 
+    def copies(self, slug: str) -> int:
+        return sum(1 for b in self.party + self.box if b.slug == slug)
+
     #: Circuit sets this False: its squads are fixed-level by design.
     xp_share = True
 
@@ -677,6 +683,8 @@ class Game:
             tail = f"   {ts.color(str(extra + 1), lure_col)}  lure"
             if self.lures <= 0:
                 tail += " (0)"
+            elif self.copies(foe.slug) >= MAX_COPIES:
+                tail += " (full)"
             if not wild:
                 tail = f"   {ts.color(str(extra + 1), 'grey')}  (no lures in a duel)"
             tail += f"    {ts.color(str(extra + 2), 'bright_cyan')}  swap"
@@ -696,6 +704,11 @@ class Game:
                     # Said once, not stacked: repeating this filled the whole
                     # log, and it didn't cost a turn, so it read as a hang.
                     msg = "No lures left -- buy more at camp (Supplies)."
+                    if not log or log[-1] != msg:
+                        log.append(msg)
+                    continue
+                if self.copies(foe.slug) >= MAX_COPIES:
+                    msg = f"You already have {MAX_COPIES} {foe.name} -- no room for more."
                     if not log or log[-1] != msg:
                         log.append(msg)
                     continue
@@ -1395,8 +1408,8 @@ class Game:
             mark = "●" if slug in self.caught else ("○" if slug in self.seen else "·")
             name = data["name"] if slug in self.seen else "?????"
             rows.append(f"{mark} {name.ljust(13)}")
-        for i in range(0, len(rows), 3):
-            ts.tv_print("  " + "".join(rows[i:i + 3]))
+        for i in range(0, len(rows), 4):
+            ts.tv_print("  " + "".join(rows[i:i + 4]))
         ts.tv_print()
         ts.tv_pause()
 

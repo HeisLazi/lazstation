@@ -24,6 +24,7 @@ from tournament import generate_bracket
 
 DRAFT_LEVEL = 30           # fixed level for every drafted Circuit beast --
                             # this is a team-building exercise, not a grind
+DRAFT_PAGE = 20            # species shown per draft page (two columns of ten)
 RANKED_BUDGET = 130        # see docs: 6 cheapest (basic) forms cost ~66,
                             # 6 priciest (evolved) forms cost ~168 -- the
                             # budget sits in between so an all-evolved
@@ -121,6 +122,7 @@ class CircuitGame(Game):
 def draft_squad(ranked: bool) -> list[Beast] | None:
     all_slugs = sorted(SPECIES, key=lambda s: (SPECIES[s]["type"], point_cost(s)))
     chosen: list[str] = []
+    page = 0
 
     while True:
         # No `page=` here, unlike every other screen in this game: `page`
@@ -145,30 +147,39 @@ def draft_squad(ranked: bool) -> list[Beast] | None:
                              "bright_cyan"))
         ts.tv_print(ts.rule("─"))
 
-        # Two columns, not ts.menu(): 20 species + Confirm + Cancel is 22
-        # rows in one column, taller than the 20-row picture at the
-        # declared 66x24 minimum (and any stock 80x24 terminal), so the
-        # header and the first options scrolled off before the prompt.
+        # Two columns per page, not ts.menu(): 36 species in one column is
+        # taller than the 20-row picture at the declared 66x24 minimum, so
+        # the header and the first options scrolled off before the prompt.
+        # Numbers are global (1..n); the three footer entries keep fixed
+        # numbers so the prompt never moves.
+        n = len(all_slugs)
+        pages = (n + DRAFT_PAGE - 1) // DRAFT_PAGE
+        lo = page * DRAFT_PAGE
+        shown = list(range(lo, min(n, lo + DRAFT_PAGE)))
         cells = []
-        for i, slug in enumerate(all_slugs, 1):
+        for i in shown:
+            slug = all_slugs[i]
             d = SPECIES[slug]
             mark = "☑" if slug in chosen else "☐"
             cost = f" {point_cost(slug):>2}pt" if ranked else ""
-            cells.append(f"{i:>2} {mark} {d['name'][:11].ljust(11)} {d['type'].ljust(5)}{cost}")
+            cells.append(f"{i + 1:>2} {mark} {d['name'][:11].ljust(11)} {d['type'].ljust(5)}{cost}")
         half = (len(cells) + 1) // 2
         col_w = 29
         for r in range(half):
             right = cells[r + half] if r + half < len(cells) else ""
             ts.tv_print(f"  {cells[r].ljust(col_w)}{right}")
-        n = len(all_slugs)
-        footer = f"  {n + 1:>2}   Confirm squad   " if chosen else ""
-        cancel_n = n + 2 if chosen else n + 1
-        ts.tv_print(footer + f"{cancel_n:>2}   Cancel")
-        pick = ts.ask_int("choose", 1, cancel_n) - 1
-        if pick == cancel_n - 1:
+        ts.tv_print(f"  {n + 1:>2}   Page {page + 1}/{pages} (switch)   "
+                    f"{n + 2:>2}   Confirm squad   {n + 3:>2}   Cancel")
+        pick = ts.ask_int("choose", 1, n + 3) - 1
+        if pick == n + 2:
             return None
-        if chosen and pick == n:
-            return [Beast(s, DRAFT_LEVEL) for s in chosen]
+        if pick == n:
+            page = (page + 1) % pages
+            continue
+        if pick == n + 1:
+            if chosen:
+                return [Beast(s, DRAFT_LEVEL) for s in chosen]
+            continue
 
         slug = all_slugs[pick]
         if slug in chosen:

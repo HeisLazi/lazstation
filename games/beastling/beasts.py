@@ -167,6 +167,17 @@ MOVES = {
                          effect=("status", "confused", 0.25)),
     "Night Terror":_move("Gloom", 92, 70, "the dark itself lunges",
                          effect=("stage", "atk", -1, "foe", 0.30)),
+    "Flame Dash":  _move("Ember", 40, 100, "a streak of heat", priority=1),
+    "Undertow":    _move("Tide", 55, 95, "drags the footing away",
+                         effect=("stage", "atk", -1, "foe", 0.30)),
+    "Spore Cloud": _move("Bloom", 42, 100, "a drifting numbness",
+                         effect=("status", "paralyze", 0.30)),
+    "Grit Storm":  _move("Stone", 62, 90, "a scouring wall of sand",
+                         effect=("stage", "atk", -1, "foe", 0.25)),
+    "Overcharge":  _move("Spark", 78, 80, "more than it can hold",
+                         effect=("stage", "atk", 1, "self", 0.40)),
+    "Hexing Gaze": _move("Gloom", 50, 95, "a look that finds the gap",
+                         effect=("stage", "def", -1, "foe", 0.35)),
 }
 
 # ---------------------------------------------------------------- species
@@ -259,6 +270,70 @@ SPECIES = {
         name="Umbrafang", type="Gloom", hp=80, atk=26, dfn=19, spd=18, glyph="◤▓◥",
         learn=[(1, "Duskwave"), (30, "Night Terror")], evolve=None,
         flavour="The old stories give it three shadows and no reflection."),
+    "ashfinch": dict(
+        name="Ashfinch", type="Ember", hp=36, atk=14, dfn=8, spd=18, glyph="^◉^",
+        learn=[(1, 'Flame Dash'), (1, 'Cinder Spit'), (14, 'Flare Rush')], evolve=(17, 'emberhawk'),
+        flavour="Nests in cooling hearths. It darts out before the smoke clears."),
+    "emberhawk": dict(
+        name="Emberhawk", type="Ember", hp=58, atk=24, dfn=12, spd=25, glyph="◣▲◢",
+        learn=[(1, 'Flame Dash'), (1, 'Flare Rush'), (26, 'Magma Slam')], evolve=None,
+        flavour="Rides the heat above a gully and drops on whatever moves."),
+    "pearlclam": dict(
+        name="Pearlclam", type="Tide", hp=50, atk=9, dfn=18, spd=6, glyph="(◉)",
+        learn=[(1, 'Bubble'), (1, 'Undertow'), (14, 'Tide Pull')], evolve=(18, 'moatshell'),
+        flavour="Shuts like a vault. What it keeps inside is its own business."),
+    "moatshell": dict(
+        name="Moatshell", type="Tide", hp=80, atk=17, dfn=28, spd=8, glyph="[▓▓]",
+        learn=[(1, 'Undertow'), (1, 'Tide Pull'), (27, 'Deluge')], evolve=None,
+        flavour="Old ones carry a whole tidepool on their backs, fish included."),
+    "spindlebud": dict(
+        name="Spindlebud", type="Bloom", hp=38, atk=11, dfn=11, spd=16, glyph="⋎◦⋎",
+        learn=[(1, 'Vine Whip'), (1, 'Spore Cloud'), (12, 'Seed Volley')], evolve=(17, 'orchidreign'),
+        flavour="Thin as a stem and just as quiet. Its pollen makes limbs forget."),
+    "orchidreign": dict(
+        name="Orchidreign", type="Bloom", hp=60, atk=19, dfn=15, spd=25, glyph="❀◉❀",
+        learn=[(1, 'Spore Cloud'), (1, 'Seed Volley'), (25, 'Bramblewall')], evolve=None,
+        flavour="A court of petals around one very patient face."),
+    "gritmouse": dict(
+        name="Gritmouse", type="Stone", hp=44, atk=12, dfn=15, spd=12, glyph="◖▪◗",
+        learn=[(1, 'Rock Toss'), (1, 'Grit Storm'), (13, 'Cragfall')], evolve=(18, 'quarrywyrm'),
+        flavour="Eats gravel and sneezes dust. Hard to hit, easy to underestimate."),
+    "quarrywyrm": dict(
+        name="Quarrywyrm", type="Stone", hp=76, atk=24, dfn=24, spd=12, glyph="▟▓▓▙",
+        learn=[(1, 'Grit Storm'), (1, 'Cragfall'), (28, 'Rock Toss')], evolve=None,
+        flavour="Bores through a cliff and leaves a road behind it."),
+    "fizzwing": dict(
+        name="Fizzwing", type="Spark", hp=36, atk=13, dfn=8, spd=20, glyph="⌁◉⌁",
+        learn=[(1, 'Spark Nip'), (10, 'Arc Bolt'), (15, 'Overcharge')], evolve=(17, 'thunderwing'),
+        flavour="Flickers between lamps at dusk. Lights go out where it lands."),
+    "thunderwing": dict(
+        name="Thunderwing", type="Spark", hp=58, atk=22, dfn=12, spd=28, glyph="⟪▲⟫",
+        learn=[(1, 'Arc Bolt'), (1, 'Overcharge'), (28, 'Thunderhead')], evolve=None,
+        flavour="Its wingbeat is a low crack of thunder. Storm fronts follow it."),
+    "murkling": dict(
+        name="Murkling", type="Gloom", hp=42, atk=13, dfn=11, spd=13, glyph="◌▾◌",
+        learn=[(1, 'Shadow Nip'), (1, 'Hexing Gaze'), (14, 'Duskwave')], evolve=(20, 'hollowmaw'),
+        flavour="Pools in the corners of rooms. It is always slightly closer."),
+    "hollowmaw": dict(
+        name="Hollowmaw", type="Gloom", hp=70, atk=24, dfn=18, spd=17, glyph="◥◉◤",
+        learn=[(1, 'Hexing Gaze'), (1, 'Duskwave'), (29, 'Night Terror')], evolve=None,
+        flavour="Mostly mouth. What it swallows is not seen again, or heard."),
+    "flintnose": dict(
+        name="Flintnose", type="Stone", hp=46, atk=14, dfn=15, spd=10, glyph="◖◆◗",
+        learn=[(1, 'Tackle'), (1, 'Rock Toss'), (13, 'Grit Storm')], evolve=(19, 'cairnhorn'),
+        flavour="Strikes sparks off every rock it sniffs. Camps hate it."),
+    "cairnhorn": dict(
+        name="Cairnhorn", type="Stone", hp=74, atk=23, dfn=22, spd=11, glyph="▲▓▲",
+        learn=[(1, 'Grit Storm'), (1, 'Cragfall'), (30, 'Rock Toss')], evolve=None,
+        flavour="Stacks stones on its own back. The cairns on the ridge may be its doing."),
+    "sparkmoth": dict(
+        name="Sparkmoth", type="Spark", hp=34, atk=12, dfn=8, spd=22, glyph="∗◉∗",
+        learn=[(1, 'Spark Nip'), (1, 'Scratch'), (12, 'Arc Bolt')], evolve=(18, 'lumenmoth'),
+        flavour="Drawn to anything bright, including the thing that will hit it."),
+    "lumenmoth": dict(
+        name="Lumenmoth", type="Spark", hp=56, atk=22, dfn=12, spd=30, glyph="∗▲∗",
+        learn=[(1, 'Arc Bolt'), (1, 'Overcharge'), (27, 'Thunderhead')], evolve=None,
+        flavour="Glows brighter the angrier it gets. Do not make it angry."),
 }
 
 STARTERS = ["cindermole", "tadpearl", "sproutling"]
@@ -267,22 +342,28 @@ STARTERS = ["cindermole", "tadpearl", "sproutling"]
 # Routes unlock in order. `need` is how many champions you must have beaten.
 ROUTES = [
     dict(name="Meadow Path", need=0, levels=(2, 5), tall="long grass",
-         wild=["sproutling", "pebbleton", "zapkit", "tadpearl", "cindermole"],
+         wild=["sproutling", "pebbleton", "zapkit", "tadpearl", "cindermole",
+               "spindlebud", "ashfinch", "gritmouse", "sparkmoth"],
          blurb="Warm, ordinary, full of small things that have never seen a trainer."),
     dict(name="Ember Gully", need=1, levels=(6, 10), tall="hot scree",
-         wild=["wickling", "cindermole", "pebbleton", "magmaburrow"],
+         wild=["wickling", "cindermole", "pebbleton", "magmaburrow",
+               "ashfinch", "flintnose", "emberhawk"],
          blurb="The stones tick as they cool. Something down there is not cooling."),
     dict(name="Tidal Flats", need=1, levels=(7, 12), tall="shallows",
-         wild=["mistfin", "tadpearl", "pollenpuff", "brinemaw"],
+         wild=["mistfin", "tadpearl", "pollenpuff", "brinemaw",
+               "pearlclam", "moatshell", "spindlebud", "bloomcrest"],
          blurb="Twice a day the sea leaves, and twice a day it remembers."),
     dict(name="Stonewatch Ridge", need=2, levels=(11, 16), tall="scrub",
-         wild=["pebbleton", "cragjaw", "zapkit", "thornwood"],
+         wild=["pebbleton", "cragjaw", "zapkit", "thornwood",
+               "gritmouse", "flintnose", "quarrywyrm", "cairnhorn"],
          blurb="Cairns all along the path. Nobody will say who built them."),
     dict(name="Storm Mesa", need=3, levels=(15, 21), tall="wind-flattened grass",
-         wild=["zapkit", "voltlynx", "haarscale", "pyrelisk"],
+         wild=["zapkit", "voltlynx", "haarscale", "pyrelisk",
+               "fizzwing", "sparkmoth", "thunderwing", "lumenmoth", "emberhawk"],
          blurb="The air tastes of metal. Your hair will not lie flat up here."),
     dict(name="Gloomwood", need=4, levels=(19, 26), tall="black fern",
-         wild=["dimwisp", "shadecub", "nightveil", "umbrafang", "thornwood"],
+         wild=["dimwisp", "shadecub", "nightveil", "umbrafang", "thornwood",
+               "murkling", "hollowmaw", "orchidreign", "spindlebud"],
          blurb="The trees are close together and the light gives up early."),
 ]
 
