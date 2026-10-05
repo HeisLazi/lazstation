@@ -144,19 +144,29 @@ def draft_squad(ranked: bool) -> list[Beast] | None:
                              "bright_cyan"))
         ts.tv_print(ts.rule("─"))
 
-        labels = []
-        for slug in all_slugs:
+        # Two columns, not ts.menu(): 20 species + Confirm + Cancel is 22
+        # rows in one column, taller than the 20-row picture at the
+        # declared 66x24 minimum (and any stock 80x24 terminal), so the
+        # header and the first options scrolled off before the prompt.
+        cells = []
+        for i, slug in enumerate(all_slugs, 1):
             d = SPECIES[slug]
             mark = "☑" if slug in chosen else "☐"
-            cost = f"  {point_cost(slug):>2}pt" if ranked else ""
-            labels.append(f"{mark} {d['name'].ljust(13)} {d['type'].ljust(6)}{cost}")
-        options = list(labels)
-        if chosen:
-            options.append(ts.color("Confirm squad", "bright_green"))
-        pick = ts.menu("Draft", options, back="Cancel")
-        if pick == -1:
+            cost = f" {point_cost(slug):>2}pt" if ranked else ""
+            cells.append(f"{i:>2} {mark} {d['name'][:11].ljust(11)} {d['type'].ljust(5)}{cost}")
+        half = (len(cells) + 1) // 2
+        col_w = 29
+        for r in range(half):
+            right = cells[r + half] if r + half < len(cells) else ""
+            ts.tv_print(f"  {cells[r].ljust(col_w)}{right}")
+        n = len(all_slugs)
+        footer = f"  {n + 1:>2}   Confirm squad   " if chosen else ""
+        cancel_n = n + 2 if chosen else n + 1
+        ts.tv_print(footer + f"{cancel_n:>2}   Cancel")
+        pick = ts.ask_int("choose", 1, cancel_n) - 1
+        if pick == cancel_n - 1:
             return None
-        if chosen and pick == len(labels):
+        if chosen and pick == n:
             return [Beast(s, DRAFT_LEVEL) for s in chosen]
 
         slug = all_slugs[pick]
