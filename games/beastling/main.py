@@ -14,7 +14,7 @@ import sys
 
 import termstation_sdk as ts
 from beasts import (ABILITY_DESC, CHAMPIONS, CHART, ITEMS, MOVES, ROUTES, SPECIES,
-                    STARTERS, TYPE_ABILITY, TYPE_SYNERGY, WEATHER_DESC,
+                    RARE_WEIGHT, STARTERS, TYPE_ABILITY, TYPE_SYNERGY, WEATHER_DESC,
                     WEATHER_DURATION, WEATHER_EFFECTS)
 
 # Vertical-centring target for `ts.tv_clear(page=PAGE)`. The real content
@@ -609,7 +609,7 @@ class Game:
 
     # ------------------------------------------------------------- battle
     def battle(self, foe: Beast, wild: bool, title: str,
-               trainer: str = "") -> str:
+               trainer: str = "", rare: bool = False) -> str:
         """Returns 'won', 'lost', 'caught' or 'fled'."""
         self.seen.add(foe.slug)
         # A clean slate every encounter: status and stat stages never
@@ -621,7 +621,7 @@ class Game:
             b.reset_combat_state()
         log: list[str] = []
         if wild:
-            log.append(f"A wild {foe.name} appears!")
+            log.append(f"A rare {foe.name} appears!" if rare else f"A wild {foe.name} appears!")
         else:
             log.append(f"{trainer} sends out {foe.name}!")
 
@@ -1151,9 +1151,12 @@ class Game:
             steps += 1
             if random.random() < 0.72:
                 lo, hi = route["levels"]
-                slug = random.choice(route["wild"])
+                weights = route.get("weights", {})
+                slug = random.choices(route["wild"],
+                                      weights=[weights.get(w, 10) for w in route["wild"]])[0]
                 foe = Beast(slug, random.randint(lo, hi))
-                result = self.battle(foe, wild=True, title=route["name"])
+                result = self.battle(foe, wild=True, title=route["name"],
+                                     rare=weights.get(slug, 10) <= RARE_WEIGHT)
                 if result == "lost":
                     self.blackout()
                     return

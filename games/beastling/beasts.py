@@ -340,48 +340,57 @@ STARTERS = ["cindermole", "tadpearl", "sproutling"]
 
 # ---------------------------------------------------------------- the world
 # Routes unlock in order. `need` is how many champions you must have beaten.
+#: Per-route spawn weights. A slug missing from `weights` counts as 10
+#: ("common"); 3-8 are uncommon; 1 is RARE (one per route, about 2%) and gets announced.
+RARE_WEIGHT = 1
 ROUTES = [
     dict(name="Meadow Path", need=0, levels=(2, 5), tall="long grass",
          wild=["sproutling", "pebbleton", "zapkit", "tadpearl", "cindermole",
                "spindlebud", "ashfinch", "gritmouse", "sparkmoth"],
+         weights={"spindlebud": 6, "ashfinch": 6, "gritmouse": 4, "sparkmoth": 1},
          blurb="Warm, ordinary, full of small things that have never seen a trainer."),
     dict(name="Ember Gully", need=1, levels=(6, 10), tall="hot scree",
          wild=["wickling", "cindermole", "pebbleton", "magmaburrow",
                "ashfinch", "flintnose", "emberhawk"],
+         weights={"magmaburrow": 4, "ashfinch": 8, "flintnose": 6, "pebbleton": 8, "emberhawk": 1},
          blurb="The stones tick as they cool. Something down there is not cooling."),
     dict(name="Tidal Flats", need=1, levels=(7, 12), tall="shallows",
          wild=["mistfin", "tadpearl", "pollenpuff", "brinemaw",
                "pearlclam", "moatshell", "spindlebud", "bloomcrest"],
+         weights={"pollenpuff": 8, "brinemaw": 4, "pearlclam": 8, "moatshell": 3, "spindlebud": 6, "bloomcrest": 1},
          blurb="Twice a day the sea leaves, and twice a day it remembers."),
     dict(name="Stonewatch Ridge", need=2, levels=(11, 16), tall="scrub",
          wild=["pebbleton", "cragjaw", "zapkit", "thornwood",
                "gritmouse", "flintnose", "quarrywyrm", "cairnhorn"],
+         weights={"pebbleton": 8, "cragjaw": 4, "zapkit": 8, "thornwood": 4, "gritmouse": 8, "flintnose": 8, "quarrywyrm": 3, "cairnhorn": 1},
          blurb="Cairns all along the path. Nobody will say who built them."),
     dict(name="Storm Mesa", need=3, levels=(15, 21), tall="wind-flattened grass",
          wild=["zapkit", "voltlynx", "haarscale", "pyrelisk",
                "fizzwing", "sparkmoth", "thunderwing", "lumenmoth", "emberhawk"],
+         weights={"zapkit": 8, "voltlynx": 4, "haarscale": 4, "pyrelisk": 4, "fizzwing": 10, "sparkmoth": 8, "thunderwing": 3, "lumenmoth": 1, "emberhawk": 3},
          blurb="The air tastes of metal. Your hair will not lie flat up here."),
     dict(name="Gloomwood", need=4, levels=(19, 26), tall="black fern",
          wild=["dimwisp", "shadecub", "nightveil", "umbrafang", "thornwood",
                "murkling", "hollowmaw", "orchidreign", "spindlebud"],
+         weights={"dimwisp": 8, "shadecub": 8, "nightveil": 4, "umbrafang": 3, "thornwood": 4, "murkling": 8, "hollowmaw": 3, "orchidreign": 1, "spindlebud": 5},
          blurb="The trees are close together and the light gives up early."),
 ]
 
 #: Beat these in order. Each is a small team, hardest last.
 CHAMPIONS = [
     dict(name="Wren the Gardener", type="Bloom", blurb="Keeps the meadow. Fights like it.",
-         team=[("sproutling", 7), ("pollenpuff", 8)],
+         team=[("spindlebud", 7), ("pollenpuff", 8)],
          win="\"You listened to them,\" she says. \"Most people talk.\""),
     dict(name="Ash of the Gully", type="Ember", blurb="Smells of woodsmoke and does not blink.",
-         team=[("wickling", 11), ("cindermole", 11), ("magmaburrow", 13)],
+         team=[("ashfinch", 11), ("wickling", 12), ("magmaburrow", 13)],
          win="\"Good. Bank the fire and move on.\""),
     dict(name="Maren Tidewatch", type="Tide", blurb="Counts the tides out loud while she battles.",
-         team=[("mistfin", 15), ("tadpearl", 15), ("brinemaw", 17)],
+         team=[("mistfin", 15), ("pearlclam", 16), ("brinemaw", 17)],
          win="\"Six hours out, six hours back. You were quicker.\""),
     dict(name="Bhodi Stonewatch", type="Stone", blurb="Built like the cairns he guards.",
-         team=[("pebbleton", 19), ("thornwood", 19), ("cragjaw", 22)],
+         team=[("flintnose", 19), ("gritmouse", 19), ("quarrywyrm", 22)],
          win="He nods once, which from him is a parade."),
     dict(name="Sable", type="Gloom", blurb="You are fairly sure she was not there a moment ago.",
-         team=[("dimwisp", 24), ("nightveil", 25), ("shadecub", 25), ("umbrafang", 28)],
+         team=[("murkling", 24), ("nightveil", 25), ("shadecub", 25), ("hollowmaw", 28)],
          win="\"The wood lets you leave,\" she says. \"That's rarer than winning.\""),
 ]
