@@ -15,6 +15,7 @@ import sys
 import termstation_sdk as ts
 from beasts import (ABILITY_DESC, CHAMPIONS, CHART, COMMON_DROPS, DROP_CHANCE, ITEMS,
                     MOVES, RARE_DROPS, ROUTES, SHOP_SECTIONS, SPECIES, SUPPLIES,
+                    TRAIN_CAP, TRAIN_LABEL, TRAIN_STEP, train_price,
                     RARE_WEIGHT, STARTERS, TYPE_ABILITY, TYPE_SYNERGY, WEATHER_DESC,
                     WEATHER_DURATION, WEATHER_EFFECTS)
 
@@ -74,6 +75,7 @@ class Beast:
         self.xp = 0
         self.moves = self._known_moves()
         self.hp = self.max_hp
+        self.train: dict[str, int] = {}      # Training Hall points per stat, persisted
         self.item: str | None = None         # persisted (see to_dict/from_dict) --
                                               # a player equip choice, not combat state
         # --- transient combat state: never saved (see to_dict/from_dict),
@@ -137,7 +139,8 @@ class Beast:
 
     # --- stats: flat growth, so a level-20 beast is roughly twice a level-5 one
     def _stat(self, key: str, scale: float) -> int:
-        return int(self.base[key] + self.level * scale)
+        return int(self.base[key] + self.level * scale
+                   + getattr(self, "train", {}).get(key, 0) * TRAIN_STEP[key])
 
     @property
     def max_hp(self) -> int:
@@ -197,16 +200,21 @@ class Beast:
     # --- persistence
     def to_dict(self) -> dict:
         return {"slug": self.slug, "level": self.level, "xp": self.xp,
-                "hp": self.hp, "nickname": self.nickname, "item": self.item}
+                "hp": self.hp, "nickname": self.nickname, "item": self.item,
+                "train": {k: v for k, v in self.train.items() if v}}
 
     @classmethod
     def from_dict(cls, data: dict) -> "Beast":
         b = cls(data.get("slug", "sproutling"), int(data.get("level", 5)),
                 data.get("nickname", ""))
         b.xp = int(data.get("xp", 0))
-        b.hp = max(0, min(int(data.get("hp", b.max_hp)), b.max_hp))
         item = data.get("item")
         b.item = item if item in ITEMS else None  # a renamed/removed item degrades to none
+        b.train = {k: max(0, min(TRAIN_CAP, int(v))) for k, v in data.get("train", {}).items()
+                   if k in TRAIN_STEP}
+        # hp is clamped AFTER item and training are set: both raise max_hp,
+        # and clamping first silently shaved a saved beast's HP on load.
+        b.hp = max(0, min(int(data.get("hp", b.max_hp)), b.max_hp))
         return b
 
 
@@ -623,6 +631,8 @@ class Game:
         root = family_root(slug)
         return sum(1 for b in self.party + self.box if family_root(b.slug) == root)
 
+    scent = 0     # walks left with Rare Scent active (transient, not saved)
+
     #: Circuit sets both False: its squads are fixed-level and bag-less.
     xp_share = True
     items_enabled = True
@@ -671,6 +681,21 @@ class Game:
             return False
         name = stock[pick]
         spec = SUPPLIES[name]
+        if "scent" in spec:
+            if log is not None:
+                say("Use it while exploring, not mid-fight.")
+                return False
+            self.scent = spec["scent"]
+            self.inventory[name] -= 1
+            if self.inventory[name] <= 0:
+                del self.inventory[name]
+            ts.tv_clear()
+            ts.tv_print(f"  A strange scent clings to you. Rare beasts will find you for")
+            ts.tv_print(f"  the next {self.scent} walks.")
+            ts.tv_print()
+            ts.tv_pause()
+            self.store()
+            return True
         ts.tv_clear()
         who = ts.menu(f"{name} on which beast?",
                       [f"{b.name}  Lv {b.level}  {b.hp}/{b.max_hp} HP"
@@ -1316,7 +1341,9 @@ class Game:
             ts.tv_print(f"  {ts.color(route['blurb'], 'grey')}")
             ts.tv_print()
             ts.tv_print(f"  You are walking through {route['tall']}.")
-            ts.tv_print(f"  Steps taken: {steps}")
+            ts.tv_print(f"  Steps taken: {steps}"
+                        + (ts.color(f"   Rare Scent: {self.scent} left", "bright_yellow")
+                           if self.scent > 0 else ""))
             ts.tv_print()
             lead = self.lead()
             if lead:
@@ -1333,11 +1360,16 @@ class Game:
                 continue
 
             steps += 1
+            if self.scent > 0:
+                self.scent -= 1
             if random.random() < 0.72:
                 lo, hi = route["levels"]
                 weights = route.get("weights", {})
-                slug = random.choices(route["wild"],
-                                      weights=[weights.get(w, 10) for w in route["wild"]])[0]
+                boost = 5 if self.scent > 0 else 1
+                slug = random.choices(
+                    route["wild"],
+                    weights=[weights.get(w, 10) * (boost if weights.get(w, 10) <= RARE_WEIGHT else 1)
+                             for w in route["wild"]])[0]
                 foe = Beast(slug, random.randint(lo, hi))
                 result = self.battle(foe, wild=True, title=route["name"],
                                      rare=weights.get(slug, 10) <= RARE_WEIGHT)
@@ -1602,15 +1634,67 @@ class Game:
             ts.tv_print(f"  You have {ts.color(str(self.money), 'bright_yellow')} coins"
                         f" and {self.lures} lures.")
             ts.tv_print(ts.color(f"  {msg}", "bright_green") if msg else "")
-            labels = ["Lures"] + [label for label, _ in SHOP_SECTIONS]
+            labels = ["Lures"] + [label for label, _ in SHOP_SECTIONS] + ["Training hall"]
             pick = ts.menu("Shop", labels, back="Back")
             msg = ""
             if pick == -1:
                 return
             if pick == 0:
                 msg = self.shop_lures()
+            elif pick == len(labels) - 1:
+                self.training_hall()
             else:
                 self.shop_section(*SHOP_SECTIONS[pick - 1])
+
+    def training_hall(self) -> None:
+        """The big coin sink: permanent stat points per beast, escalating
+        price, capped per stat. Story mode only (Circuit squads are fixed)."""
+        msg = ""
+        while True:
+            self.header("Training hall")
+            ts.tv_print()
+            ts.tv_print(f"  You have {ts.color(str(self.money), 'bright_yellow')} coins.")
+            ts.tv_print(ts.color(f"  {msg}", "bright_green") if msg else "")
+            pick = ts.menu("Train which beast?",
+                           [f"{b.name}  Lv {b.level}  trained {sum(b.train.values())}/{len(TRAIN_STEP) * TRAIN_CAP}"
+                            for b in self.party], back="Back")
+            if pick == -1:
+                return
+            msg = self.train_beast(self.party[pick])
+
+    def train_beast(self, b: Beast) -> str:
+        msg = ""
+        while True:
+            self.header(f"Train {b.name}")
+            ts.tv_print()
+            ts.tv_print(f"  You have {ts.color(str(self.money), 'bright_yellow')} coins.")
+            ts.tv_print(ts.color(f"  {msg}", "bright_green") if msg else "")
+            total = sum(b.train.values())
+            options = []
+            for key in TRAIN_STEP:
+                pts = b.train.get(key, 0)
+                cur = {"hp": b.max_hp, "atk": b.atk, "dfn": b.dfn, "spd": b.spd}[key]
+                if pts >= TRAIN_CAP:
+                    options.append(f"{TRAIN_LABEL[key]:<4} {cur:>3}  maxed ({pts}/{TRAIN_CAP})")
+                else:
+                    gain = int(TRAIN_STEP[key] * (pts + 1)) - int(TRAIN_STEP[key] * pts)
+                    options.append(f"{TRAIN_LABEL[key]:<4} {cur:>3} -> +{max(1, gain)}   "
+                                   f"{train_price(pts, total)}c  ({pts}/{TRAIN_CAP})")
+            pick = ts.menu(f"Train {b.name}", options, back="Back")
+            if pick == -1:
+                return f"Trained {b.name} ({total} points)."
+            key = list(TRAIN_STEP)[pick]
+            pts = b.train.get(key, 0)
+            price = train_price(pts, total)
+            if pts >= TRAIN_CAP:
+                msg = f"{TRAIN_LABEL[key]} is already maxed."
+            elif self.money < price:
+                msg = "Not enough coins."
+            else:
+                self.money -= price
+                b.train[key] = pts + 1
+                self.store()
+                msg = f"{b.name}'s {TRAIN_LABEL[key]} went up."
 
     def shop_lures(self) -> str:
         self.header("Lures")

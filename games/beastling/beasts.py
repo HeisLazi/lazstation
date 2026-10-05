@@ -161,11 +161,22 @@ SUPPLIES = {
     "Super Potion": {"desc": "Heals 120 HP.", "heal": 120, "price": 120, "need": 1},
     "Revive": {"desc": "Revives a beast at half HP.", "revive": 0.5, "price": 300, "need": 1},
     "Growth Candy": {"desc": "Raises one beast a level.", "level": 1, "price": 1000, "need": 2},
+    "Rare Scent": {"desc": "Rare beasts 5x likelier.", "scent": 15, "price": 500, "need": 2},
 }
+
+#: Training Hall: permanent stat points bought with coins, the game's big
+#: coin sink. Per-point step, per-stat cap, and an escalating price.
+TRAIN_STEP = {"hp": 4.0, "atk": 1.5, "dfn": 1.5, "spd": 1.5}
+TRAIN_LABEL = {"hp": "HP", "atk": "Atk", "dfn": "Def", "spd": "Spd"}
+TRAIN_CAP = 8
+
+
+def train_price(points_in_stat: int, total_points: int) -> int:
+    return 150 + 60 * points_in_stat + 20 * total_points
 
 #: Shop sections: (menu label, item names). Lures are handled separately.
 SHOP_SECTIONS = [
-    ("Medicine", ["Potion", "Full Heal", "Super Potion", "Revive", "Growth Candy"]),
+    ("Medicine", ["Potion", "Full Heal", "Super Potion", "Revive", "Growth Candy", "Rare Scent"]),
     ("Battle gear", ["Power Band", "Guard Charm", "Quick Charm", "Mending Berry",
                      "Focus Lens", "Vigor Seed"]),
     ("Type sashes", [f"{t} Sash" for t in TYPES]),
