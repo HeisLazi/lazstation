@@ -787,6 +787,31 @@ class Game:
                     notes.append(note)
         return notes
 
+    def rest_cost(self) -> int:
+        """Camp's rest is no longer free: it scales with how hurt the team is
+        and with your badges (a deeper roster costs more to feed). Items and
+        potions only mattered when resting cost nothing -- now they're the
+        way to stretch a long run between camps."""
+        missing = sum(b.max_hp - b.hp for b in self.party)
+        if missing <= 0:
+            return 0
+        return int((5 + missing / 4) * (1 + 0.5 * self.badges))
+
+    def rest(self) -> tuple[int, float]:
+        """Pays what it can; heals everyone by the fraction actually paid
+        for, so being broke is a partial rest, never a dead end."""
+        cost = self.rest_cost()
+        if cost == 0:
+            return 0, 1.0
+        paid = min(cost, self.money)
+        frac = paid / cost
+        self.money -= paid
+        for b in self.party:
+            gap = b.max_hp - b.hp
+            if gap > 0 and frac > 0:
+                b.hp = min(b.max_hp, b.hp + max(1, int(gap * frac)))
+        return paid, frac
+
     def heal_all(self) -> None:
         for b in self.party:
             b.hp = b.max_hp
@@ -1811,7 +1836,9 @@ class Game:
                 ts.tv_print(ts.color(f"  {len(hurt)} of your team are hurt.", "yellow"))
             ts.tv_print()
 
-            options = ["Travel", "Rest (heal the team)", "Your team",
+            rest_cost = self.rest_cost()
+            rest_label = "Rest (heal the team)" + (f" -- {rest_cost}c" if rest_cost else "")
+            options = ["Travel", rest_label, "Your team",
                        "Field notes", "The box", "Supplies"]
             if self.badges < len(CHAMPIONS):
                 champ = CHAMPIONS[self.badges]
@@ -1834,11 +1861,16 @@ class Game:
             elif label.startswith("Challenge"):
                 self.challenge(CHAMPIONS[self.badges])
             elif label.startswith("Rest"):
-                self.heal_all()
+                paid, frac = self.rest()
                 self.store()
                 self.header("Camp")  # same reasoning as travel()'s fix above
                 ts.tv_print()
-                ts.tv_print(ts.color("  Everyone is patched up.", "bright_green"))
+                if not paid and frac >= 1:
+                    ts.tv_print(ts.color("  Everyone is already fine.", "bright_green"))
+                elif frac >= 1:
+                    ts.tv_print(ts.color(f"  Everyone is patched up. ({paid} coins)", "bright_green"))
+                else:
+                    ts.tv_print(ts.color(f"  You could only afford {int(frac * 100)}% of a rest.", "yellow"))
                 ts.tv_pause()
             elif label == "Your team":
                 self.team_screen()
