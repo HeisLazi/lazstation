@@ -105,6 +105,7 @@ class CircuitGame(Game):
     def __init__(self, trainer_name: str, rank_label: str) -> None:
         super().__init__({})
         self.xp_share = False
+        self.items_enabled = False
         self._trainer_name = trainer_name
         self._rank_label = rank_label
 

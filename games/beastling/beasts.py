@@ -125,19 +125,61 @@ WEATHER_DESC = {
 # not stacking all four. Four items, not more -- each a clearly distinct
 # archetype rather than minor variations on the same idea.
 ITEMS = {
-    "Power Band": {"desc": "Deals 20% more damage.", "dmg_dealt": 1.20},
-    "Guard Charm": {"desc": "Takes 20% less damage.", "dmg_taken": 0.80},
-    "Quick Charm": {"desc": "20% faster.", "speed": 1.20},
-    # Kept short -- a reviewed regression, twice over: the original wording
-    # (83 chars) overflowed the read-about panel's ts.box() at the game's
-    # declared minimum terminal size, and a since-shortened 54-char version
-    # still overflowed equip_menu()'s OWN listing (a separate tv_print/_clip
-    # render path with a tighter budget than the box -- "   [N] <name>  -- "
-    # eats space too). Verified headlessly against the real stage width (62
-    # cols at 66x24) in both render paths before landing on this wording.
-    "Mending Berry": {"desc": "Heals 20% once, at 25% HP or less.",
-                       "heal_threshold": 0.25, "heal_amount": 0.20},
+    # `price` 0 = never sold, only found (rare drops / champion rewards).
+    # `need` = badges before the shop stocks it. `desc` is kept to 30
+    # chars or less: it has to fit the shop line ("name  price  desc"),
+    # the equip menu AND the read-about panel at 66 columns.
+    "Power Band": {"desc": "Deals 20% more damage.", "dmg_dealt": 1.20, "price": 300, "need": 0},
+    "Guard Charm": {"desc": "Takes 20% less damage.", "dmg_taken": 0.80, "price": 300, "need": 0},
+    "Quick Charm": {"desc": "20% faster.", "speed": 1.20, "price": 300, "need": 0},
+    "Mending Berry": {"desc": "Heals 20% once at 25% HP.",
+                      "heal_threshold": 0.25, "heal_amount": 0.20, "price": 250, "need": 0},
+    "Focus Lens": {"desc": "Triple critical-hit chance.", "crit_bonus": 0.12, "price": 450, "need": 1},
+    "Vigor Seed": {"desc": "15% more max HP.", "hp_mult": 1.15, "price": 500, "need": 1},
+    "Ember Sash": {"desc": "Ember moves hit 30% harder.", "type_boost": ("Ember", 1.30),
+                  "price": 600, "need": 2},
+    "Tide Sash": {"desc": "Tide moves hit 30% harder.", "type_boost": ("Tide", 1.30),
+                  "price": 600, "need": 2},
+    "Bloom Sash": {"desc": "Bloom moves hit 30% harder.", "type_boost": ("Bloom", 1.30),
+                  "price": 600, "need": 2},
+    "Stone Sash": {"desc": "Stone moves hit 30% harder.", "type_boost": ("Stone", 1.30),
+                  "price": 600, "need": 2},
+    "Spark Sash": {"desc": "Spark moves hit 30% harder.", "type_boost": ("Spark", 1.30),
+                  "price": 600, "need": 2},
+    "Gloom Sash": {"desc": "Gloom moves hit 30% harder.", "type_boost": ("Gloom", 1.30),
+                  "price": 600, "need": 2},
+    "Lifeleaf": {"desc": "Heals 6% HP each turn.", "regen": 0.06, "price": 0, "need": 0},
+    "Thorn Wrap": {"desc": "Attackers lose 8% max HP.", "recoil": 0.08, "price": 0, "need": 0},
+    "Last Stand": {"desc": "Survives one KO with 1 HP.", "survive": True, "price": 0, "need": 0},
+    "Status Ward": {"desc": "Immune to status ailments.", "status_ward": True, "price": 0, "need": 0},
 }
+
+#: Stackable, used from the bag (in battle: costs the turn; at camp: free).
+SUPPLIES = {
+    "Potion": {"desc": "Heals 40 HP.", "heal": 40, "price": 40, "need": 0},
+    "Full Heal": {"desc": "Cures a status ailment.", "cure": True, "price": 80, "need": 0},
+    "Super Potion": {"desc": "Heals 120 HP.", "heal": 120, "price": 120, "need": 1},
+    "Revive": {"desc": "Revives a beast at half HP.", "revive": 0.5, "price": 300, "need": 1},
+    "Growth Candy": {"desc": "Raises one beast a level.", "level": 1, "price": 1000, "need": 2},
+}
+
+#: Shop sections: (menu label, item names). Lures are handled separately.
+SHOP_SECTIONS = [
+    ("Medicine", ["Potion", "Full Heal", "Super Potion", "Revive", "Growth Candy"]),
+    ("Battle gear", ["Power Band", "Guard Charm", "Quick Charm", "Mending Berry",
+                     "Focus Lens", "Vigor Seed"]),
+    ("Type sashes", [f"{t} Sash" for t in TYPES]),
+]
+
+#: Chance a won wild fight drops something, and what (weights). Rare
+#: beasts always drop one of RARE_DROPS instead -- the only way to get
+#: those besides a champion's reward, so a rare spawn is worth KOing, not
+#: just catching.
+DROP_CHANCE = 0.12
+COMMON_DROPS = {"Potion": 30, "Full Heal": 18, "Super Potion": 14, "Revive": 6, "Growth Candy": 1,
+                "Mending Berry": 3, "Power Band": 2, "Guard Charm": 2, "Quick Charm": 2,
+                "Focus Lens": 2, "Vigor Seed": 2, **{f"{t} Sash": 1 for t in TYPES}}
+RARE_DROPS = ["Lifeleaf", "Thorn Wrap", "Last Stand", "Status Ward"]
 
 MOVES = {
     "Tackle":      _move("Stone", 35, 95, "a plain running hit"),
@@ -397,3 +439,7 @@ CHAMPIONS = [
          team=[("murkling", 24), ("nightveil", 25), ("shadecub", 25), ("hollowmaw", 28)],
          win="\"The wood lets you leave,\" she says. \"That's rarer than winning.\""),
 ]
+
+for _champ, _reward in zip(CHAMPIONS, [("Lifeleaf", 1), ("Thorn Wrap", 1), ("Status Ward", 1),
+                                        ("Last Stand", 1), ("Growth Candy", 3)]):
+    _champ["reward"] = _reward

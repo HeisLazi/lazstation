@@ -13,7 +13,8 @@ import random
 import sys
 
 import termstation_sdk as ts
-from beasts import (ABILITY_DESC, CHAMPIONS, CHART, ITEMS, MOVES, ROUTES, SPECIES,
+from beasts import (ABILITY_DESC, CHAMPIONS, CHART, COMMON_DROPS, DROP_CHANCE, ITEMS,
+                    MOVES, RARE_DROPS, ROUTES, SHOP_SECTIONS, SPECIES, SUPPLIES,
                     RARE_WEIGHT, STARTERS, TYPE_ABILITY, TYPE_SYNERGY, WEATHER_DESC,
                     WEATHER_DURATION, WEATHER_EFFECTS)
 
@@ -140,7 +141,7 @@ class Beast:
 
     @property
     def max_hp(self) -> int:
-        return self._stat("hp", 2.2)
+        return int(self._stat("hp", 2.2) * ITEMS.get(getattr(self, "item", None), {}).get("hp_mult", 1.0))
 
     @property
     def atk(self) -> int:
@@ -261,7 +262,8 @@ def damage(attacker: Beast, defender: Beast, move: str,
     mult = effectiveness(m_type, defender.type)
     if m_type == attacker.type:
         mult *= 1.25                      # it suits them
-    crit = random.random() < CRIT_CHANCE + crit_bonus
+    crit = random.random() < (CRIT_CHANCE + crit_bonus
+                              + ITEMS.get(attacker.item, {}).get("crit_bonus", 0.0))
     # The divisor is tuned against these stat sizes: a neutral hit between
     # equal levels should take about five exchanges, so a super-effective
     # choice (two or three) is a real decision rather than a rounding error.
@@ -270,6 +272,9 @@ def damage(attacker: Beast, defender: Beast, move: str,
     dealt *= WEATHER_EFFECTS.get(weather, {}).get(m_type, 1.0)
     dealt *= ITEMS.get(attacker.item, {}).get("dmg_dealt", 1.0)
     dealt *= ITEMS.get(defender.item, {}).get("dmg_taken", 1.0)
+    boost = ITEMS.get(attacker.item, {}).get("type_boost")
+    if boost and boost[0] == m_type:
+        dealt *= boost[1]
     dealt *= dmg_mult
     if defender.ability == "Thick Hide" and mult >= 2.0:
         dealt *= 0.75
@@ -284,7 +289,17 @@ def status_immune(beast: Beast, status: str) -> bool:
     by both the move-effect path and the on-hit ability-proc path, so a
     future third burn source (or a new immunity) only needs to be taught
     here once."""
+    if ITEMS.get(beast.item, {}).get("status_ward"):
+        return True
     return status == "burn" and beast.ability == "Riptide"
+
+
+def immunity_line(beast: Beast, status: str) -> str | None:
+    if status == "burn" and beast.ability == "Riptide":
+        return f"  {beast.name}'s Riptide keeps it from burning!"
+    if ITEMS.get(beast.item, {}).get("status_ward"):
+        return f"  {beast.name}'s Status Ward blocks it!"
+    return None
 
 
 #: sleep/confused wear off after a random number of turns; burn/paralyze
@@ -309,7 +324,7 @@ def apply_move_effect(attacker: Beast, defender: Beast, move: str) -> list[str]:
         if defender.status is not None or not defender.alive:
             return []
         if status_immune(defender, status):
-            return [f"  {defender.name}'s Riptide keeps it from burning!"]
+            return [immunity_line(defender, status)]
         defender.status = status
         if status in STATUS_DURATION:
             lo, hi = STATUS_DURATION[status]
@@ -344,11 +359,12 @@ def apply_ability_on_hit(attacker: Beast, defender: Beast) -> list[str]:
     if (attacker.ability == "Tinder" and defender.status is None and defender.alive
             and random.random() < TINDER_CHANCE):
         if status_immune(defender, "burn"):
-            lines.append(f"  {defender.name}'s Riptide keeps it from burning!")
+            lines.append(immunity_line(defender, "burn"))
         else:
             defender.status = "burn"
             lines.append(f"  {attacker.name}'s Tinder catches {defender.name} alight!")
     if (defender.ability == "Static Charge" and defender.alive and attacker.status is None
+            and not status_immune(attacker, "paralyze")
             and random.random() < STATIC_CHARGE_CHANCE):
         attacker.status = "paralyze"
         lines.append(f"  {defender.name}'s Static Charge locks up {attacker.name}!")
@@ -385,21 +401,49 @@ def check_mending_berry(beast: Beast) -> list[str]:
     return []
 
 
+def deal_damage(attacker: Beast, defender: Beast, dealt: int) -> list[str]:
+    """Applies a landed hit, with the two held items that change what a hit
+    does: Last Stand (survive one would-be KO at 1 HP) and Thorn Wrap
+    (the attacker pays a slice of its own max HP). Shared by 1v1 and 2v2."""
+    lines: list[str] = []
+    held = ITEMS.get(defender.item, {})
+    if held.get("survive") and not defender.item_used and dealt >= defender.hp > 1:
+        defender.hp = 1
+        defender.item_used = True
+        lines.append(f"  {defender.name} hangs on with Last Stand!")
+    else:
+        defender.hp = max(0, defender.hp - dealt)
+    recoil = held.get("recoil")
+    if recoil and attacker.alive:
+        cost = max(1, int(attacker.max_hp * recoil))
+        attacker.hp = max(0, attacker.hp - cost)
+        line = f"  {attacker.name} is pricked by Thorn Wrap. ({cost} HP)"
+        if not attacker.alive:
+            line += f" {attacker.name} is out of the fight!"
+        lines.append(line)
+    return lines
+
+
 def resolve_status_upkeep(beast: Beast) -> list[str]:
-    """End-of-turn status damage (burn only -- paralysis is checked at
-    action time instead, via `may_act`)."""
+    """End-of-turn effects: burn damage (paralysis is checked at action
+    time instead, via `may_act`) and Lifeleaf's regeneration."""
+    lines: list[str] = []
     if beast.status == "burn" and beast.alive:
         dot = max(1, beast.max_hp // 16)
         beast.hp = max(0, beast.hp - dot)
         line = f"  {beast.name} is hurt by its burn. ({dot} HP)"
         if not beast.alive:
             line += f" {beast.name} is out of the fight!"
-        lines = [line]
+        lines.append(line)
         if beast.alive:
             lines.extend(check_vengeful(beast))       # burn can cross the threshold too
             lines.extend(check_mending_berry(beast))
-        return lines
-    return []
+    regen = ITEMS.get(beast.item, {}).get("regen")
+    if regen and beast.alive and beast.hp < beast.max_hp:
+        healed = max(1, int(beast.max_hp * regen))
+        beast.hp = min(beast.max_hp, beast.hp + healed)
+        lines.append(f"  {beast.name}'s Lifeleaf restores {healed} HP.")
+    return lines
 
 
 CONFUSION_SELF_HIT_CHANCE = 0.33
@@ -551,6 +595,10 @@ class Game:
         self.seen = set(save.get("seen", []))
         self.caught = set(save.get("caught", []))
         self.lures = int(save.get("lures", 8))
+        raw_bag = save.get("inventory", {"Potion": 3})
+        self.inventory: dict[str, int] = {
+            k: int(v) for k, v in raw_bag.items()
+            if (k in ITEMS or k in SUPPLIES) and int(v) > 0}
         self.money = int(save.get("money", 300))
 
     # --- persistence
@@ -559,7 +607,7 @@ class Game:
             party=[b.to_dict() for b in self.party],
             box=[b.to_dict() for b in self.box],
             badges=self.badges, seen=sorted(self.seen), caught=sorted(self.caught),
-            lures=self.lures, money=self.money)
+            lures=self.lures, money=self.money, inventory=dict(self.inventory))
         self.save["_summary"] = (f"{self.badges} badges · {len(self.caught)} caught")
         ts.save(self.save)
 
@@ -575,8 +623,129 @@ class Game:
         root = family_root(slug)
         return sum(1 for b in self.party + self.box if family_root(b.slug) == root)
 
-    #: Circuit sets this False: its squads are fixed-level by design.
+    #: Circuit sets both False: its squads are fixed-level and bag-less.
     xp_share = True
+    items_enabled = True
+
+    def has_supplies(self) -> bool:
+        return any(self.inventory.get(n, 0) > 0 for n in SUPPLIES)
+
+    def add_item(self, name: str, count: int = 1) -> None:
+        self.inventory[name] = min(99, self.inventory.get(name, 0) + count)
+
+    def roll_drops(self, foe: Beast, rare: bool) -> list[str]:
+        """Rare beasts always drop one treasure (win the fight to get it --
+        catching it instead is the other way to take that spawn); anything
+        else has a small chance at something from the common table."""
+        if not self.items_enabled:
+            return []
+        if rare:
+            name = random.choice(RARE_DROPS)
+            self.add_item(name)
+            return [f"  The rare {foe.name} dropped {name}!"]
+        if random.random() < DROP_CHANCE:
+            name = random.choices(list(COMMON_DROPS), weights=list(COMMON_DROPS.values()))[0]
+            self.add_item(name)
+            return [f"  You found {name}."]
+        return []
+
+    def use_item_menu(self, log: list[str] | None = None) -> bool:
+        """Pick a supply, then a beast. Returns True if one was used. In a
+        fight the result goes to `log`; at camp it's shown and paused."""
+        def say(msg: str) -> None:
+            if log is not None:
+                log.append(msg)
+            else:
+                ts.tv_print(msg)
+                ts.tv_pause()
+
+        stock = [n for n in SUPPLIES if self.inventory.get(n, 0) > 0]
+        if not stock:
+            say("You have nothing to use.")
+            return False
+        ts.tv_clear()
+        pick = ts.menu("Use which item?",
+                       [f"{n} x{self.inventory[n]}  -- {SUPPLIES[n]['desc']}" for n in stock],
+                       back="Cancel")
+        if pick == -1:
+            return False
+        name = stock[pick]
+        spec = SUPPLIES[name]
+        ts.tv_clear()
+        who = ts.menu(f"{name} on which beast?",
+                      [f"{b.name}  Lv {b.level}  {b.hp}/{b.max_hp} HP"
+                       + (f"  {b.status}" if b.status else "")
+                       + ("  (down)" if not b.alive else "") for b in self.party],
+                      back="Cancel")
+        if who == -1:
+            return False
+        b = self.party[who]
+        lines: list[str] = []
+        if "revive" in spec:
+            if b.alive:
+                say(f"{b.name} isn't down.")
+                return False
+            b.hp = max(1, int(b.max_hp * spec["revive"]))
+            b.reset_combat_state()
+            lines.append(f"{b.name} is back on its feet! ({b.hp} HP)")
+        elif not b.alive:
+            say(f"{b.name} is down -- it needs a Revive.")
+            return False
+        elif "heal" in spec:
+            if b.hp >= b.max_hp:
+                say(f"{b.name} is already at full health.")
+                return False
+            got = min(spec["heal"], b.max_hp - b.hp)
+            b.hp += got
+            lines.append(f"{b.name} recovered {got} HP.")
+        elif spec.get("cure"):
+            if not b.status:
+                say(f"{b.name} has nothing to cure.")
+                return False
+            b.status, b.status_turns = None, 0
+            lines.append(f"{b.name} shakes it off.")
+        elif "level" in spec:
+            if b.level >= 60:
+                say(f"{b.name} can't grow any more.")
+                return False
+            lines.extend(n for n in b.gain_xp(b.xp_needed() - b.xp))
+        self.inventory[name] -= 1
+        if self.inventory[name] <= 0:
+            del self.inventory[name]
+        for line in lines:
+            if log is not None:
+                log.append(line)
+        if log is None:
+            ts.tv_clear()
+            for line in lines:
+                ts.tv_print(f"  {line}")
+            ts.tv_pause()
+            self.store()
+        return True
+
+    def paged_menu(self, heading: str, options: list[str], back: str,
+                   draw=None, per_page: int = 7) -> int:
+        """ts.menu() with pages: long lists must not run past the row
+        budget (the silent `_seat_cursor` wipe). Returns the option index
+        or -1. `draw` repaints whatever should sit above the menu."""
+        pages = max(1, -(-len(options) // per_page))
+        page = 0
+        while True:
+            if draw:
+                draw()
+            else:
+                ts.tv_clear()
+            chunk = options[page * per_page:(page + 1) * per_page]
+            shown = list(chunk)
+            if pages > 1:
+                shown.append(f"More... (page {page + 1}/{pages})")
+            pick = ts.menu(heading, shown, back=back)
+            if pick == -1:
+                return -1
+            if pages > 1 and pick == len(chunk):
+                page = (page + 1) % pages
+                continue
+            return page * per_page + pick
 
     def share_xp(self, active: Beast, gained: int, also: Beast | None = None) -> list[str]:
         """Healthy party members who didn't fight get a third of the XP, so
@@ -699,8 +868,12 @@ class Game:
                 tail = f"   {ts.color(str(extra + 1), 'grey')}  (no lures in a duel)"
             tail += f"    {ts.color(str(extra + 2), 'bright_cyan')}  swap"
             tail += f"    {ts.color(str(extra + 3), 'bright_cyan')}  run"
+            top = extra + 3
+            if self.items_enabled and self.has_supplies():
+                tail += f"    {ts.color(str(extra + 4), 'bright_cyan')}  item"
+                top = extra + 4
             ts.tv_print(tail)
-            choice = ts.ask_int("your move", 1, extra + 3)
+            choice = ts.ask_int("your move", 1, top)
 
             # ---- player's turn
             player_action = None
@@ -747,6 +920,11 @@ class Game:
                     log.append(f"You send out {self.lead().name}!")
                 else:
                     continue
+            elif choice == extra + 4:
+                # Using a supply costs the turn, same as a swap or a lure;
+                # backing out of the menu does not.
+                if not self.use_item_menu(log):
+                    continue
             else:
                 if wild:
                     if random.random() < 0.7:
@@ -783,12 +961,12 @@ class Game:
                 if not hit:
                     log.append(f"{attacker.name}'s {move} missed.")
                     continue
-                defender.hp = max(0, defender.hp - dealt)
                 note = effect_word(mult)
                 if crit:
                     note = ("A critical hit! " + note).strip()
                 log.append(f"{attacker.name} used {move}. {note}".strip())
                 log.append(f"  {defender.name} lost {dealt} HP.")
+                log.extend(deal_damage(attacker, defender, dealt))
                 new_weather = MOVES[move]["sets_weather"]
                 if new_weather:
                     fresh = new_weather != weather
@@ -815,6 +993,8 @@ class Game:
                 if not defender.alive:
                     log.append(f"{defender.name} is out of the fight!")
                     break
+                if not attacker.alive:      # Thorn Wrap recoil
+                    break
 
             for b in (foe, me):
                 if b.alive:
@@ -832,6 +1012,8 @@ class Game:
                 for note in me.gain_xp(gained):
                     log.append(note)
                 log.extend(self.share_xp(me, gained))
+                if wild:
+                    log.extend(self.roll_drops(foe, rare))
                 self.header(title)
                 ts.tv_print()
                 show_log(log, keep=10)
@@ -1017,12 +1199,12 @@ class Game:
                 if not hit:
                     log.append(f"{attacker.name}'s {move} missed.")
                     continue
-                defender.hp = max(0, defender.hp - dealt)
                 note = effect_word(mult)
                 if crit:
                     note = ("A critical hit! " + note).strip()
                 log.append(f"{attacker.name} used {move}. {note}".strip())
                 log.append(f"  {defender.name} lost {dealt} HP.")
+                log.extend(deal_damage(attacker, defender, dealt))
                 new_weather = MOVES[move]["sets_weather"]
                 if new_weather:
                     fresh = new_weather != weather
@@ -1074,6 +1256,8 @@ class Game:
                         for note in ally.gain_xp(each):
                             log.append(note)
                 log.extend(self.share_xp(ally_a, each, also=ally_b))
+                for f in (foe_a, foe_b):
+                    log.extend(self.roll_drops(f, False))
                 self.header(title)
                 ts.tv_print()
                 show_log(log, keep=10)
@@ -1199,6 +1383,8 @@ class Game:
                       "Beat every champion in the Hollow Vale")
         self.money += 200 + self.badges * 100
         self.lures += 5
+        rname, rcount = champ["reward"]
+        self.add_item(rname, rcount)
         self.heal_all()
         self.header(champ["name"])
         ts.tv_print()
@@ -1208,6 +1394,7 @@ class Game:
             f"  {champ['win']}",
             "",
             f"  Badges: {self.badges}/{len(CHAMPIONS)}   +5 lures, and a purse.",
+            f"  Reward: {rname}" + (f" x{rcount}" if rcount > 1 else ""),
         ], fg="yellow"))
         ts.tv_print()
         ts.tv_pause()
@@ -1247,13 +1434,15 @@ class Game:
             if self.box:
                 ts.tv_print(f"  {len(self.box)} more in the box.")
             pick = ts.menu("Team", ["Reorder (choose a leader)", "Read about one",
-                                    "Equip an item"], back="Back")
+                                    "Equip an item", "Use an item"], back="Back")
             if pick == -1:
                 return
             if pick == 0:
                 self.swap_menu()
             elif pick == 2:
                 self.equip_menu()
+            elif pick == 3:
+                self.use_item_menu()
             else:
                 # Same bug class as swap_menu(), same fix: this used to
                 # draw straight on top of the roster listing above it,
@@ -1316,20 +1505,35 @@ class Game:
         if which == -1:
             return
         beast = self.party[which]
-        ts.tv_clear()
-        item_names = list(ITEMS)
-        options = [f"{name}  -- {ITEMS[name]['desc']}" for name in item_names]
-        options.append("Remove item")
-        pick = ts.menu(f"Equip on {beast.name}", options, back="Cancel")
+        gear = [n for n in ITEMS if self.inventory.get(n, 0) > 0]
+        options = [f"{n} x{self.inventory[n]}  -- {ITEMS[n]['desc']}" for n in gear]
+        if beast.item:
+            options.append(f"Take {beast.item} back")
+        if not options:
+            ts.tv_clear()
+            ts.tv_print("  Your bag has no gear. Buy some under Supplies,")
+            ts.tv_print("  or find it: rare beasts and champions drop the best.")
+            ts.tv_print()
+            ts.tv_pause()
+            return
+        pick = self.paged_menu(f"Equip on {beast.name}", options, "Cancel")
         if pick == -1:
             return
         ts.tv_clear()
-        if pick == len(item_names):
+        if pick == len(gear):
+            self.add_item(beast.item)
+            ts.tv_print(f"  {beast.name} gives back {beast.item}.")
             beast.item = None
-            ts.tv_print(f"  {beast.name}'s item removed.")
         else:
-            beast.item = item_names[pick]
-            ts.tv_print(f"  {beast.name} is now holding {beast.item}.")
+            new = gear[pick]
+            self.inventory[new] -= 1
+            if self.inventory[new] <= 0:
+                del self.inventory[new]
+            if beast.item:
+                self.add_item(beast.item)
+            beast.item = new
+            ts.tv_print(f"  {beast.name} is now holding {new}.")
+        beast.hp = min(beast.hp, beast.max_hp)
         ts.tv_print()
         ts.tv_pause()
         self.store()
@@ -1391,24 +1595,77 @@ class Game:
                 page -= 1
 
     def shop(self) -> None:
+        msg = ""
         while True:
             self.header("Camp supplies")
             ts.tv_print()
             ts.tv_print(f"  You have {ts.color(str(self.money), 'bright_yellow')} coins"
                         f" and {self.lures} lures.")
-            ts.tv_print()
-            pick = ts.menu("Buy", ["Lure  — 25 coins", "Five lures — 110 coins"],
-                           back="Back")
+            ts.tv_print(ts.color(f"  {msg}", "bright_green") if msg else "")
+            labels = ["Lures"] + [label for label, _ in SHOP_SECTIONS]
+            pick = ts.menu("Shop", labels, back="Back")
+            msg = ""
             if pick == -1:
                 return
-            cost, amount = (25, 1) if pick == 0 else (110, 5)
-            if self.money < cost:
-                ts.tv_print(ts.color("  Not enough coins.", "bright_red"))
-                ts.tv_pause()
-                continue
-            self.money -= cost
-            self.lures += amount
-            self.store()
+            if pick == 0:
+                msg = self.shop_lures()
+            else:
+                self.shop_section(*SHOP_SECTIONS[pick - 1])
+
+    def shop_lures(self) -> str:
+        self.header("Lures")
+        ts.tv_print()
+        ts.tv_print(f"  You have {ts.color(str(self.money), 'bright_yellow')} coins"
+                    f" and {self.lures} lures.")
+        pick = ts.menu("Buy", ["Lure  — 25 coins", "Five lures — 110 coins"], back="Back")
+        if pick == -1:
+            return ""
+        cost, amount = (25, 1) if pick == 0 else (110, 5)
+        if self.money < cost:
+            return "Not enough coins."
+        self.money -= cost
+        self.lures += amount
+        self.store()
+        return f"Bought {amount} lure{'s' if amount > 1 else ''}."
+
+    def shop_section(self, label: str, names: list[str]) -> None:
+        """One shelf of the shop. Stock unlocks with badges; anything with
+        `price` 0 (the rare treasures) is never sold, only found."""
+        state = {"msg": ""}
+
+        def draw() -> None:
+            self.header(label)
+            ts.tv_print()
+            ts.tv_print(f"  You have {ts.color(str(self.money), 'bright_yellow')} coins."
+                        f"   Badges: {self.badges}")
+            m = state["msg"]
+            ts.tv_print(ts.color(f"  {m}", "bright_green") if m else "")
+
+        while True:
+            options = []
+            for n in names:
+                spec = ITEMS.get(n) or SUPPLIES[n]
+                if spec["need"] > self.badges:
+                    plural = "s" if spec["need"] > 1 else ""
+                    options.append(ts.color(f"{n:<13} (needs {spec['need']} badge{plural})", "grey"))
+                else:
+                    options.append(f"{n:<13} {spec['price']:>4}c  {spec['desc']}")
+            pick = self.paged_menu(label, options, "Back", draw=draw)
+            if pick == -1:
+                return
+            n = names[pick]
+            spec = ITEMS.get(n) or SUPPLIES[n]
+            if spec["need"] > self.badges:
+                state["msg"] = f"{n} unlocks after {spec['need']} badges."
+            elif self.money < spec["price"]:
+                state["msg"] = "Not enough coins."
+            elif self.inventory.get(n, 0) >= 9:
+                state["msg"] = "You can't carry more of those."
+            else:
+                self.money -= spec["price"]
+                self.add_item(n)
+                self.store()
+                state["msg"] = f"Bought {n}. (you have {self.inventory[n]})"
 
     def dex(self) -> None:
         self.header("Field notes")
