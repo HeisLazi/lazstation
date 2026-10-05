@@ -411,11 +411,12 @@ def check_mending_berry(beast: Beast) -> list[str]:
 
 def deal_damage(attacker: Beast, defender: Beast, dealt: int) -> list[str]:
     """Applies a landed hit, with the two held items that change what a hit
-    does: Last Stand (survive one would-be KO at 1 HP) and Thorn Wrap
+    does: Last Stand (survive a would-be KO from above a quarter HP, once) and Thorn Wrap
     (the attacker pays a slice of its own max HP). Shared by 1v1 and 2v2."""
     lines: list[str] = []
     held = ITEMS.get(defender.item, {})
-    if held.get("survive") and not defender.item_used and dealt >= defender.hp > 1:
+    if (held.get("survive") and not defender.item_used and dealt >= defender.hp
+            and defender.hp * 4 > defender.max_hp and defender.max_hp > 1):
         defender.hp = 1
         defender.item_used = True
         lines.append(f"  {defender.name} hangs on with Last Stand!")
@@ -1576,6 +1577,7 @@ class Game:
         pick = self.paged_menu(f"Equip on {beast.name}", options, "Cancel")
         if pick == -1:
             return
+        hp_cap_before = beast.max_hp
         ts.tv_clear()
         if pick == len(gear):
             self.add_item(beast.item)
@@ -1590,7 +1592,9 @@ class Game:
                 self.add_item(beast.item)
             beast.item = new
             ts.tv_print(f"  {beast.name} is now holding {new}.")
-        beast.hp = min(beast.hp, beast.max_hp)
+        # Like a level-up: gaining max HP (Vigor Seed) also raises current HP
+        # by the gain; losing it just clamps.
+        beast.hp = min(beast.max_hp, beast.hp + max(0, beast.max_hp - hp_cap_before))
         ts.tv_print()
         ts.tv_pause()
         self.store()
