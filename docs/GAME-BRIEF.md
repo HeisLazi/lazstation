@@ -10,6 +10,7 @@ Read this before writing any game for this console. It is the whole contract.
   games/<slug>/main.py     your game
   games/<slug>/*.py        your data files
   sdk/termstation_sdk.py   helpers (already on PYTHONPATH when launched)
+  sdk/termstation_ui.py   optional curses layout and navigation widgets
   docs/GAME-BRIEF.md       this file
 ```
 
@@ -20,9 +21,10 @@ console. `lazstation doctor` validates every manifest.
 
 ## Rules that are not negotiable
 
-1. **Do not edit `sdk/`, `termstation/`, `bin/`, `install.sh`, or any game you
-   were not asked to write.** Another agent is working in those files. If you
-   need something the SDK lacks, write it inside your own game folder.
+1. **When writing a game, keep changes inside its own folder.** Do not edit
+   `sdk/`, `termstation/`, `bin/`, `tools/`, `install.sh`, or another game as
+   part of game work. If a platform feature is missing, ask for that platform
+   change separately or implement a local helper inside your game folder.
 
 2. **Content goes in data files, rules go in `main.py`.** Species tables, map
    art, dialogue, item stats, squad data — put them in a separate module in
@@ -74,6 +76,32 @@ ts.size()                            # usable width/height
 loop = ts.Loop(win, fps=30)          # real-time: poll/pressed/held/tick/resume
 ```
 
+For curses games, `termstation_ui` provides optional layout and navigation
+primitives without taking ownership of the game's state or visual theme:
+
+```python
+import termstation_ui as ui
+
+body = ui.Rect(0, 0, screen.width, screen.height - 1)
+left, right = ui.split_horizontal(body, ratio=0.62, gap=1)
+ui.draw_panel(win, left, "Squad", attr=border_attr)
+roster = ui.TableView(["Name", "POS", "FIT"], rows)
+roster.draw(win, left.inset(), selected_attr=focus_attr)
+index = roster.handle(win.getch(), left.height)
+```
+
+`Rect` uses window-local cells; the split helpers reserve an explicit gap.
+`draw_text`, `draw_rule`, and `draw_panel` clip writes to the window. `wrap_text`
+wraps prose. `ListView` and `TableView` keep a visible selection while scrolling;
+`Tabs` keeps the selected tab visible on narrow screens. `ListView.handle()`
+and `TableView.handle()` return a selected index on Enter, `-1` on Esc/`q`, or
+`None` while navigation continues; `Tabs.handle()` returns whether it changed
+the selected tab. Arrow keys and `h/j/k/l` are supported, with Home/End and
+Page Up/Down for lists and tables. `key_action()` exposes the shared key
+mapping. These widgets assume one terminal cell per character; games remain
+responsible for calling `ts.tv_curses()` again after `KEY_RESIZE` and redrawing
+their own screen.
+
 `ts.Loop` exists because terminals report key presses but never releases. A
 key counts as held for a short window after each press. Anything real-time
 must also **sub-step its collision** — one slow frame can otherwise move an
@@ -85,7 +113,7 @@ There is no interactive terminal here, so render the game in a pseudo-terminal
 and read the screen. Helpers already exist:
 
 ```
-tools/ptytest.py   run a game in a PTY of a given size, send keystrokes
+tools/ptytest.py   run a game in a PTY, replay frames, and assert a path
 tools/vt.py        replay the output onto a grid as plain text
 ```
 
@@ -94,6 +122,40 @@ cd games/<slug>
 TERMSTATION=1 TERMSTATION_NAME="My Game" TERMSTATION_SAVE_DIR=/tmp/t \
   PYTHONPATH=../../sdk python3 ../../tools/ptytest.py 80 24 $'\nddd'
 ```
+
+For repeatable paths, put named input and frame assertions in a JSON scenario.
+Events run in order. `key` sends one named key, `keys` sends a sequence,
+`text` sends literal UTF-8 input, `wait` drains output, `resize` changes the
+pseudo-terminal dimensions, and `snapshot` saves the rendered frame so far.
+Supported key names include `ENTER`, `ESC`, arrows, `HOME`, `END`, `PAGE_UP`,
+`PAGE_DOWN`, `F1`–`F12`, `CTRL_C`, and single characters. A compact example:
+
+```json
+{
+  "wait_before": 0.2,
+  "timeout": 10,
+  "expect_exit": true,
+  "events": [
+    {"type": "snapshot", "name": "start"},
+    {"type": "key", "key": "ENTER"},
+    {"type": "key", "key": "DOWN"},
+    {"type": "key", "key": "ENTER"},
+    {"type": "snapshot", "name": "encounter"}
+  ],
+  "assertions": {
+    "exit_code": 0,
+    "frames": {"start": {"contains": ["New Game"]}},
+    "output_contains": ["Victory"]
+  }
+}
+```
+
+Run it from the game directory with
+`python3 ../../tools/ptytest.py 80 24 --script path/to/scenario.json`;
+use `--command "python3 main.py"` to override the child command and
+`--artifacts /tmp/frames` to write named snapshots as text files. Scenarios
+fail on timeout, an unexpected exit status, or a failed output/frame check.
+The original positional raw-key form remains available for quick inspection.
 
 They replay what the program sent and accumulate frames, so a moving sprite
 leaves a trail that is not on a real terminal. Judge layout and borders from
