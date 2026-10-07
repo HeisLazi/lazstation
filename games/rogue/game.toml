@@ -1,0 +1,14 @@
+[game]
+name = "Rogue"
+slug = "rogue"
+version = "5.4.4"
+author = "Toy / Arnold / Wichman"
+description = """
+The original terminal roguelike (5.4.4).
+
+Descend the Dungeons of Doom, grab the Amulet of Yendor, and get out
+alive. Built locally at ~/games/rogue5.4."""
+tags = ["roguelike", "classic", "terminal"]
+entry = ["/home/lazi/games/rogue5.4/rogue"]
+min_cols = 80
+min_rows = 24
