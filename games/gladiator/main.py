@@ -14,6 +14,7 @@ import time
 
 import termstation_fx as fx
 import termstation_sdk as ts
+from tactical_mode import run as run_tactical
 
 P_HP = fx.rgb(110, 210, 110)
 P_STAM = fx.rgb(90, 160, 240)
@@ -398,28 +399,39 @@ def run(stdscr, save: dict) -> dict:
 
 
 def main() -> int:
-    save = ts.load({"wins": 0, "deaths": 0, "gold": 0, "training": 0, "best_bout": 0})
+    save = ts.load({"version": 2, "wins": 0, "deaths": 0, "gold": 0,
+                    "training": 0, "best_bout": 0,
+                    "fighter_name": "", "weapon_key": "blade",
+                    "career_started": False,
+                    "profile": {"height": "average", "stats": {
+                        "might": 1, "agility": 1, "endurance": 1, "wit": 1}}})
     save["_spared_this_run"] = False
 
     try:
-        outcome = curses.wrapper(run, save)
+        outcome = curses.wrapper(run_tactical, save)
+        if outcome is None:
+            return 0
     except KeyboardInterrupt:
         ts.save(save)
         return 130
 
     save.pop("_spared_this_run", None)
-    save["_summary"] = f"bout {save['best_bout']}/{len(OPPONENTS)}"
+    if outcome:
+        save["wins"] = save.get("wins", 0) + 1
+        save["best_bout"] = max(save.get("best_bout", 0), 1)
+        save["_summary"] = "tactical trial won"
+    else:
+        save["deaths"] = save.get("deaths", 0) + 1
+        save["_summary"] = "tactical trial lost"
     ts.save(save)
 
     ts.tv("Gladiator")
     ts.tv_print(ts.title("G L A D I A T O R"))
-    if outcome["won"]:
+    if outcome:
         ts.tv_print(ts.color("\n  You are handed the rudis — the wooden sword.", "bright_yellow"))
         ts.tv_print(ts.color("  You walk out of the arena a free man.\n", "bright_yellow"))
-    elif outcome.get("retired"):
-        ts.tv_print(ts.color(f"\n  You walk away after {outcome['bout'] - 1} bouts.\n", "cyan"))
     else:
-        ts.tv_print(ts.color(f"\n  You fall in bout {outcome['bout']}. The sand drinks it up.\n",
+        ts.tv_print(ts.color("\n  You fall in the tactical trial. The sand drinks it up.\n",
                        "bright_red"))
     ts.tv_print(ts.box([
         f"  career wins    {save['wins']}",
