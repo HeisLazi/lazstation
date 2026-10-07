@@ -1,0 +1,17 @@
+[game]
+name = "Cataclysm"
+slug = "cataclysm"
+version = "0.I"
+author = "CleverRaven"
+description = """
+Cataclysm: Dark Days Ahead 0.I, terminal-only build.
+
+Post-apocalyptic survival roguelike — scavenge, craft, survive.
+Now with HAVEN STORY MODE (v1: Intro + Act 1): pick the Haven Bound
+scenario in the HavenStory world and survive your way east to Haven.
+Read STORY.md next to this file for the endgoal and full storyline.
+Lives at ~/games/cataclysm/cataclysmdda-0.I."""
+tags = ["roguelike", "survival", "terminal"]
+entry = ["run.sh"]
+min_cols = 80
+min_rows = 24
