@@ -9,13 +9,69 @@ from __future__ import annotations
 
 import copy
 import curses
+import json
+import math
+import os
 import random
 import sys
+from dataclasses import dataclass, replace
 from itertools import combinations
+from pathlib import Path
 from typing import Any
+
+# The game launcher executes this file from ``games/touchline`` and exposes
+# only the shared SDK on PYTHONPATH. The headless engine is imported as the
+# ``games.touchline`` package, so make the repository root importable before
+# loading any engine modules in direct-script mode.
+if not __package__:
+    _repository_root = str(Path(__file__).resolve().parents[2])
+    if _repository_root not in sys.path:
+        sys.path.insert(0, _repository_root)
 
 import termstation_sdk as ts
 import termstation_ui as ui
+
+from games.touchline.esb.career_adapter import (
+    LEGACY_ENGINE_ID,
+    SPATIAL_ENGINE_ID,
+    CareerMatchSession,
+    VersionedCareerSave,
+    load_preparation_state,
+    migrate_v2_save,
+    resume_spatial_career_match,
+    settle_spatial_career_match,
+    start_spatial_career_match,
+)
+from games.touchline.esb.career_matchday import (
+    FORMATION_SLOT_IDS,
+    MATCHDAY_PROFILE_STYLES,
+    MATCHDAY_RULES,
+    PROFILE_MAPPING_VERSION,
+    SLOT_ROLES,
+    build_team_sheet,
+    career_tactic,
+    default_formation_positions,
+    formation_slots,
+    legal_formation_positions,
+    tactical_runtimes,
+)
+from games.touchline.esb.ids import PlayerId
+from games.touchline.esb.match import (
+    BallPhysics,
+    MatchPhase,
+    MatchPeriod,
+    Pitch,
+    RestartKind,
+    limits_from_profile,
+    step_match,
+    substitute,
+)
+from games.touchline.esb.model import Position2D
+from games.touchline.esb.world.preparation import (
+    SelectionStatus,
+    prepared_profile,
+    selection_assessment,
+)
 
 if __package__:
     from . import content
@@ -39,6 +95,7 @@ LEVELS = ("low", "mid", "high")
 TRAINING_INTENSITIES = ("low", "normal", "high")
 MATCH_MINUTES = 90
 MATCH_VIEWS = ("live", "events", "stats")
+SPATIAL_MATCH_VIEWS = ("live", "pitch", "events", "stats", "players")
 SECTION_PAGES = ("home", "squad", "tactics", "training", "market", "table", "history")
 SECTION_LABELS = ("HOME", "SQUAD", "PLAN", "TRAIN", "MARKET", "TABLE", "LOGS")
 MATCH_NAV_INDEX = len(SECTION_PAGES)
@@ -47,6 +104,10 @@ PAGE_BREADCRUMBS = {
     "help": "HELP / GAME CONTROLS",
     "team_talk": "MATCHDAY / TEAM TALK · PRE-KICKOFF",
     "match_subs": "MATCHDAY / CHANGES · SELECT A PAIR",
+    "match_setup": "MATCHDAY / SHAPE & FREE PLACEMENT",
+    "spatial_match": "MATCHDAY / LIVE SPATIAL SIM",
+    "spatial_report": "CAREER / LAST SPATIAL MATCH REPORT",
+    "spatial_subs": "MATCHDAY / CHANGES · QUEUE AT NEXT STOPPAGE",
     "offer": "MARKET / CONTRACT NEGOTIATION",
 }
 
@@ -1500,6 +1561,17 @@ def _ensure_player_ids(career: dict[str, Any]) -> None:
 
 def migrate_save(data: dict[str, Any]) -> dict[str, Any]:
     """Keep an empty or older console save safe as the schema gains fields."""
+    adapter_save = None
+    if isinstance(data, dict) and data.get("format") == "esb.core-record":
+        record_keys = {"format", "schema_version", "record_type", "payload"}
+        sdk_defaults = {"version", "career"}
+        if set(data) - record_keys - sdk_defaults:
+            raise ValueError("versioned career save has unexpected top-level fields")
+        record = {key: data[key] for key in record_keys if key in data}
+        adapter_save = VersionedCareerSave.from_json(json.dumps(
+            record, ensure_ascii=False, allow_nan=False, sort_keys=True))
+        data = adapter_save.legacy_save
+        data["_career_adapter_state"] = adapter_save
     for key, value in SAVE_DEFAULTS.items():
         data.setdefault(key, copy.deepcopy(value))
     data["version"] = 2
@@ -1563,6 +1635,22 @@ def migrate_save(data: dict[str, Any]) -> dict[str, Any]:
         for cid, zero in empty_table().items():
             career["table"].setdefault(cid, zero)
         career.setdefault("fixtures", copy.deepcopy(content.DIVISION_FIXTURES))
+        if (not career["season_complete"]
+                and not (isinstance(adapter_save, VersionedCareerSave)
+                         and adapter_save.spatial_match_json is not None)):
+            current = current_fixture(career)
+            if current is not None and any(
+                isinstance(result, dict)
+                and result.get("engine_id") == "touchline.spatial.v1"
+                and result.get("season") == career["season"]
+                and result.get("round") == career["round"] + 1
+                and (result.get("home"), result.get("away")) == tuple(current)
+                for result in career.get("results", [])
+            ):
+                raise ValueError(
+                    "the spatial fixture is settled but its career round is not; "
+                    "finish the round through the career adapter before legacy play resumes"
+                )
     return data
 
 
@@ -1580,7 +1668,51 @@ def _persist(save_data: dict[str, Any], career: dict[str, Any] | None) -> None:
     save_data["version"] = 2
     save_data["career"] = career
     save_data["_summary"] = _career_summary(career) if career else ""
-    ts.save(save_data)
+    adapter_save = save_data.get("_career_adapter_state")
+    if not isinstance(adapter_save, VersionedCareerSave):
+        ts.save(save_data)
+        return
+    legacy_payload = {key: copy.deepcopy(value) for key, value in save_data.items()
+                      if key != "_career_adapter_state"}
+    match = career.get("live_match") if isinstance(career, dict) else None
+    spatial_json = adapter_save.spatial_match_json
+    if spatial_json is not None:
+        if match is not None:
+            raise ValueError("career cannot persist simultaneous legacy and spatial matches")
+        spatial_session = CareerMatchSession.from_json(spatial_json)
+        current_match_engine_id = SPATIAL_ENGINE_ID
+        current_match_id = str(spatial_session.binding.match_id)
+    elif match is None:
+        current_match_engine_id = None
+        current_match_id = None
+    else:
+        match_id = match.get("id") if isinstance(match, dict) else None
+        if not isinstance(match_id, str):
+            raise ValueError("active legacy match has no stable ID for save metadata")
+        current_match_engine_id = LEGACY_ENGINE_ID
+        current_match_id = match_id
+    labels = dict(adapter_save.historical_engine_labels)
+    if isinstance(career, dict):
+        for result in career.get("results", []):
+            if isinstance(result, dict) and isinstance(result.get("id"), str):
+                result_engine = result.get("engine_id")
+                labels.setdefault(result["id"],
+                                  result_engine if isinstance(result_engine, str)
+                                  else LEGACY_ENGINE_ID)
+        for played_id in career.get("played_ids", []):
+            if isinstance(played_id, str):
+                labels.setdefault(played_id, LEGACY_ENGINE_ID)
+    updated_adapter = replace(
+        adapter_save,
+        legacy_save_json=json.dumps(legacy_payload, ensure_ascii=False, allow_nan=False,
+                                    sort_keys=True, separators=(",", ":")),
+        current_match_engine_id=current_match_engine_id,
+        current_match_id=current_match_id,
+        spatial_match_json=spatial_json,
+        historical_engine_labels=tuple(sorted(labels.items())),
+    )
+    save_data["_career_adapter_state"] = updated_adapter
+    ts.save(json.loads(updated_adapter.to_json()))
 
 
 def _pair(pair: int, bold: bool = False, dim: bool = False) -> int:
@@ -1625,7 +1757,8 @@ def _restore_bezel_bottom_right(_stdscr, screen) -> None:
     for y in range(screen.oy + 3, bottom):
         out.extend((f"\x1b[{y + 1};{screen.ox + 1}H║",
                     f"\x1b[{y + 1};{right + 1}H║"))
-    out.append(f"\x1b[{bottom + 1};{right + 1}H╝")
+    out.append(f"\x1b[{bottom + 1};{screen.ox + 1}H"
+               f"╚{'═' * max(0, screen.cab_w - 2)}╝")
     sys.stdout.write("".join(out))
     sys.stdout.flush()
 
@@ -1726,7 +1859,42 @@ def _draw_frame(win, career: dict[str, Any] | None, app: dict[str, Any]) -> ui.R
     if page == "team_talk":
         footer = "↑/↓ choose message  ·  Enter deliver & kick off  ·  Esc pause"
     elif page == "match_subs":
-        footer = "Tab change side  ·  ↑/↓ select player  ·  Enter confirm pair  ·  Esc cancel"
+        footer = "Tab OFF/ON list · ↑/↓ select · Enter confirm · Esc cancel"
+    elif page == "match_setup":
+        footer = "↑/↓ or 1–9,0,A select · wasd place · F shape · T plan · Enter · Esc"
+    elif page == "spatial_subs":
+        if app.get("spatial_keeper_user_required"):
+            footer = "GK required · Tab OFF/ON · ↑/↓ select · Enter apply · Esc"
+        else:
+            footer = "Tab OFF/ON list · ↑/↓ select · Enter queue/apply · Esc back"
+    elif page == "spatial_match":
+        phase = app.get("spatial_match_phase")
+        zoom_hint = (f" · Z {'full' if app.get('spatial_pitch_zoom') else 'zoom'}"
+                     if app.get("match_view") == "pitch" else "")
+        if phase is MatchPhase.FINISHED:
+            footer = "Tab review · ↑/↓ browse · Enter settle · Esc home" + zoom_hint
+        elif phase is MatchPhase.ABANDONED:
+            footer = "Abandoned · no result policy · Tab review · Esc save/leave" + zoom_hint
+        elif app.get("spatial_keeper_user_required"):
+            footer = "Keeper change required · S choose GK · Q stops here · Esc" + zoom_hint
+        elif app.get("spatial_keeper_replacement"):
+            footer = "Opponent keeper pending · Space watch · Q quick · Tab · Esc" + zoom_hint
+        elif app.get("match_view") == "pitch":
+            zoom_hint = "Z full" if app.get("spatial_pitch_zoom") else "Z zoom"
+            footer = (f"Space pause · . step · +/- · {zoom_hint} · S subs · Q sim · Esc home"
+                      if app.get("spatial_watching") else
+                      f"Space watch · . step · +/- · {zoom_hint} · S subs · Q sim · Esc home")
+        elif app.get("match_view") in ("events", "stats", "players"):
+            label = "↑↓ browse · M all" if app.get("match_view") == "events" else "↑↓ list"
+            footer = (f"Space watch · . step · +/- · S subs · {label} · Tab · Esc home"
+                      if not app.get("spatial_watching") else
+                      f"Space pause · +/- · S subs · {label} · Tab · Esc home")
+        else:
+            footer = ("Space pause · . step · +/- · Q sim · S subs · Tab views · Z pitch · Esc"
+                      if app.get("spatial_watching") else
+                      "Space watch · . step · +/- · Q sim · S subs · Tab views · Z pitch · Esc")
+    elif page == "spatial_report":
+        footer = "↑/↓ inspect · Esc home · M next match"
     elif page == "match":
         match = career.get("live_match") if career else None
         if match and match.get("finished"):
@@ -1762,6 +1930,38 @@ def _draw_panel_heading(win, rect: ui.Rect, title: str) -> ui.Rect:
 
 def _season_rank(career: dict[str, Any], club_id: str) -> int:
     return _table_order(career).index(club_id) + 1
+
+
+def _latest_managed_spatial_result(career: dict[str, Any]) -> dict[str, Any] | None:
+    results = career.get("results", [])
+    club_id = career.get("club_id")
+    if not isinstance(results, list) or not isinstance(club_id, str):
+        return None
+    return next((record for record in reversed(results)
+                 if isinstance(record, dict)
+                 and record.get("engine_id") == SPATIAL_ENGINE_ID
+                 and club_id in (record.get("home"), record.get("away"))), None)
+
+
+def _spatial_home_hint(app: dict[str, Any]) -> str:
+    adapter = app.get("_save_data", {}).get("_career_adapter_state")
+    if not isinstance(adapter, VersionedCareerSave) or adapter.spatial_match_json is None:
+        career = app.get("career")
+        result = _latest_managed_spatial_result(career) if isinstance(career, dict) else None
+        if result is not None:
+            home, away = club_by_id(result["home"])["name"], club_by_id(result["away"])["name"]
+            return (f"Last: {home} {result['home_goals']}–{result['away_goals']} {away} "
+                    "· R match report")
+        return "Pre-kickoff: review the XI, shape and weekly training plan"
+    try:
+        session = resume_spatial_career_match(adapter)
+        if session.match.phase is MatchPhase.FINISHED:
+            return "Spatial match full time · M opens the saved match report"
+        if session.match.phase is MatchPhase.ABANDONED:
+            return "Spatial match abandoned · M opens its saved event record"
+        return "Live match paused · M reopens the saved pitch and chronology"
+    except (TypeError, ValueError):
+        return "Saved spatial match needs review · M opens matchday"
 
 
 def _draw_home(win, body: ui.Rect, career: dict[str, Any], app: dict[str, Any]) -> None:
@@ -1832,10 +2032,11 @@ def _draw_home(win, body: ui.Rect, career: dict[str, Any], app: dict[str, Any]) 
             tactic = state["tactics"]
             ui.draw_text(win, left.x, y + 7,
                          f"YOUR XI {len(lineup_for(career, career['club_id']))}/11 · "
-                         f"{tactic['in_shape']} / {tactic['out_shape']}", left.width)
+                         f"ATT {tactic['in_shape']} / DEF {tactic['out_shape']}", left.width)
             ui.draw_text(win, left.x, y + 8,
-                         f"Press {tactic['press']} · line {tactic['line']} · "
-                         f"{tactic['width']} width · {tactic['build']} build", left.width)
+                         f"Press {tactic['press']} · line {tactic['line']}", left.width)
+            ui.draw_text(win, left.x, y + 9,
+                         f"Width {tactic['width']} · Build {tactic['build']}", left.width)
             ui.draw_text(win, left.x, y + 10,
                          f"Training: {state['training']['focus']} / {state['training']['intensity']}",
                          left.width)
@@ -1874,7 +2075,7 @@ def _draw_home(win, body: ui.Rect, career: dict[str, Any], app: dict[str, Any]) 
             ui.draw_text(win, inner_right.x, news_y, "LATEST", inner_right.width, _pair(1, bold=True))
             ui.draw_text(win, inner_right.x, news_y + 1,
                          latest["text"], inner_right.width, _pair(6))
-    _draw_hint(win, body, "Pre-kickoff: review the XI, shape and weekly training plan")
+    _draw_hint(win, body, _spatial_home_hint(app))
 
 
 def _player_rows(career: dict[str, Any], club_id: str) -> list[dict[str, Any]]:
@@ -2189,6 +2390,91 @@ def _draw_history(win, body: ui.Rect, career: dict[str, Any]) -> None:
     _draw_hint(win, body, "The ledger is generated from match, training, market and season events")
 
 
+def _draw_spatial_report(win, body: ui.Rect, career: dict[str, Any],
+                         app: dict[str, Any]) -> None:
+    record = _latest_managed_spatial_result(career)
+    if record is None:
+        ui.draw_text(win, body.x, body.y, "NO SPATIAL MATCH REPORT SAVED", body.width,
+                     _pair(4, bold=True))
+        ui.draw_text(win, body.x, body.y + 2,
+                     "Finish and settle a spatial match to add its report to the career ledger.",
+                     body.width, _pair(6))
+        return
+
+    home_id, away_id = str(record["home"]), str(record["away"])
+    home_name, away_name = club_by_id(home_id)["name"], club_by_id(away_id)["name"]
+    ui.draw_text(win, body.x, body.y,
+                 f"MATCH REPORT · S{record['season']} ROUND {record['round']} · "
+                 f"{str(record.get('division', '')).upper()}",
+                 body.width, _pair(2, bold=True))
+    ui.draw_text(win, body.x, body.y + 1,
+                 f"{home_name}  {record['home_goals']}–{record['away_goals']}  {away_name}",
+                 body.width, _pair(1, bold=True))
+
+    rows: list[tuple[str, int]] = []
+    rows.append((f"ENGINE {record.get('engine_id', 'unknown')} · "
+                 f"RULESET {record.get('ruleset_id', 'unknown')} · "
+                 f"v{record.get('ruleset_version', '?')}", 6))
+    rows.append(("GOAL CHRONOLOGY", 1))
+    goals = record.get("goal_lineages", [])
+    if isinstance(goals, list) and goals:
+        for goal in goals:
+            if not isinstance(goal, dict):
+                continue
+            own_goal_id = goal.get("own_goal_id")
+            scorer_id = own_goal_id or goal.get("scorer_id")
+            scorer = _player_name(career, scorer_id) if scorer_id else "Unknown scorer"
+            label = f"OWN GOAL · {scorer}" if own_goal_id else f"GOAL · {scorer}"
+            assist_id = goal.get("assist_id")
+            if assist_id:
+                label += f" · assist {_player_name(career, assist_id)}"
+            rows.append((label, 3))
+    else:
+        rows.append(("No goals recorded.", 6))
+
+    rows.append(("GOAL BUILD-UP · CAUSE AND PASS LINEAGE", 1))
+    lineage_events = record.get("lineage_events", [])
+    if isinstance(lineage_events, list) and lineage_events:
+        for event in lineage_events:
+            if not isinstance(event, dict):
+                continue
+            payload = event.get("payload", {})
+            actor_id = event.get("actor_id") or (
+                payload.get("actor_id") if isinstance(payload, dict) else None)
+            actor = _player_name(career, actor_id) if actor_id else "Match"
+            kind = str(event.get("kind", "event")).replace("_", " ").upper()
+            rows.append((f"#{event.get('sequence', '?')}  {kind} · {actor}", 6))
+    else:
+        rows.append(("No goal lineage events recorded.", 6))
+
+    minutes = record.get("stats", {}).get("minutes", {})
+    appearances = []
+    if isinstance(minutes, dict):
+        for player_id, played in minutes.items():
+            try:
+                played_value = float(played)
+            except (TypeError, ValueError):
+                continue
+            if played_value > 0:
+                player = career.get("players", {}).get(str(player_id), {})
+                club_id = player.get("club") if isinstance(player, dict) else None
+                side = "H" if club_id == home_id else "A" if club_id == away_id else "?"
+                appearances.append((side, played_value, _player_name(career, player_id)))
+    appearances.sort(key=lambda item: (item[0], -item[1], item[2]))
+    rows.append((f"PLAYING TIME · {len(appearances)} APPEARANCES", 1))
+    rows.extend((f"{side}  {name} · {played:g} min", 6)
+                for side, played, name in appearances)
+
+    visible_top = body.y + 3
+    visible_rows = max(0, body.bottom - visible_top - 1)
+    last_start = max(0, len(rows) - visible_rows)
+    start = int(clamp(app.get("spatial_report_scroll", 0), 0, last_start))
+    app["spatial_report_scroll"] = start
+    for offset, (line, pair) in enumerate(rows[start:start + visible_rows]):
+        ui.draw_text(win, body.x, visible_top + offset, line, body.width,
+                     _pair(pair, bold=pair == 1))
+
+
 def _draw_help(win, body: ui.Rect) -> None:
     lines = [
         ("THE MANAGER'S DESK", 1),
@@ -2196,6 +2482,7 @@ def _draw_help(win, body: ui.Rect) -> None:
         ("Brackets show keyboard focus; › marks the page you are on.", 0),
         ("1-7 jump to Home, Squad, Plan, Training, Market, Table and Logs.", 0),
         ("M starts or resumes matchday; ? opens this guide.", 0),
+        ("After a spatial fixture, R opens its saved match report from Home.", 0),
         ("Before kickoff, choose and deliver a team talk.", 0),
         ("Match: Tab views; Event arrows browse; Enter +15'; 1-3 tactics; 4 Changes.", 0),
         ("Changes: Tab switches lists; arrows choose who comes off/on; Enter confirms.", 0),
@@ -2499,6 +2786,1056 @@ def _draw_match(win, body: ui.Rect, career: dict[str, Any], app: dict[str, Any])
         _draw_match_live(win, area, career, match)
 
 
+def _player_name(career: dict[str, Any], player_id: object) -> str:
+    player = career.get("players", {}).get(str(player_id))
+    return str(player.get("name", str(player_id))) if isinstance(player, dict) else str(player_id)
+
+
+def _pitch_world_positions(positions: dict[str, Position2D], team_id: str,
+                           pitch: Pitch = Pitch()) -> dict[str, Position2D]:
+    if team_id == "home":
+        return dict(positions)
+    return {slot: Position2D(pitch.length_m - item.x_m, item.y_m)
+            for slot, item in positions.items()}
+
+
+def _pitch_map_cell(position: Position2D, pitch: Pitch,
+                    width: int, height: int,
+                    bounds: tuple[float, float, float, float] | None = None
+                    ) -> tuple[int, int] | None:
+    """Map pitch metres onto the same interior cells used by the terminal renderer."""
+    width = max(5, width)
+    height = max(3, height)
+    x_min, x_max, y_min, y_max = bounds or (
+        0.0, pitch.length_m, 0.0, pitch.width_m)
+    if (position.x_m < x_min or position.x_m > x_max
+            or position.y_m < y_min or position.y_m > y_max):
+        return None
+    col = round((position.x_m - x_min) / max(0.001, x_max - x_min) * (width - 1))
+    row = round((position.y_m - y_min) / max(0.001, y_max - y_min) * (height - 1))
+    return min(width - 2, max(1, col)), min(height - 2, max(1, row))
+
+
+def _spatial_player_cycle_ids(match, selected_id: str,
+                              viewport: tuple[int, int] | None,
+                              bounds: tuple[float, float, float, float] | None = None
+                              ) -> list[PlayerId]:
+    """Cycle inside the selected map cell when it contains a visible cluster."""
+    player_ids = list(match.play.players)
+    selected = next((player_id for player_id in player_ids
+                     if str(player_id) == selected_id), None)
+    if selected is None or viewport is None:
+        return player_ids
+    width, height = viewport
+    selected_cell = _pitch_map_cell(
+        match.play.players[selected].motion.position, match.play.pitch,
+        width, height, bounds)
+    clustered = [player_id for player_id in player_ids
+                 if _pitch_map_cell(
+                     match.play.players[player_id].motion.position,
+                     match.play.pitch, width, height, bounds) == selected_cell]
+    return clustered if len(clustered) > 1 else player_ids
+
+
+def _spatial_pitch_focus_bounds(match, selected_id: str | None,
+                                viewport: tuple[int, int] | None = None
+                                ) -> tuple[float, float, float, float]:
+    """Return a compact local view sized for a text-cell pitch map."""
+    pitch = match.play.pitch
+    state = next((state for player_id, state in match.play.players.items()
+                  if selected_id is not None and str(player_id) == selected_id), None)
+    focus = state.motion.position if state else match.play.ball.position
+    map_width, map_height = viewport or (60, 12)
+    terminal_aspect = max(
+        1.0, max(1, map_width - 2) / max(1, map_height - 2))
+    span_x = min(36.0, pitch.length_m)
+    # Terminal rows are roughly twice as tall as they are wide. The minimum
+    # cross-pitch span keeps the camera useful on short 80x24 map areas.
+    span_y = min(pitch.width_m,
+                 max(16.0, span_x * 2 / terminal_aspect))
+    x_min = min(max(0.0, focus.x_m - span_x / 2), pitch.length_m - span_x)
+    y_min = min(max(0.0, focus.y_m - span_y / 2), pitch.width_m - span_y)
+    return (x_min, x_min + span_x, y_min, y_min + span_y)
+
+
+SPATIAL_HOME_MARKERS = "1234567890ACDEFGHIJKLMNOPQRSTUVWXYZ"
+
+
+def _draw_pitch_map(win, area: ui.Rect, pitch: Pitch,
+                    players: list[tuple[str, Position2D, str]],
+                    ball: Position2D | None = None,
+                    *, selected_id: str | None = None,
+                    highlighted_id: str | None = None,
+                    player_symbols: dict[str, str] | None = None,
+                    bounds: tuple[float, float, float, float] | None = None
+                    ) -> dict[str, int]:
+    """Render the live pitch as a persistent text map, with actors overlaid."""
+    width = max(5, area.width)
+    height = area.height
+    if area.height < 5:
+        return {}
+    grid = [[" " for _ in range(width)] for _ in range(height)]
+    horizontal_frame = "─" if bounds is None else "┄"
+    vertical_frame = "│" if bounds is None else "┆"
+    for x in range(width):
+        grid[0][x] = horizontal_frame
+        grid[-1][x] = horizontal_frame
+    for y in range(height):
+        grid[y][0] = vertical_frame
+        grid[y][-1] = vertical_frame
+    if bounds is None:
+        grid[0][0], grid[0][-1] = "┌", "┐"
+        grid[-1][0], grid[-1][-1] = "└", "┘"
+    else:
+        grid[0][0], grid[0][-1] = "╭", "╮"
+        grid[-1][0], grid[-1][-1] = "╰", "╯"
+    mid_y = (height - 1) // 2
+    x_min, x_max, y_min, y_max = bounds or (
+        0.0, pitch.length_m, 0.0, pitch.width_m)
+    if bounds is None:
+        mid_x = (width - 1) // 2
+        for y in range(1, height - 1):
+            grid[y][mid_x] = "│"
+        grid[mid_y][mid_x] = "+"
+        # The centre ring and penalty boxes stay visible even when the playing
+        # actors are sparse. Scale their radii from the rulebook pitch geometry.
+        ring_dx = max(2, round(9.15 / pitch.length_m * (width - 2)))
+        ring_dy = max(1, round(9.15 / pitch.width_m * (height - 2)))
+        for dx, dy, mark in ((-ring_dx, 0, "o"), (ring_dx, 0, "o"),
+                             (0, -ring_dy, "o"), (0, ring_dy, "o")):
+            x, y = mid_x + dx, mid_y + dy
+            if 1 <= x < width - 1 and 1 <= y < height - 1:
+                grid[y][x] = mark
+
+        def draw_boxes(depth_m: float, width_m: float) -> None:
+            depth = max(1, round(depth_m / pitch.length_m * (width - 2)))
+            half_width = max(1, round(width_m / pitch.width_m * (height - 2)))
+            top = max(1, mid_y - half_width)
+            bottom = min(height - 2, mid_y + half_width)
+            left_inner, right_inner = 1 + depth, width - 2 - depth
+            for row in range(top + 1, bottom):
+                grid[row][left_inner] = grid[row][right_inner] = "│"
+            for col in range(1, left_inner):
+                grid[top][col] = grid[bottom][col] = "─"
+            for col in range(right_inner + 1, width - 1):
+                grid[top][col] = grid[bottom][col] = "─"
+            grid[top][0], grid[bottom][0] = "├", "├"
+            grid[top][left_inner], grid[bottom][left_inner] = "┤", "┤"
+            grid[top][right_inner], grid[bottom][right_inner] = "├", "├"
+            grid[top][-1], grid[bottom][-1] = "┤", "┤"
+
+        draw_boxes(16.5, 40.3)
+        draw_boxes(5.5, 18.32)
+        grid[mid_y][1], grid[mid_y][-2] = "[", "]"
+    elif x_min <= pitch.length_m / 2 <= x_max:
+        mid_x, _ = _pitch_map_cell(
+            Position2D(pitch.length_m / 2, y_min), pitch, width, height, bounds)
+        for y in range(1, height - 1):
+            grid[y][mid_x] = "│"
+    if bounds is not None:
+        def draw_horizontal(y_m: float, start_x_m: float, end_x_m: float,
+                            mark: str = "─") -> None:
+            if not y_min <= y_m <= y_max:
+                return
+            start = max(x_min, 0.0, min(start_x_m, end_x_m))
+            end = min(x_max, pitch.length_m, max(start_x_m, end_x_m))
+            if start > end:
+                return
+            start_cell = _pitch_map_cell(
+                Position2D(start, y_m), pitch, width, height, bounds)
+            end_cell = _pitch_map_cell(
+                Position2D(end, y_m), pitch, width, height, bounds)
+            if start_cell is None or end_cell is None:
+                return
+            row = start_cell[1]
+            for col in range(min(start_cell[0], end_cell[0]),
+                             max(start_cell[0], end_cell[0]) + 1):
+                grid[row][col] = mark
+
+        def draw_vertical(x_m: float, start_y_m: float, end_y_m: float,
+                          mark: str = "│") -> None:
+            if not x_min <= x_m <= x_max:
+                return
+            start = max(y_min, 0.0, min(start_y_m, end_y_m))
+            end = min(y_max, pitch.width_m, max(start_y_m, end_y_m))
+            if start > end:
+                return
+            start_cell = _pitch_map_cell(
+                Position2D(x_m, start), pitch, width, height, bounds)
+            end_cell = _pitch_map_cell(
+                Position2D(x_m, end), pitch, width, height, bounds)
+            if start_cell is None or end_cell is None:
+                return
+            col = start_cell[0]
+            for row in range(min(start_cell[1], end_cell[1]),
+                             max(start_cell[1], end_cell[1]) + 1):
+                grid[row][col] = mark
+
+        # Draw real field landmarks that intersect the camera, clipping each
+        # segment to its world-space viewport instead of inventing a local box.
+        half_y = pitch.width_m / 2
+        draw_horizontal(0.0, 0.0, pitch.length_m)
+        draw_horizontal(pitch.width_m, 0.0, pitch.length_m)
+        draw_vertical(0.0, 0.0, pitch.width_m)
+        draw_vertical(pitch.length_m, 0.0, pitch.width_m)
+        draw_vertical(pitch.length_m / 2, 0.0, pitch.width_m)
+        penalty_half = 40.32 / 2
+        goal_area_half = 18.32 / 2
+        for start_x, end_x, half_width in (
+                (0.0, 16.5, penalty_half),
+                (pitch.length_m - 16.5, pitch.length_m, penalty_half),
+                (0.0, 5.5, goal_area_half),
+                (pitch.length_m - 5.5, pitch.length_m, goal_area_half)):
+            draw_horizontal(half_y - half_width, start_x, end_x)
+            draw_horizontal(half_y + half_width, start_x, end_x)
+            inner_x = end_x if start_x == 0.0 else start_x
+            draw_vertical(inner_x, half_y - half_width, half_y + half_width)
+        for spot_x in (11.0, pitch.length_m - 11.0):
+            spot = _pitch_map_cell(
+                Position2D(spot_x, half_y), pitch, width, height, bounds)
+            if spot is not None:
+                grid[spot[1]][spot[0]] = "."
+        center_x = pitch.length_m / 2
+        center_radius = 9.15
+        circle_points = ((center_x - center_radius, half_y),
+                         (center_x + center_radius, half_y),
+                         (center_x, half_y - center_radius),
+                         (center_x, half_y + center_radius))
+        for x_m, y_m in circle_points:
+            point = _pitch_map_cell(
+                Position2D(x_m, y_m), pitch, width, height, bounds)
+            if point is not None:
+                grid[point[1]][point[0]] = "o"
+        center = _pitch_map_cell(
+            Position2D(center_x, half_y), pitch, width, height, bounds)
+        if center is not None:
+            grid[center[1]][center[0]] = "+"
+
+        # Small, evenly spaced pitch-coordinate ticks make the crop scale
+        # legible even when the goal and halfway lines are outside the view.
+        first_x_tick = math.ceil(x_min / 5) * 5
+        for tick in range(first_x_tick, int(x_max) + 1, 5):
+            cell = _pitch_map_cell(
+                Position2D(float(tick), y_min), pitch, width, height, bounds)
+            if cell is not None:
+                grid[1][cell[0]] = "┬"
+        first_y_tick = math.ceil(y_min / 5) * 5
+        for tick in range(first_y_tick, int(y_max) + 1, 5):
+            cell = _pitch_map_cell(
+                Position2D(x_min, float(tick)), pitch, width, height, bounds)
+            if cell is not None:
+                grid[cell[1]][1] = "├"
+    symbols = {"home": SPATIAL_HOME_MARKERS,
+               "away": "abcdefghijklmnopqrstuvwxyz"}
+    seen = {"home": 0, "away": 0}
+    occupied: dict[tuple[int, int], list[tuple[str, str, str]]] = {}
+    for team_id, position, player_id in players:
+        if team_id not in symbols:
+            continue
+        cell = _pitch_map_cell(position, pitch, width, height, bounds)
+        if cell is None:
+            continue
+        col, row = cell
+        symbol = (player_symbols or {}).get(
+            player_id, symbols[team_id][seen[team_id] % len(symbols[team_id])])
+        seen[team_id] += 1
+        if player_id == selected_id:
+            symbol = "@"
+        elif player_id == highlighted_id:
+            symbol = "!"
+        occupied.setdefault((row, col), []).append((team_id, symbol, player_id))
+    cluster_sizes: dict[str, int] = {}
+    for (row, col), actors in occupied.items():
+        for _team, _symbol, player_id in actors:
+            cluster_sizes[player_id] = len(actors)
+        carrier_here = any(player_id == selected_id for _team, _symbol, player_id in actors)
+        highlighted_here = any(player_id == highlighted_id
+                               for _team, _symbol, player_id in actors)
+        grid[row][col] = ("@" if carrier_here else "!" if highlighted_here
+                          else actors[0][1] if len(actors) == 1 else "+")
+    if ball is not None:
+        cell = _pitch_map_cell(ball, pitch, width, height, bounds)
+        if cell is not None:
+            col, row = cell
+        else:
+            col = row = -1
+        if cell is not None and not (selected_id and any(player_id == selected_id
+                                                         for _team, _symbol, player_id
+                                                         in occupied.get((row, col), ()))):
+            grid[row][col] = "*"
+    for row, chars in enumerate(grid):
+        ui.draw_text(win, area.x, area.y + row, "".join(chars), area.width,
+                     _pair(1 if row == mid_y else 6))
+    return cluster_sizes
+
+
+def _draw_match_setup(win, body: ui.Rect, career: dict[str, Any], app: dict[str, Any]) -> None:
+    setup = app.get("match_setup", {})
+    fixture = current_fixture(career)
+    if not fixture or not setup:
+        ui.draw_text(win, body.x, body.y, "MATCHDAY SETUP UNAVAILABLE", body.width,
+                     _pair(4, bold=True))
+        ui.draw_text(win, body.x, body.y + 2, app.get("message", "Fixture data is missing."),
+                     body.width, _pair(2))
+        return
+    home_id, away_id = fixture
+    home_name, away_name = club_by_id(home_id)["name"], club_by_id(away_id)["name"]
+    ui.draw_text(win, body.x, body.y, f"MATCHDAY · {home_name} v {away_name}",
+                 body.width, _pair(1, bold=True))
+    ui.draw_text(win, body.x, body.y + 1,
+                 f"Round {career['round'] + 1} · 105×68m · PLAN "
+                 f"{dict(MATCHDAY_PROFILE_STYLES)[setup['style_id']]} · attacks →",
+                 body.width, _pair(2))
+    # Erase the old home-table row explicitly before drawing the pitch. This
+    # row was exposed when curses retained a previous sparse-frame cell.
+    ui.draw_text(win, body.x, body.y + 2, " " * body.width, body.width, _pair(6))
+    team_id = setup["team_id"]
+    user_positions = legal_formation_positions(team_id, setup["positions"])
+    players: list[tuple[str, Position2D, str]] = []
+    for slot, player_id in zip(formation_slots(setup["shape"]), setup["lineup_ids"]):
+        world_positions = _pitch_world_positions({slot: user_positions[slot]}, team_id)
+        players.append((team_id, world_positions[slot], player_id))
+    opponent_id = away_id if setup["club_id"] == home_id else home_id
+    opponent_team = "away" if team_id == "home" else "home"
+    opponent_shape = str(career["clubs"][opponent_id].get("spatial_formation_v1", {}).get(
+        "shape", career["clubs"][opponent_id].get("tactics", {}).get("in_shape", "4-3-3")))
+    opponent_lineup = _matchday_lineup(career, opponent_id, opponent_shape)
+    opponent_positions, _ = _draft_formation(
+        career, opponent_id, opponent_team, opponent_shape, opponent_lineup)
+    world_opponent = _pitch_world_positions(opponent_positions, opponent_team)
+    for slot, player_id in zip(formation_slots(opponent_shape), opponent_lineup):
+        players.append((opponent_team, world_opponent[slot], player_id))
+    pitch_height = min(19, max(5, body.height - 7))
+    target_pitch_width = max(17, (pitch_height - 2) * 3 + 2)
+    side_min_width = min(33, max(0, body.width - 18))
+    pitch_width = min(target_pitch_width,
+                      max(17, body.width - side_min_width - 1))
+    pitch_area = ui.Rect(body.x, body.y + 3, pitch_width, pitch_height)
+    side_area = ui.Rect(body.x + pitch_width + 2, body.y + 3,
+                        max(0, body.width - pitch_width - 2), pitch_height)
+    selected = int(clamp(setup.get("selected_slot", 0), 0, 10))
+    _draw_pitch_map(win, pitch_area, Pitch(), players,
+                    selected_id=setup["lineup_ids"][selected])
+    player = career["players"][setup["lineup_ids"][selected]]
+    selected_slot = formation_slots(setup["shape"])[selected]
+    assigned_role = SLOT_ROLES[selected_slot].value.replace("_", " ")
+    selected_position = user_positions[selected_slot]
+    rows = (
+        f"SHAPE · YOU {setup['shape']} · OPP {opponent_shape}",
+        f"SELECTED @{selected + 1}/11 · {player['name']} · {assigned_role}",
+        f"SLOT {selected_slot} · natural {player['position']} · "
+        f"local x/y {selected_position.x_m:.1f}/{selected_position.y_m:.1f}m",
+        "w Y-2m · s Y+2m · a X-2m · d X+2m",
+    )
+    for offset, text in enumerate(rows):
+        if offset >= side_area.height:
+            break
+        ui.draw_text(win, side_area.x, side_area.y + offset, text,
+                     side_area.width, _pair(1 if offset in (0, 1) else 2,
+                                            bold=offset in (0, 1)))
+    if side_area.height >= len(rows) + 11:
+        home_symbols = SPATIAL_HOME_MARKERS
+        for index, (slot, player_id) in enumerate(zip(
+                formation_slots(setup["shape"]), setup["lineup_ids"])):
+            role = _spatial_role_code(SLOT_ROLES[slot].value)
+            name = ui.clip(career["players"][player_id]["name"],
+                           max(0, side_area.width - len(role) - 5))
+            ui.draw_text(win, side_area.x, side_area.y + len(rows) + index,
+                         f"{home_symbols[index]} {role} · {name}",
+                         side_area.width,
+                         _pair(3 if index == selected else 6,
+                               bold=index == selected))
+
+
+def _match_clock(tick: int | None, tick_ms: int) -> str:
+    total_ms = max(0, (tick or 0) * tick_ms)
+    minute, remainder_ms = divmod(total_ms, 60_000)
+    second, subsecond_ms = divmod(remainder_ms, 1_000)
+    return f"{minute:02d}:{second:02d}.{subsecond_ms // 100}"
+
+
+@dataclass
+class _MatchFeedItem:
+    """A display-only event row; source events stay unchanged in MatchState."""
+
+    source: object
+    repeat_count: int = 1
+    through_tick: int | None = None
+
+    @property
+    def kind(self) -> str:
+        return self.source.kind
+
+    @property
+    def match_tick(self) -> int | None:
+        return self.source.match_tick
+
+    @property
+    def payload(self) -> dict[str, Any]:
+        return self.source.payload
+
+
+def _spatial_event_line(event, career: dict[str, Any], tick_ms: int) -> str:
+    tick = event.match_tick or 0
+    timestamp = _match_clock(tick, tick_ms)
+    repeat_count = getattr(event, "repeat_count", 1)
+    if repeat_count > 1:
+        end_time = _match_clock(getattr(event, "through_tick", tick), tick_ms)
+        timestamp = f"{timestamp}–{end_time}"
+    payload = event.payload
+    actor_id = payload.get("actor_id")
+    actor = _player_name(career, actor_id) if actor_id else ""
+    kind = event.kind.replace("_", " ").upper()
+    if repeat_count > 1:
+        kind += f" ×{repeat_count}"
+    if event.kind == "goal":
+        own_goal_id = payload.get("own_goal_player_id")
+        if own_goal_id:
+            return f"{timestamp} OWN GOAL · {_player_name(career, own_goal_id)}"
+        assist_id = payload.get("assist_player_id")
+        detail = f"GOAL · {actor}"
+        if assist_id:
+            detail += f" (assist { _player_name(career, assist_id) })"
+        return f"{timestamp} {detail}"
+    receiver_id = payload.get("receiver_id") or payload.get("intended_receiver_id")
+    if receiver_id and event.kind in ("pass", "pass_complete", "pass_intercepted"):
+        actor += f" → {_player_name(career, receiver_id)}"
+    if event.kind == "restart_awarded":
+        kind = str(payload.get("kind", "restart")).replace("_", " ").upper()
+    return f"{timestamp} {kind}{' · ' + actor if actor else ''}"
+
+
+def _spatial_sidebar_event_line(event, career: dict[str, Any], tick_ms: int,
+                                width: int) -> str:
+    """Keep a compact live-feed label and its actor visible in narrow panels."""
+    tick = event.match_tick or 0
+    timestamp = _match_clock(tick, tick_ms)
+    labels = {
+        "goal": "GOAL", "pass": "PASS", "pass_complete": "PASS",
+        "pass_intercepted": "INTERCEPT", "shot": "SHOT", "save": "SAVE",
+        "deflection": "DEFLECT", "rebound": "REBOUND",
+        "possession_controlled": "CONTROL", "possession_regained": "REGAIN",
+        "restart_awarded": "AWARD", "restart_taken": "TAKE",
+        "offside": "OFFSIDE", "foul": "FOUL", "red_card": "RED",
+        "yellow_card": "YELLOW", "substitution": "SUB",
+    }
+    label = labels.get(event.kind, event.kind.replace("_", " ").upper())
+    repeat_count = getattr(event, "repeat_count", 1)
+    if repeat_count > 1:
+        end_time = _match_clock(getattr(event, "through_tick", tick), tick_ms)
+        timestamp = f"{timestamp}–{end_time}"
+        label += f" ×{repeat_count}"
+    payload = event.payload
+    actor_id = (payload.get("own_goal_player_id") if event.kind == "goal"
+                else payload.get("actor_id"))
+    actor = _player_name(career, actor_id) if actor_id else ""
+    receiver_id = payload.get("receiver_id") or payload.get("intended_receiver_id")
+    if receiver_id and event.kind in ("pass", "pass_complete", "pass_intercepted"):
+        actor += f"→{_player_name(career, receiver_id)}"
+    prefix = f"{timestamp} {label}"
+    if actor:
+        prefix += " · "
+        return prefix + ui.clip(actor, max(0, width - len(prefix)))
+    return ui.clip(prefix, width)
+
+
+def _key_match_events(events):
+    """Compact detail rows and sustained actions without mutating the event ledger."""
+    visible = []
+    sustained: dict[tuple[str, str], _MatchFeedItem] = {}
+    for index, event in enumerate(events):
+        if event.kind == "move":
+            continue
+        if event.kind == "ball_contact" and index + 1 < len(events):
+            following = events[index + 1]
+            actor = event.payload.get("actor_id")
+            next_actor = following.payload.get("actor_id")
+            if (following.kind in ("possession_controlled", "possession_regained")
+                    and following.match_tick == event.match_tick
+                    and actor is not None and actor == next_actor):
+                continue
+        actor_id = event.payload.get("actor_id")
+        if event.kind in ("press", "carry") and actor_id is not None \
+                and event.match_tick is not None:
+            key = (event.kind, str(actor_id))
+            previous = sustained.get(key)
+            if (len(sustained) == 1 and previous is not None
+                    and previous.through_tick is not None
+                    and 0 <= event.match_tick - previous.through_tick <= 1):
+                previous.repeat_count += 1
+                previous.through_tick = event.match_tick
+                continue
+            # Only combine adjacent visible actions. A different actor or
+            # action ends the run so summary rows cannot overlap in time.
+            sustained.clear()
+            item = _MatchFeedItem(event, through_tick=event.match_tick)
+            sustained[key] = item
+            visible.append(item)
+        else:
+            # Goals, passes, control changes, fouls, and other state changes
+            # split a sustained-action run so the grouped row cannot span a
+            # meaningful event in the chronological feed.
+            sustained.clear()
+            visible.append(_MatchFeedItem(event))
+    return visible
+
+
+def _draw_spatial_chronology(win, area: ui.Rect, events, career: dict[str, Any],
+                             tick_ms: int, app: dict[str, Any]) -> None:
+    show_movement = bool(app.get("show_movement_events", False))
+    visible_events = list(events) if show_movement else _key_match_events(events)
+    selected = int(clamp(app.get("event_index", len(visible_events) - 1), 0,
+                         max(0, len(visible_events) - 1)))
+    count = f"{selected + 1}/{len(visible_events)}" if visible_events else "0/0"
+    mode = "ALL" if show_movement else "KEY"
+    movement_note = ("M key" if show_movement else
+                     f"M all · {len(events) - len(visible_events)} detail rows hidden")
+    ui.draw_text(win, area.x, area.y,
+                 f"CHRONOLOGY · {mode} {count} · {movement_note}",
+                 area.width, _pair(1, bold=True))
+    rows = max(0, area.height - 1)
+    begin = max(0, min(selected - rows + 1, len(visible_events) - rows))
+    for offset, event in enumerate(visible_events[begin:begin + rows]):
+        line = _spatial_event_line(event, career, tick_ms)
+        ui.draw_text(win, area.x, area.y + offset + 1, line, area.width,
+                     _pair(1 if event.kind in ("goal", "red_card") else 6,
+                           bold=event.kind == "goal"))
+    if not visible_events and rows:
+        ui.draw_text(win, area.x, area.y + 1,
+                     "No key event yet · M shows all player movement.",
+                     area.width, _pair(6))
+
+
+def _spatial_player_statistics(match) -> dict[str, dict[str, int]]:
+    """Project career-facing totals from the authoritative match events."""
+    totals: dict[str, dict[str, int]] = {}
+
+    def credit(player_id: object, key: str) -> None:
+        if player_id is None:
+            return
+        player_key = str(player_id)
+        values = totals.setdefault(player_key, {})
+        values[key] = values.get(key, 0) + 1
+
+    team_by_player: dict[str, str] = {}
+    for team_id, sheet in (("home", match.input_snapshot.home_sheet),
+                           ("away", match.input_snapshot.away_sheet)):
+        for item in sheet.starters:
+            team_by_player[str(item.profile.player_id)] = team_id
+        for item in sheet.substitutes:
+            team_by_player[str(item.player_id)] = team_id
+    passes: dict[str, object] = {}
+    for event in match.events:
+        payload = event.payload
+        actor_id = payload.get("actor_id")
+        if event.kind == "pass":
+            passes[str(event.event_id)] = actor_id
+            credit(actor_id, "pass_attempts")
+        elif event.kind in ("possession_controlled", "possession_regained"):
+            passer = passes.get(str(event.parent_event_id))
+            if (passer is not None
+                    and team_by_player.get(str(passer)) == team_by_player.get(str(actor_id))):
+                credit(passer, "passes_completed")
+        elif event.kind == "shot":
+            credit(actor_id, "shots")
+        elif event.kind == "goal":
+            credit(actor_id, "goals")
+            credit(payload.get("assist_player_id"), "assists")
+    return totals
+
+
+def _spatial_player_inspector(match, career: dict[str, Any], player_id: str) -> str:
+    """Summarize a selected player's live position, events and match output."""
+    state = next((state for key, state in match.play.players.items()
+                  if str(key) == player_id), None)
+    if state is None:
+        return "Selected player is no longer active."
+    totals = _spatial_player_statistics(match).get(player_id, {})
+    last_event = next((event for event in reversed(match.events)
+                       if event.kind != "move" and player_id in {
+                           str(event.payload.get(key))
+                           for key in ("actor_id", "receiver_id", "intended_receiver_id",
+                                       "target_id", "goalkeeper_id", "own_goal_player_id",
+                                       "assist_player_id")
+                           if event.payload.get(key) is not None
+                       }), None)
+    if last_event is None:
+        last_action = "LAST —"
+    else:
+        tick_ms = match.rules.tick_duration_ms
+        total_seconds = (last_event.match_tick or 0) * tick_ms // 1_000
+        label = {"possession_controlled": "CONTROL", "possession_regained": "REGAIN",
+                 "pass_complete": "PASS", "pass_intercepted": "INTERCEPT",
+                 "restart_awarded": "RESTART"}.get(
+                     last_event.kind, last_event.kind.replace("_", " ").upper())
+        last_action = f"LAST {label} {total_seconds // 60:02d}:{total_seconds % 60:02d}"
+    symbol = _spatial_player_symbols(match).get(player_id, "?")
+    name = ui.clip(state.profile.display_name, 12)
+    position = state.motion.position
+    role = _spatial_role_code(state.profile.primary_role.value)
+    return (f"SEL {symbol} {name} {role} x{position.x_m:.1f}/y{position.y_m:.1f}m "
+            f"G{totals.get('goals', 0)} A{totals.get('assists', 0)} "
+            f"S{totals.get('shots', 0)} · {last_action}")
+
+
+def _draw_spatial_stats(win, area: ui.Rect, match, career: dict[str, Any],
+                        team_names: dict[str, str], app: dict[str, Any]) -> None:
+    visible_rows = max(0, area.height - 2)
+    scroll = max(0, int(app.get("spatial_roster_scroll", 0)))
+    statistics = _spatial_player_statistics(match)
+    for index, team_id in enumerate(("home", "away")):
+        width = area.width // 2 - 1 if index == 0 else area.width - area.width // 2 - 1
+        x = area.x if index == 0 else area.x + area.width // 2 + 1
+        roster = match.teams[team_id]
+        ids = [player_id for player_id, state in match.play.players.items()
+               if state.team_id == team_id]
+        ids.extend(player_id for player_id in roster.sent_off_ids if player_id not in ids)
+        ids.extend(player_id for player_id in roster.substituted_off_ids if player_id not in ids)
+        ids.extend(profile.player_id for profile in roster.substitutes if profile.player_id not in ids)
+        start = min(scroll, max(0, len(ids) - visible_rows))
+        end = min(len(ids), start + visible_rows)
+        ui.draw_text(win, x, area.y + 1,
+                     f"{team_id.upper()} · {start + 1}-{end}/{len(ids)}",
+                     _pair(1, bold=True))
+        for offset, player_id in enumerate(ids[start:end], start=1):
+            values = statistics.get(str(player_id), {})
+            line = (f"{_player_name(career, player_id)[:16]:16} "
+                    f"{values.get('goals', 0):>2} {values.get('assists', 0):>2} "
+                    f"{values.get('shots', 0):>2} {values.get('pass_attempts', 0):>2} "
+                    f"{values.get('passes_completed', 0):>2}")
+            ui.draw_text(win, x, area.y + offset + 1, line, width,
+                         _pair(3 if values.get("goals", 0) else 6))
+    ui.draw_text(win, area.x, area.y,
+                 "G goals · A assists · S shots · PA/PC pass attempts/completed",
+                 area.width, _pair(2))
+
+
+def _spatial_player_symbols(match) -> dict[str, str]:
+    symbols = {"home": SPATIAL_HOME_MARKERS,
+               "away": "abcdefghijklmnopqrstuvwxyz"}
+    output: dict[str, str] = {}
+    for team_id, sheet in (("home", match.input_snapshot.home_sheet),
+                           ("away", match.input_snapshot.away_sheet)):
+        ids = ([item.profile.player_id for item in sheet.starters]
+               + [item.player_id for item in sheet.substitutes])
+        output.update((str(player_id), symbols[team_id][index % len(symbols[team_id])])
+                      for index, player_id in enumerate(ids))
+    return output
+
+
+def _spatial_role_code(role: str) -> str:
+    return {
+        "goalkeeper": "GK", "center_back": "CB", "fullback": "FB",
+        "defensive_midfielder": "DM", "central_midfielder": "CM",
+        "wide_forward": "WF", "striker": "ST",
+    }.get(role, role.upper()[:2])
+
+
+def _draw_spatial_players(win, area: ui.Rect, match, career: dict[str, Any],
+                          team_names: dict[str, str], app: dict[str, Any]) -> None:
+    visible_rows = max(0, area.height - 1)
+    scroll = max(0, int(app.get("spatial_roster_scroll", 0)))
+    for index, team_id in enumerate(("home", "away")):
+        width = area.width // 2 - 1 if index == 0 else area.width - area.width // 2 - 1
+        x = area.x if index == 0 else area.x + area.width // 2 + 1
+        title = team_names[team_id]
+        roster = match.teams[team_id]
+        active = [player_id for player_id, state in match.play.players.items()
+                  if state.team_id == team_id]
+        benched = [profile.player_id for profile in roster.substitutes
+                   if profile.player_id not in active]
+        withdrawn = [player_id for player_id in roster.substituted_off_ids
+                     if player_id not in active and player_id not in benched]
+        dismissed = [player_id for player_id in roster.sent_off_ids
+                     if player_id not in active and player_id not in benched
+                     and player_id not in withdrawn]
+        ids = active + benched + withdrawn + dismissed
+        start = min(scroll, max(0, len(ids) - visible_rows))
+        end = min(len(ids), start + visible_rows)
+        ui.draw_text(win, x, area.y,
+                     f"{team_id.upper()} · {title} · {start + 1}-{end}/{len(ids)}",
+                     width, _pair(1, bold=True))
+        sheet = (match.input_snapshot.home_sheet if team_id == "home"
+                 else match.input_snapshot.away_sheet)
+        sheet_ids = ([item.profile.player_id for item in sheet.starters]
+                     + [item.player_id for item in sheet.substitutes])
+        profile_by_id = {item.profile.player_id: item.profile for item in sheet.starters}
+        profile_by_id.update({item.player_id: item for item in sheet.substitutes})
+        symbols = (SPATIAL_HOME_MARKERS if team_id == "home"
+                   else "abcdefghijklmnopqrstuvwxyz")
+        key_by_id = {player_id: symbols[index % len(symbols)]
+                     for index, player_id in enumerate(sheet_ids)}
+        for offset, player_id in enumerate(ids[start:end], start=1):
+            marker = "@" if match.play.possession_id == player_id else key_by_id.get(player_id, "?")
+            state = match.play.players.get(player_id)
+            label = ("ON" if state else "SENT OFF" if player_id in dismissed else
+                     "OFF" if player_id in withdrawn else "BENCH")
+            profile = state.profile if state else profile_by_id.get(player_id)
+            role = profile.primary_role.value if profile else "SUB"
+            role_code = _spatial_role_code(role)
+            line = f"{marker} {_player_name(career, player_id)} · {role_code} · {label}"
+            ui.draw_text(win, x, area.y + offset, line, width,
+                         _pair(3 if marker == "@" else 6))
+
+
+def _draw_spatial_match(win, body: ui.Rect, career: dict[str, Any], app: dict[str, Any]) -> None:
+    try:
+        adapter = app.get("_save_data", {}).get("_career_adapter_state")
+        if not isinstance(adapter, VersionedCareerSave):
+            raise ValueError("versioned career match checkpoint is missing")
+        session = resume_spatial_career_match(adapter)
+    except (ValueError, TypeError) as exc:
+        ui.draw_text(win, body.x, body.y, "SPATIAL MATCH CHECKPOINT ERROR", body.width,
+                     _pair(4, bold=True))
+        ui.draw_text(win, body.x, body.y + 2, str(exc), body.width, _pair(2))
+        return
+    match = session.match
+    app["spatial_match_phase"] = match.phase
+    app["spatial_keeper_replacement"] = match.keeper_replacement_team_id
+    app["spatial_keeper_user_required"] = (
+        match.keeper_replacement_team_id == _spatial_user_team(session, career)
+        if match.keeper_replacement_team_id is not None else False
+    )
+    binding = session.binding
+    home_id, away_id = str(binding.home_club_id), str(binding.away_club_id)
+    clock_minute, remainder_ms = divmod(
+        match.play.clock.tick * match.rules.tick_duration_ms, 60_000)
+    clock_second = remainder_ms // 1_000
+    period = {
+        MatchPeriod.FIRST_HALF: "1H",
+        MatchPeriod.SECOND_HALF: "2H",
+        MatchPeriod.EXTRA_TIME_FIRST: "ET1",
+        MatchPeriod.EXTRA_TIME_SECOND: "ET2",
+    }.get(match.period, "FT")
+    score = f"{club_by_id(home_id)['name']} {match.home_score}–{match.away_score} {club_by_id(away_id)['name']}"
+    phase_text = ("FULL TIME" if match.phase is MatchPhase.FINISHED else
+                  f"{period} {clock_minute:02d}:{clock_second:02d} · "
+                  f"{match.phase.value.replace('_', ' ')}")
+    if match.phase is MatchPhase.ABANDONED:
+        phase_text = f"MATCH ABANDONED · {match.finished_reason or 'competition stopped'}"
+    elif match.keeper_replacement_team_id is not None:
+        phase_text = f"{period} {clock_minute:02d}' · REQUIRED GOALKEEPER CHANGE"
+    restart = match.restart
+    if restart is not None:
+        phase_text += f" · {restart.kind.value.replace('_', ' ')} to {restart.team_id}"
+    if match.phase is not MatchPhase.FINISHED:
+        phase_text += (f" · WATCH ×{app.get('spatial_watch_ticks', 25)} ticks/update"
+                       if app.get("spatial_watching") else " · PAUSED")
+    ui.draw_text(win, body.x, body.y, score, body.width, _pair(1, bold=True))
+    ui.draw_text(win, body.x, body.y + 1, f"{phase_text} · {len(match.events)} events",
+                 body.width, _pair(2))
+    events = list(match.events)
+    view = app.get("match_view", "live")
+    if view != "pitch":
+        app["spatial_pitch_bounds"] = None
+    view_labels = {"live": "LIVE", "pitch": "PITCH", "events": "EVENTS",
+                   "stats": "STATS", "players": "PLAYERS"}
+    view_strip = "VIEWS · " + "  ".join(
+        f"[{label}]" if key == view else label for key, label in view_labels.items()
+    ) + " · Tab cycles"
+    ui.draw_text(win, body.x, body.y + 2, view_strip, body.width, _pair(3, bold=True))
+    runtime_state = career.get("spatial_matchday_runtime_v1", {})
+    queued = (runtime_state.get("queued_substitution")
+              if isinstance(runtime_state, dict) else None)
+    queued = queued if isinstance(queued, dict) else None
+    if queued:
+        queued_text = (f"CHANGE QUEUED · {_player_name(career, queued.get('incoming_id'))} for "
+                       f"{_player_name(career, queued.get('outgoing_id'))} · next stoppage")
+        ui.draw_text(win, body.x, body.y + 3, queued_text,
+                     body.width, _pair(3, bold=True))
+    content_y = body.y + (4 if queued else 3)
+    content_area = ui.Rect(body.x, content_y, body.width,
+                           max(1, body.bottom - content_y))
+    if view == "events":
+        _draw_spatial_chronology(win, content_area, events, career,
+                                 match.rules.tick_duration_ms, app)
+    elif view == "stats":
+        _draw_spatial_stats(win, content_area, match, career,
+                            {"home": club_by_id(home_id)["name"],
+                             "away": club_by_id(away_id)["name"]}, app)
+    elif view == "players":
+        _draw_spatial_players(win, content_area, match, career,
+                              {"home": club_by_id(home_id)["name"],
+                               "away": club_by_id(away_id)["name"]}, app)
+    elif view == "pitch":
+        symbols = _spatial_player_symbols(match)
+        highlighted_id = next((player_id for player_id in match.play.players
+                               if str(player_id) == str(app.get("spatial_selected_player_id", ""))),
+                              None)
+        focus_ball = bool(app.get("spatial_pitch_focus_ball"))
+        camera_player_id = None if focus_ball else (
+            str(highlighted_id) if highlighted_id is not None else None)
+        pitch_height = max(6, content_area.height - 3)
+        # Terminal cells are about twice as tall as wide; four map columns per
+        # interior row keeps the 2:1 football pitch close to its real shape.
+        side_min_width = min(24, max(0, content_area.width - 36))
+        pitch_max_width = max(0, content_area.width - 1 - side_min_width)
+        pitch_width = min(pitch_max_width,
+                          max(35, (pitch_height - 2) * 4 + 2))
+        side_width = max(0, content_area.width - pitch_width - 1)
+        pitch_area = ui.Rect(content_area.x, content_area.y,
+                             pitch_width, pitch_height)
+        side_area = ui.Rect(content_area.x + pitch_width + 1, content_area.y,
+                            side_width, pitch_height)
+        app["spatial_pitch_viewport"] = (pitch_area.width, pitch_area.height)
+        bounds = (_spatial_pitch_focus_bounds(
+            match, camera_player_id,
+            (pitch_area.width, pitch_area.height))
+                  if app.get("spatial_pitch_zoom") else None)
+        app["spatial_pitch_bounds"] = bounds
+        players = [(state.team_id, state.motion.position, str(player_id))
+                   for player_id, state in match.play.players.items()]
+        cluster_sizes = _draw_pitch_map(
+            win, pitch_area, match.play.pitch, players, match.play.ball.position,
+            selected_id=str(match.play.possession_id) if match.play.possession_id else None,
+            highlighted_id=str(highlighted_id) if highlighted_id else None,
+            player_symbols=symbols,
+            bounds=bounds,
+        )
+        home_arrow = "→" if match.play.attack_right_by_team["home"] else "←"
+        away_arrow = "←" if home_arrow == "→" else "→"
+        ball = (f"@ {_player_name(career, match.play.possession_id)[:12]}"
+                if match.play.possession_id else
+                f"{match.restart.kind.value.replace('_', ' ')} restart"
+                if match.restart else "* free ball")
+        if bounds is not None:
+            focus_width = round(bounds[1] - bounds[0])
+            focus_height = round(bounds[3] - bounds[2])
+            focus_name = ("BALL" if focus_ball or highlighted_id is None else
+                          _player_name(career, highlighted_id)[:12])
+            ball_cell = _pitch_map_cell(
+                match.play.ball.position, match.play.pitch, pitch_area.width,
+                pitch_area.height, bounds)
+            if ball_cell is None:
+                ball_x = match.play.ball.position.x_m
+                ball_y = match.play.ball.position.y_m
+                direction = ("←" if ball_x < bounds[0] else "→" if ball_x > bounds[1] else "")
+                direction += ("↑" if ball_y < bounds[2] else "↓" if ball_y > bounds[3] else "")
+                ball_note = f"BALL OFF {direction}"
+            else:
+                ball_note = "BALL IN VIEW"
+            focus_text = (f"FOCUS {focus_width}×{focus_height}m · {focus_name} · "
+                          f"X≈{bounds[0]:.0f}–{bounds[1]:.0f} "
+                          f"Y≈{bounds[2]:.0f}–{bounds[3]:.0f}m · "
+                          f"{ball_note} · Z full")
+        else:
+            focus_text = (f"FULL PITCH {match.play.pitch.length_m:g}×"
+                          f"{match.play.pitch.width_m:g}m · HOME {home_arrow} · "
+                          f"AWAY {away_arrow} · {ball}")
+            ball_note = f"BALL {ball}"
+        ui.draw_text(win, content_area.x, content_area.bottom - 3, focus_text,
+                     content_area.width, _pair(2))
+        inspector = (_spatial_player_inspector(match, career, str(highlighted_id))
+                     if highlighted_id else
+                     "Select by marker key · [ ] next player (cluster first)")
+        ui.draw_text(win, content_area.x, content_area.bottom - 2, inspector,
+                     content_area.width, _pair(3))
+        ui.draw_text(win, content_area.x, content_area.bottom - 1,
+                     "@ carrier · * ball · ! select · + cluster · [ ] next · B camera · 5m",
+                     content_area.width, _pair(2))
+        if side_area.width > 0:
+            if highlighted_id and highlighted_id in match.play.players:
+                state = match.play.players[highlighted_id]
+                symbol = symbols.get(str(highlighted_id), "?")
+                selected_name = ui.clip(_player_name(career, highlighted_id), 14)
+                role = _spatial_role_code(state.profile.primary_role.value)
+                position = state.motion.position
+                totals = _spatial_player_statistics(match).get(str(highlighted_id), {})
+                last_action = inspector.partition(" · LAST ")[2] or "—"
+                selection_rows = [
+                    f"SEL {symbol} {selected_name} {role} "
+                    f"X{position.x_m:.1f} Y{position.y_m:.1f}",
+                    f"G{totals.get('goals', 0)} A{totals.get('assists', 0)} "
+                    f"S{totals.get('shots', 0)} · LAST {last_action}",
+                ]
+            else:
+                selection_rows = ["No player selected", "Use [ ] to cycle"]
+            overview_rows = ([
+                "PITCH · CLOSE · BALL" if focus_ball else
+                "PITCH · CLOSE · PLAYER" if highlighted_id else "PITCH · CLOSE · BALL",
+                f"FOCUS {focus_width}×{focus_height}m X{bounds[0]:.0f}–{bounds[1]:.0f}",
+                f"Y{bounds[2]:.0f}–{bounds[3]:.0f}m · {ball_note}",
+            ] if bounds is not None else [
+                "PITCH · FULL",
+                f"{match.play.pitch.length_m:g}×{match.play.pitch.width_m:g}m HOME {home_arrow}",
+                f"AWAY {away_arrow} · {ball}",
+            ])
+            side_rows = [
+                *overview_rows,
+                *selection_rows,
+                "@ carrier · * ball · ! selected",
+                "Keys 1–9,0,A,C–Z / a–k select",
+                "B ball/player · Z full/zoom",
+                "LATEST EVENTS",
+            ]
+            for offset, line in enumerate(side_rows[:side_area.height]):
+                ui.draw_text(win, side_area.x, side_area.y + offset, line,
+                             side_area.width, _pair(1 if offset in (0, 8) else 2,
+                                                    bold=offset in (0, 8)))
+            key_events = _key_match_events(events)
+            event_rows = max(0, side_area.height - len(side_rows))
+            for offset, event in enumerate(key_events[-event_rows:] if event_rows else ()):
+                line = _spatial_sidebar_event_line(
+                    event, career, match.rules.tick_duration_ms, side_area.width)
+                ui.draw_text(win, side_area.x, side_area.y + len(side_rows) + offset,
+                             line, side_area.width,
+                             _pair(1 if event.kind in ("goal", "red_card") else 6,
+                                   bold=event.kind == "goal"))
+            if event_rows and not key_events:
+                ui.draw_text(win, side_area.x, side_area.y + len(side_rows),
+                             "No key events yet", side_area.width, _pair(6))
+    else:
+        pitch_height = min(19, max(7, content_area.height))
+        pitch_width = min(int(body.width * 0.62), body.width - 24,
+                          max(35, (pitch_height - 2) * 3 + 2))
+        side_width = body.width - pitch_width - 1
+        pitch_area = ui.Rect(content_area.x, content_area.y, pitch_width, pitch_height)
+        side_area = ui.Rect(content_area.x + pitch_width + 1, content_area.y,
+                            side_width, pitch_height)
+        app["spatial_pitch_viewport"] = (pitch_area.width, pitch_area.height)
+        players = [(state.team_id, state.motion.position, str(player_id))
+                   for player_id, state in match.play.players.items()]
+        cluster_sizes = _draw_pitch_map(
+            win, pitch_area, match.play.pitch, players, match.play.ball.position,
+            selected_id=str(match.play.possession_id) if match.play.possession_id else None,
+            highlighted_id=next((str(player_id) for player_id in match.play.players
+                                 if str(player_id) == str(
+                                     app.get("spatial_selected_player_id", ""))), None),
+            player_symbols=_spatial_player_symbols(match),
+        )
+        carrier_id = match.play.possession_id
+        carrier = ("@ " + _player_name(career, carrier_id) if carrier_id else
+                   "kickoff spot" if match.restart and match.restart.kind is RestartKind.KICKOFF
+                   else "restart ball" if match.restart else "* free ball")
+        key_events = _key_match_events(events)
+        selected_id = next((player_id for player_id in match.play.players
+                            if str(player_id) == str(
+                                app.get("spatial_selected_player_id", ""))), None)
+        if selected_id is not None:
+            selected_profile = match.play.players[selected_id].profile
+            marker = "@" if selected_id == carrier_id else "!"
+            cluster = cluster_sizes.get(str(selected_id), 1)
+            selection = (f"Selected {marker} "
+                         f"{_spatial_player_symbols(match).get(str(selected_id), '?')}: "
+                         f"{selected_profile.display_name} · "
+                         f"{selected_profile.primary_role.value.replace('_', ' ')}"
+                         + (f" · {cluster} here" if cluster > 1 else ""))
+        else:
+            selection = "Keys 1-9,0,A,C-Z / a-k · [ ] next"
+        home_arrow = "→" if match.play.attack_right_by_team["home"] else "←"
+        away_arrow = "←" if home_arrow == "→" else "→"
+        move_count = sum(event.kind == "move" for event in events)
+        side_rows = [
+            "LIVE BALL",
+            f"Carrier: {carrier}",
+            f"Flight: {match.play.ball.horizontal_speed_mps:.1f}m/s · "
+            f"{match.play.ball.height_m:.1f}m high",
+            f"Attack: HOME {home_arrow} / AWAY {away_arrow}",
+            "@ carrier · * ball",
+            "! inspect + cluster",
+            selection,
+            "LATEST KEY EVENTS",
+        ]
+        for offset, line in enumerate(side_rows):
+            if offset < side_area.height:
+                ui.draw_text(win, side_area.x, side_area.y + offset, line,
+                             side_area.width, _pair(1 if offset in (0, 7) else 2,
+                                                    bold=offset in (0, 7)))
+        event_rows = max(0, side_area.height - len(side_rows))
+        for offset, event in enumerate(key_events[-event_rows:] if event_rows else ()):
+            line = _spatial_sidebar_event_line(
+                event, career, match.rules.tick_duration_ms, side_area.width)
+            ui.draw_text(win, side_area.x, side_area.y + len(side_rows) + offset,
+                         line, side_area.width,
+                         _pair(1 if event.kind in ("goal", "red_card") else 6,
+                               bold=event.kind == "goal"))
+        if move_count and event_rows and not key_events:
+            ui.draw_text(win, side_area.x, side_area.y + len(side_rows),
+                         f"{move_count} movements; no key event yet",
+                         side_area.width, _pair(6))
+
+
+def _draw_spatial_substitutions(win, body: ui.Rect,
+                                career: dict[str, Any], app: dict[str, Any]) -> None:
+    adapter = app.get("_save_data", {}).get("_career_adapter_state")
+    if not isinstance(adapter, VersionedCareerSave) or adapter.spatial_match_json is None:
+        ui.draw_text(win, body.x, body.y, "No active spatial match.", body.width, _pair(4))
+        return
+    session = resume_spatial_career_match(adapter)
+    user_team = ("home" if str(session.binding.home_club_id) == career["club_id"] else "away")
+    roster = session.match.teams[user_team]
+    keeper_required = session.match.keeper_replacement_team_id == user_team
+    active_ids = [player_id for player_id in roster.starting_ids
+                  if player_id in session.match.play.players]
+    active_ids.extend(sorted((player_id for player_id, state in session.match.play.players.items()
+                              if state.team_id == user_team and player_id not in active_ids),
+                             key=str))
+    bench = [profile for profile in roster.eligible_bench()
+             if not keeper_required or profile.primary_role.value == "goalkeeper"]
+    out_index = int(clamp(app.get("spatial_sub_out_index", 0), 0,
+                          max(0, len(active_ids) - 1)))
+    in_index = int(clamp(app.get("spatial_sub_in_index", 0), 0,
+                         max(0, len(bench) - 1)))
+    outgoing = active_ids[out_index] if active_ids else None
+    incoming = bench[in_index] if bench else None
+    queued = career.get("spatial_matchday_runtime_v1", {}).get("queued_substitution")
+    minute = int(session.match.play.clock.tick * session.match.rules.tick_duration_ms / 60_000)
+    ui.draw_text(win, body.x, body.y,
+                 f"CHANGES · {roster.substitutions_made}/{session.match.rules.substitutions_allowed} used · {minute}'",
+                 body.width, _pair(1, bold=True))
+    phase = session.match.phase.value.replace("_", " ")
+    ui.draw_text(win, body.x, body.y + 1,
+                 ("A goalkeeper must enter now; choose any active outfield player to leave."
+                  if keeper_required else
+                  f"Current phase: {phase}. In-play requests queue until an engine stoppage or interval."),
+                 body.width, _pair(2))
+    split_y = body.y + 3
+    left_width = max(1, body.width // 2 - 1)
+    footer_y = body.bottom - 1
+    reserved_rows = 1 if queued and footer_y > split_y else 0
+    first_row = split_y + 1
+    visible_rows = max(0, body.bottom - first_row - reserved_rows)
+
+    def visible_window(count: int, selected_index: int) -> tuple[int, int]:
+        if not count or not visible_rows:
+            return 0, 0
+        start = max(0, min(selected_index, count - visible_rows))
+        return start, min(count, start + visible_rows)
+
+    active_start, active_end = visible_window(len(active_ids), out_index)
+    bench_start, bench_end = visible_window(len(bench), in_index)
+    active_range = (f" {active_start + 1}–{active_end}/{len(active_ids)}"
+                    if len(active_ids) > visible_rows else "")
+    bench_range = (f" {bench_start + 1}–{bench_end}/{len(bench)}"
+                   if len(bench) > visible_rows else "")
+    ui.draw_text(win, body.x, split_y, f"ON PITCH · OFF{active_range}",
+                 left_width, _pair(1, bold=True))
+    right_x = body.x + left_width + 1
+    right_width = body.width - left_width - 1
+    ui.draw_text(win, right_x, split_y, f"BENCH · ON{bench_range}",
+                 right_width, _pair(1, bold=True))
+    for row, index in enumerate(range(active_start, active_end), start=first_row):
+        player_id = active_ids[index]
+        marker = ">" if app.get("spatial_sub_focus", "out") == "out" and index == out_index else " "
+        name = _player_name(career, player_id)
+        profile = session.match.play.players[player_id].profile
+        note = " · BALL" if session.match.play.possession_id == player_id else ""
+        ui.draw_text(win, body.x, row,
+                     f"{marker}{name} · {_spatial_role_code(profile.primary_role.value)}{note}",
+                     left_width, _pair(3 if marker == ">" else 6))
+    for row, index in enumerate(range(bench_start, bench_end), start=first_row):
+        profile = bench[index]
+        marker = ">" if app.get("spatial_sub_focus", "out") == "in" and index == in_index else " "
+        ui.draw_text(win, right_x, row,
+                     f"{marker}{profile.display_name} · {_spatial_role_code(profile.primary_role.value)}",
+                     right_width, _pair(3 if marker == ">" else 6))
+    if queued and footer_y > split_y:
+        ui.draw_text(win, body.x, footer_y,
+                     f"QUEUED · {_player_name(career, queued.get('incoming_id'))} for "
+                     f"{_player_name(career, queued.get('outgoing_id'))} at next legal stoppage",
+                     body.width, _pair(3, bold=True))
+
+
 def _draw_substitutions(win, body: ui.Rect, career: dict[str, Any],
                         app: dict[str, Any]) -> None:
     match = career["live_match"]
@@ -2630,12 +3967,285 @@ def _needs_team_talk(match: dict[str, Any] | None) -> bool:
                  and match.get("team_talk") is None and not match.get("finished"))
 
 
-def _start_matchday(career: dict[str, Any], app: dict[str, Any]) -> None:
+def _adapter_with_career(adapter: VersionedCareerSave,
+                         career: dict[str, Any]) -> VersionedCareerSave:
+    payload = adapter.legacy_save
+    payload["career"] = copy.deepcopy(career)
+    return replace(adapter, legacy_save_json=json.dumps(
+        payload, ensure_ascii=False, allow_nan=False,
+        sort_keys=True, separators=(",", ":")))
+
+
+def _adapter_with_spatial_checkpoint(adapter: VersionedCareerSave,
+                                     session: CareerMatchSession,
+                                     career: dict[str, Any]) -> VersionedCareerSave:
+    return replace(_adapter_with_career(adapter, career),
+                   spatial_match_json=session.to_json())
+
+
+def _runtime_adapter(save_data: dict[str, Any], career: dict[str, Any]) -> VersionedCareerSave:
+    adapter = save_data.get("_career_adapter_state")
+    if isinstance(adapter, VersionedCareerSave):
+        adapter = _adapter_with_career(adapter, career)
+    else:
+        adapter = migrate_v2_save({"version": 2, "career": career})
+    save_data["_career_adapter_state"] = adapter
+    return adapter
+
+
+def _spatial_session(save_data: dict[str, Any]) -> CareerMatchSession | None:
+    adapter = save_data.get("_career_adapter_state")
+    if not isinstance(adapter, VersionedCareerSave) or adapter.spatial_match_json is None:
+        return None
+    return resume_spatial_career_match(adapter)
+
+
+def _prepared_match_profiles(
+    adapter: VersionedCareerSave, career: dict[str, Any], club_id: str,
+) -> tuple[dict[str, Any], tuple[PlayerId, ...]]:
+    preparation = load_preparation_state(adapter)
+    if preparation is None or str(preparation.club_id) != club_id:
+        return {}, ()
+    registered = set(map(str, career["clubs"][club_id]["roster"]))
+    prepared_ids = {str(profile.player_id) for profile in preparation.profiles}
+    if registered != prepared_ids:
+        raise ValueError("P09 preparation profiles do not match the selected club roster")
+    profiles: dict[str, Any] = {}
+    unavailable: list[PlayerId] = []
+    for profile in preparation.profiles:
+        player_id = profile.player_id
+        profiles[str(player_id)] = prepared_profile(preparation, player_id)
+        if selection_assessment(preparation, player_id).status is not SelectionStatus.SELECTABLE:
+            unavailable.append(player_id)
+    return profiles, tuple(unavailable)
+
+
+def _matchday_lineup(career: dict[str, Any], club_id: str, shape: str,
+                     unavailable: tuple[PlayerId, ...] = ()) -> list[str]:
+    unavailable_ids = {str(player_id) for player_id in unavailable}
+    candidates = list(lineup_for(career, club_id, shape))
+    candidates.extend(best_lineup(career, club_id, shape))
+    candidates.extend(career["clubs"][club_id]["roster"])
+    selected: list[str] = []
+    for player_id in candidates:
+        if player_id in selected or player_id in unavailable_ids:
+            continue
+        player = career["players"].get(player_id)
+        if player is None or not is_available(career, player):
+            continue
+        selected.append(player_id)
+        if len(selected) == 11:
+            break
+    return selected
+
+
+def _draft_formation(career: dict[str, Any], club_id: str, team_id: str,
+                     shape: str, lineup_ids: list[str], *,
+                     style_id: str | None = None) -> tuple[dict[str, Position2D], str]:
+    slots = formation_slots(shape)
+    defaults = default_formation_positions(shape)
+    club = career["clubs"][club_id]
+    saved = club.get("spatial_formation_v1")
+    positions = dict(defaults)
+    if (isinstance(saved, dict) and saved.get("schema_version") == 1
+            and saved.get("shape") == shape and isinstance(saved.get("positions"), dict)):
+        for slot, player_id in zip(slots, lineup_ids):
+            raw = saved["positions"].get(player_id)
+            if (isinstance(raw, (list, tuple)) and len(raw) == 2
+                    and all(type(value) in (int, float) and math.isfinite(value)
+                            for value in raw)):
+                positions[slot] = Position2D(float(raw[0]), float(raw[1]))
+    legacy_press = club.get("tactics", {}).get("press", "mid")
+    default_style = "press" if legacy_press == "high" else "compact"
+    if club_id == career["club_id"]:
+        default_style = "possession"
+    saved_style = saved.get("style_id") if isinstance(saved, dict) else None
+    selected_style = style_id or saved_style or default_style
+    if selected_style not in dict(MATCHDAY_PROFILE_STYLES):
+        selected_style = default_style
+    return legal_formation_positions(team_id, positions), str(selected_style)
+
+
+def _save_spatial_formation(career: dict[str, Any], club_id: str, team_id: str,
+                            shape: str, lineup_ids: list[str],
+                            positions: dict[str, Position2D], style_id: str) -> None:
+    slots = formation_slots(shape)
+    legal = legal_formation_positions(team_id, positions)
+    career["clubs"][club_id]["lineup"] = list(lineup_ids)
+    career["clubs"][club_id].setdefault("tactics", {})["in_shape"] = shape
+    career["clubs"][club_id]["spatial_formation_v1"] = {
+        "schema_version": 1,
+        "shape": shape,
+        "positions": {
+            player_id: [legal[slot].x_m, legal[slot].y_m]
+            for slot, player_id in zip(slots, lineup_ids)
+        },
+        "slot_bindings": {
+            slot: player_id for slot, player_id in zip(slots, lineup_ids)
+        },
+        "style_id": style_id,
+    }
+
+
+def _start_spatial_match(save_data: dict[str, Any], career: dict[str, Any],
+                         app: dict[str, Any]) -> None:
+    setup = app.get("match_setup")
+    if not isinstance(setup, dict):
+        app["message"] = "Matchday setup is missing. Press M from Home to prepare the fixture."
+        return
+    adapter = _runtime_adapter(save_data, career)
+    fixture = current_fixture(career)
+    if fixture is None:
+        app["message"] = "No fixture remains this season."
+        return
+    home_id, away_id = fixture
+    managed_id = career["club_id"]
+    managed_team = "home" if managed_id == home_id else "away"
+    opponent_id = away_id if managed_id == home_id else home_id
+    user_shape = str(setup["shape"])
+    user_lineup = list(setup["lineup_ids"])
+    user_positions = dict(setup["positions"])
+    user_style = str(setup["style_id"])
+    opponent_team = "away" if managed_team == "home" else "home"
+    opponent_club = career["clubs"][opponent_id]
+    opponent_shape = str(opponent_club.get("spatial_formation_v1", {}).get(
+        "shape", opponent_club.get("tactics", {}).get("in_shape", "4-3-3")))
+    opponent_profiles, opponent_unavailable = _prepared_match_profiles(
+        adapter, career, opponent_id)
+    opponent_lineup = _matchday_lineup(
+        career, opponent_id, opponent_shape, opponent_unavailable)
+    opponent_positions, opponent_style = _draft_formation(
+        career, opponent_id, opponent_team, opponent_shape, opponent_lineup)
+    user_profiles, user_unavailable = _prepared_match_profiles(adapter, career, managed_id)
+    eligible_user_lineup = _matchday_lineup(career, managed_id, user_shape, user_unavailable)
+    if len(user_lineup) != 11 or set(user_lineup) != set(eligible_user_lineup):
+        # Keep the user's selected XI if it remains legal. A changed preparation
+        # state instead gets an explicit refreshed XI before kickoff.
+        allowed = {pid for pid in _matchday_lineup(
+            career, managed_id, user_shape, user_unavailable)}
+        if len(user_lineup) != 11 or not set(user_lineup) <= allowed:
+            user_lineup = eligible_user_lineup
+            setup["lineup_ids"] = list(user_lineup)
+            app["message"] = "Unavailable players were removed from the XI; review it and press Enter again."
+            return
+    if len(user_lineup) != 11 or len(opponent_lineup) != 11:
+        app["message"] = "A full XI is not available under current injury and preparation status."
+        return
+    _save_spatial_formation(career, managed_id, managed_team, user_shape,
+                            user_lineup, user_positions, user_style)
+    _save_spatial_formation(career, opponent_id, opponent_team, opponent_shape,
+                            opponent_lineup, opponent_positions, opponent_style)
+    adapter = _adapter_with_career(adapter, career)
+    home_profiles, home_unavailable = _prepared_match_profiles(adapter, career, home_id)
+    away_profiles, away_unavailable = _prepared_match_profiles(adapter, career, away_id)
+    try:
+        home_sheet = build_team_sheet(
+            career, home_id, "home", career["clubs"][home_id]["lineup"],
+            shape=str(career["clubs"][home_id]["spatial_formation_v1"]["shape"]),
+            prepared_profiles=home_profiles, unavailable_profiles=home_unavailable,
+        )
+        away_sheet = build_team_sheet(
+            career, away_id, "away", career["clubs"][away_id]["lineup"],
+            shape=str(career["clubs"][away_id]["spatial_formation_v1"]["shape"]),
+            prepared_profiles=away_profiles, unavailable_profiles=away_unavailable,
+        )
+        adapter = start_spatial_career_match(
+            adapter,
+            home_sheet=home_sheet.sheet,
+            away_sheet=away_sheet.sheet,
+            seed=_match_seed(career, career["round"], home_id, away_id),
+            rules=MATCHDAY_RULES,
+            pitch=Pitch(),
+            physics=BallPhysics(step_seconds=MATCHDAY_RULES.tick_duration_ms / 1000.0),
+        )
+    except (TypeError, ValueError) as exc:
+        app["message"] = f"Match setup needs attention: {exc}"
+        return
+    save_data["_career_adapter_state"] = adapter
+    career["spatial_matchday_runtime_v1"] = {
+        "match_id": str(adapter.current_match_id),
+        "distance_m": {
+            str(player_id): 0.0 for club_id in (home_id, away_id)
+            for player_id in career["clubs"][club_id]["roster"]
+        },
+        "queued_substitution": None,
+    }
+    session = resume_spatial_career_match(adapter)
+    adapter = _adapter_with_career(adapter, career)
+    save_data["_career_adapter_state"] = adapter
+    app["_adapter"] = adapter
+    app["spatial_tactical_runtimes"] = tactical_runtimes(session, career)
+    app["spatial_watching"] = False
+    app["spatial_watch_ticks"] = 25
+    app["spatial_match_phase"] = session.match.phase
+    app["spatial_keeper_replacement"] = session.match.keeper_replacement_team_id
+    app["spatial_keeper_user_required"] = (
+        session.match.keeper_replacement_team_id == _spatial_user_team(session, career)
+        if session.match.keeper_replacement_team_id is not None else False
+    )
+    app["page"] = "spatial_match"
+    app["match_view"] = "live"
+    app["message"] = "Kickoff. The same spatial match can be watched, stepped or quick-simmed."
+
+
+def _begin_spatial_setup(career: dict[str, Any], app: dict[str, Any],
+                         save_data: dict[str, Any]) -> None:
+    prepare_week(career)
+    fixture = current_fixture(career)
+    if fixture is None:
+        app["message"] = "No fixture remains this season."
+        return
+    managed_id = career["club_id"]
+    managed_team = "home" if managed_id == fixture[0] else "away"
+    adapter = _runtime_adapter(save_data, career)
+    app["_adapter"] = adapter
+    try:
+        prepared_profiles, unavailable = _prepared_match_profiles(adapter, career, managed_id)
+        shape = str(career["clubs"][managed_id].get("spatial_formation_v1", {}).get(
+            "shape", career["clubs"][managed_id]["tactics"].get("in_shape", "4-3-3")))
+        lineup = _matchday_lineup(career, managed_id, shape, unavailable)
+        if len(lineup) != 11:
+            app["message"] = "Fewer than 11 players are selectable. Review injury and preparation status."
+            return
+        positions, style_id = _draft_formation(career, managed_id, managed_team,
+                                                shape, lineup)
+    except (KeyError, TypeError, ValueError) as exc:
+        app["message"] = f"Match preparation needs attention: {exc}"
+        return
+    app["match_setup"] = {
+        "team_id": managed_team,
+        "club_id": managed_id,
+        "shape": shape,
+        "style_id": style_id,
+        "lineup_ids": lineup,
+        "positions": positions,
+        "selected_slot": 0,
+    }
+    app["page"] = "match_setup"
+    app["message"] = "Set your XI, shape and plan; placements become kickoff positions."
+
+
+def _start_matchday(career: dict[str, Any], app: dict[str, Any],
+                    save_data: dict[str, Any] | None = None) -> None:
     if career["season_complete"]:
         app["message"] = "The season is complete. Press Enter at Home to begin the next one."
         return
     if career.get("live_match"):
         app["page"] = "team_talk" if _needs_team_talk(career["live_match"]) else "match"
+        app["message"] = "Resumed saved match · clock, players and event record restored."
+        return
+    save_data = save_data if save_data is not None else app.get("_save_data", {})
+    adapter = (app.get("_adapter")
+               or (save_data.get("_career_adapter_state")
+                   if isinstance(save_data, dict) else None))
+    if isinstance(adapter, VersionedCareerSave) and adapter.spatial_match_json is not None:
+        app["page"] = "spatial_match"
+        session = resume_spatial_career_match(adapter)
+        app.setdefault("spatial_tactical_runtimes", tactical_runtimes(session, career))
+        app["message"] = "Resumed spatial match · clock, players and event record restored."
+        return
+    if app.get("match_engine", "legacy") == "spatial":
+        _begin_spatial_setup(career, app, save_data if isinstance(save_data, dict) else {})
         return
     prepare_week(career)
     fixture = current_fixture(career)
@@ -2783,8 +4393,16 @@ def _draw_page(win, body: ui.Rect, career: dict[str, Any] | None,
         _draw_table(win, body, career, app)
     elif page == "history" and career:
         _draw_history(win, body, career)
+    elif page == "spatial_report" and career:
+        _draw_spatial_report(win, body, career, app)
     elif page == "team_talk" and career and career.get("live_match"):
         _draw_team_talk(win, body, career, app)
+    elif page == "match_setup" and career:
+        _draw_match_setup(win, body, career, app)
+    elif page == "spatial_subs" and career:
+        _draw_spatial_substitutions(win, body, career, app)
+    elif page == "spatial_match" and career:
+        _draw_spatial_match(win, body, career, app)
     elif page == "match_subs" and career and career.get("live_match"):
         _draw_substitutions(win, body, career, app)
     elif page == "match" and career and career.get("live_match"):
@@ -3016,11 +4634,699 @@ def _handle_match_key(key: int, career: dict[str, Any], app: dict[str, Any]) -> 
     return True
 
 
+def _ensure_spatial_runtime_state(career: dict[str, Any],
+                                  session: CareerMatchSession) -> dict[str, Any]:
+    match_id = str(session.binding.match_id)
+    state = career.get("spatial_matchday_runtime_v1")
+    if not isinstance(state, dict) or state.get("match_id") != match_id:
+        state = {
+            "match_id": match_id,
+            "distance_m": {
+                str(player_id): 0.0 for club_id in (
+                    str(session.binding.home_club_id), str(session.binding.away_club_id))
+                for player_id in career["clubs"][club_id]["roster"]
+            },
+            "queued_substitution": None,
+        }
+        career["spatial_matchday_runtime_v1"] = state
+    distances = state.get("distance_m")
+    if not isinstance(distances, dict):
+        state["distance_m"] = {}
+    state.setdefault("queued_substitution", None)
+    return state
+
+
+def _spatial_user_team(session: CareerMatchSession, career: dict[str, Any]) -> str:
+    return "home" if str(session.binding.home_club_id) == career["club_id"] else "away"
+
+
+def _apply_queued_spatial_substitution(
+    career: dict[str, Any], session: CareerMatchSession,
+) -> tuple[str | None, bool]:
+    runtime_state = _ensure_spatial_runtime_state(career, session)
+    request = runtime_state.get("queued_substitution")
+    if not isinstance(request, dict):
+        return None, False
+    match = session.match
+    if match.phase not in (MatchPhase.RESTART_READY, MatchPhase.INTERVAL):
+        return None, False
+    team_id = str(request.get("team_id", ""))
+    if team_id not in ("home", "away"):
+        runtime_state["queued_substitution"] = None
+        return "Queued change cancelled: its match side is invalid.", False
+    tick = match.play.clock.tick
+    window_id = f"sub-window:{team_id}:{match.period.value}:{tick}"
+    roster = match.teams[team_id]
+    if (match.keeper_replacement_team_id == team_id
+            and len(roster.substitution_windows_used)
+                >= match.rules.substitution_windows_allowed
+            and roster.substitution_windows_used):
+        # The rules permit a dismissed goalkeeper to be replaced in an
+        # already-used window. Reusing its identity avoids making a forbidden
+        # new window while the engine's required-keeper gate is active.
+        window_id = roster.substitution_windows_used[-1]
+    outgoing_id = PlayerId(str(request.get("outgoing_id", "")))
+    incoming_id = PlayerId(str(request.get("incoming_id", "")))
+    try:
+        substitute(match, outgoing_id, incoming_id, window_id=window_id)
+    except (TypeError, ValueError) as exc:
+        runtime_state["queued_substitution"] = None
+        return f"Queued change could not be applied: {exc}", False
+    club_id = str(session.binding.home_club_id if team_id == "home"
+                  else session.binding.away_club_id)
+    lineup = career["clubs"][club_id].get("lineup", [])
+    career["clubs"][club_id]["lineup"] = [
+        str(incoming_id) if str(player_id) == str(outgoing_id) else str(player_id)
+        for player_id in lineup
+    ]
+    runtime_state["distance_m"].setdefault(str(incoming_id), 0.0)
+    runtime_state["queued_substitution"] = None
+    return (f"Change completed at a legal stoppage: {_player_name(career, incoming_id)} "
+            f"for {_player_name(career, outgoing_id)}."), True
+
+
+def _record_spatial_distance(career: dict[str, Any], session: CareerMatchSession,
+                             before: dict[PlayerId, tuple[Position2D, float]]) -> None:
+    state = _ensure_spatial_runtime_state(career, session)
+    distances = state["distance_m"]
+    after = session.match.play.players
+    step_seconds = session.match.rules.tick_duration_ms / 1000.0
+    for player_id, (position, speed_limit) in before.items():
+        current = after.get(player_id)
+        if current is None:
+            continue
+        distance = math.hypot(current.motion.position.x_m - position.x_m,
+                              current.motion.position.y_m - position.y_m)
+        # Restarts can reposition a player instantly. Those reset placements
+        # are not work performed and are excluded from the P09 exertion input.
+        if distance > speed_limit * step_seconds + 0.02:
+            continue
+        distances[str(player_id)] = float(distances.get(str(player_id), 0.0)) + distance
+
+
+def _queue_opponent_keeper_replacement(career: dict[str, Any],
+                                      session: CareerMatchSession) -> bool:
+    """Queue a visible, deterministic AI response to its dismissed keeper."""
+    team_id = session.match.keeper_replacement_team_id
+    if (team_id is None or team_id == _spatial_user_team(session, career)
+            or session.match.phase not in (MatchPhase.RESTART_READY, MatchPhase.INTERVAL)):
+        return False
+    roster = session.match.teams[team_id]
+    keepers = [profile for profile in roster.eligible_bench()
+               if profile.primary_role.value == "goalkeeper"]
+    outfield = [
+        (player_id, state) for player_id, state in session.match.play.players.items()
+        if state.team_id == team_id and state.profile.primary_role.value != "goalkeeper"
+    ]
+    if (not keepers or not outfield
+            or roster.substitutions_made >= session.match.rules.substitutions_allowed
+            or (len(roster.substitution_windows_used)
+                >= session.match.rules.substitution_windows_allowed
+                and not roster.substitution_windows_used)):
+        return False
+    outgoing_id, _outgoing = min(
+        outfield,
+        key=lambda pair: (
+            int(career.get("players", {}).get(str(pair[0]), {}).get("overall", 50)),
+            str(pair[0]),
+        ),
+    )
+    runtime_state = _ensure_spatial_runtime_state(career, session)
+    runtime_state["queued_substitution"] = {
+        "team_id": team_id,
+        "outgoing_id": str(outgoing_id),
+        "incoming_id": str(keepers[0].player_id),
+    }
+    return True
+
+
+def _advance_spatial_match(career: dict[str, Any], save_data: dict[str, Any],
+                           app: dict[str, Any], transitions: int) -> int:
+    if type(transitions) is not int or transitions <= 0:
+        raise ValueError("spatial match advancement requires positive transitions")
+    adapter = save_data.get("_career_adapter_state")
+    if not isinstance(adapter, VersionedCareerSave) or adapter.spatial_match_json is None:
+        raise ValueError("career has no active spatial match checkpoint")
+    session = resume_spatial_career_match(adapter)
+    _ensure_spatial_runtime_state(career, session)
+    runtimes = app.get("spatial_tactical_runtimes")
+    if not isinstance(runtimes, dict):
+        runtimes = tactical_runtimes(session, career)
+        app["spatial_tactical_runtimes"] = runtimes
+    advanced = 0
+    messages: list[str] = []
+    for _ in range(transitions):
+        if session.match.phase in (MatchPhase.FINISHED, MatchPhase.ABANDONED):
+            break
+        keeper_team = session.match.keeper_replacement_team_id
+        if keeper_team is not None:
+            runtime_state = _ensure_spatial_runtime_state(career, session)
+            if runtime_state.get("queued_substitution") is not None:
+                runtime_state["queued_substitution"] = None
+                messages.append(
+                    "An earlier queued change was canceled because the goalkeeper vacancy takes priority."
+                )
+            if keeper_team == _spatial_user_team(session, career):
+                app["spatial_watching"] = False
+                app["spatial_sub_focus"] = "in"
+                app["spatial_sub_out_index"] = 0
+                app["spatial_sub_in_index"] = 0
+                app["page"] = "spatial_subs"
+                messages.append("Match paused: select an eligible goalkeeper to continue.")
+                break
+            if not _queue_opponent_keeper_replacement(career, session):
+                messages.append("Opponent goalkeeper replacement is waiting for a legal option.")
+                break
+            message, changed = _apply_queued_spatial_substitution(career, session)
+            if changed:
+                runtimes = tactical_runtimes(session, career)
+                app["spatial_tactical_runtimes"] = runtimes
+                messages.append(message or "Opponent completed its required goalkeeper change.")
+            else:
+                if message:
+                    messages.append(f"Opponent goalkeeper change failed: {message}")
+                break
+        message, changed = _apply_queued_spatial_substitution(career, session)
+        if message:
+            messages.append(message)
+        if changed:
+            runtimes = tactical_runtimes(session, career)
+            app["spatial_tactical_runtimes"] = runtimes
+        before = {
+            player_id: (state.motion.position, state.motion.limits.maximum_speed_mps)
+            for player_id, state in session.match.play.players.items()
+        }
+        step_match(session.match, tactical_runtimes=runtimes)
+        _record_spatial_distance(career, session, before)
+        advanced += 1
+    updated = _adapter_with_spatial_checkpoint(adapter, session, career)
+    save_data["_career_adapter_state"] = updated
+    app["_adapter"] = updated
+    app["spatial_match_phase"] = session.match.phase
+    app["spatial_keeper_replacement"] = session.match.keeper_replacement_team_id
+    app["spatial_keeper_user_required"] = (
+        session.match.keeper_replacement_team_id == _spatial_user_team(session, career)
+        if session.match.keeper_replacement_team_id is not None else False
+    )
+    if (session.match.keeper_replacement_team_id is not None
+            and session.match.keeper_replacement_team_id == _spatial_user_team(session, career)):
+        app["spatial_watching"] = False
+        app["spatial_sub_focus"] = "in"
+        app["spatial_sub_out_index"] = 0
+        app["spatial_sub_in_index"] = 0
+        app["page"] = "spatial_subs"
+        if not messages or "select an eligible goalkeeper" not in messages[-1]:
+            messages.append("Match paused: select an eligible goalkeeper to continue.")
+    if messages:
+        app["message"] = messages[-1]
+    elif session.match.phase is MatchPhase.FINISHED:
+        app["spatial_watching"] = False
+        app["message"] = "Full time. Review the chronology, then settle the spatial match and round."
+    elif session.match.phase is MatchPhase.ABANDONED:
+        app["spatial_watching"] = False
+        app["message"] = (
+            "Match abandoned. The league has no abandonment result policy, so the score "
+            "and table were not settled; the saved chronology remains available."
+        )
+    elif session.match.keeper_replacement_team_id is not None:
+        app["message"] = "The opponent needs an eligible goalkeeper at a legal stoppage."
+    elif advanced:
+        app["message"] = f"Advanced {advanced} fixed simulation tick{'s' if advanced != 1 else ''}."
+    return advanced
+
+
+def _queue_spatial_substitution(career: dict[str, Any], save_data: dict[str, Any],
+                                app: dict[str, Any], outgoing_id: str,
+                                incoming_id: str) -> None:
+    adapter = save_data.get("_career_adapter_state")
+    if not isinstance(adapter, VersionedCareerSave) or adapter.spatial_match_json is None:
+        app["message"] = "No active spatial match is available for changes."
+        return
+    session = resume_spatial_career_match(adapter)
+    team_id = _spatial_user_team(session, career)
+    state = _ensure_spatial_runtime_state(career, session)
+    if state.get("queued_substitution") is not None:
+        app["message"] = "A change is already queued; let it apply or cancel it first."
+        return
+    if session.match.play.possession_id == PlayerId(outgoing_id):
+        app["message"] = "Choose a different player: the active ball carrier cannot leave at this stoppage."
+        return
+    state["queued_substitution"] = {
+        "team_id": team_id,
+        "outgoing_id": outgoing_id,
+        "incoming_id": incoming_id,
+    }
+    message, changed = _apply_queued_spatial_substitution(career, session)
+    if changed:
+        updated = _adapter_with_spatial_checkpoint(adapter, session, career)
+        save_data["_career_adapter_state"] = updated
+        app["_adapter"] = updated
+        app["spatial_tactical_runtimes"] = tactical_runtimes(session, career)
+    app["message"] = message or "Change queued for the next legal stoppage or interval."
+
+
+def _spatial_exertion_inputs(adapter: VersionedCareerSave,
+                             career: dict[str, Any],
+                             session: CareerMatchSession) -> dict[PlayerId, float] | None:
+    preparation = load_preparation_state(adapter)
+    if preparation is None:
+        return None
+    runtime_state = _ensure_spatial_runtime_state(career, session)
+    distance_by_player = runtime_state["distance_m"]
+    profiles = {}
+    snapshot = session.match.input_snapshot
+    for sheet in (snapshot.home_sheet, snapshot.away_sheet):
+        for player in sheet.starters:
+            profiles[player.profile.player_id] = player.profile
+        for player in sheet.substitutes:
+            profiles[player.player_id] = player
+    output: dict[PlayerId, float] = {}
+    for prepared in preparation.profiles:
+        player_id = prepared.player_id
+        minutes = session.match.minutes_played.get(player_id, 0.0)
+        if minutes <= 0:
+            output[player_id] = 0.0
+            continue
+        match_profile = profiles.get(player_id)
+        if match_profile is None:
+            raise ValueError(f"P09 workload is missing the match profile for {player_id}")
+        seconds = float(minutes) * 60.0
+        distance_limit = limits_from_profile(match_profile).maximum_speed_mps * seconds
+        if distance_limit <= 0:
+            raise ValueError(f"P09 workload has no positive movement capacity for {player_id}")
+        # Exertion is the measured simulated distance divided by that player's
+        # profile-limited maximum distance over their actual playing time.
+        output[player_id] = min(1.0, float(distance_by_player.get(str(player_id), 0.0))
+                                / distance_limit)
+    return output
+
+
+def _finish_spatial_round(career: dict[str, Any], spatial_match_id: str) -> int:
+    round_index = int(career["round"])
+    spatial_result = next((row for row in reversed(career.get("results", []))
+                           if isinstance(row, dict) and row.get("id") == spatial_match_id), None)
+    if not isinstance(spatial_result, dict):
+        raise ValueError("settled spatial result is missing from career history")
+    resolved = 1
+    for division in content.DIVISIONS:
+        for home, away in fixtures_for(career, division["id"])[round_index]:
+            if {home, away} == {spatial_result["home"], spatial_result["away"]}:
+                continue
+            already = any(isinstance(item, dict)
+                          and item.get("season") == career["season"]
+                          and item.get("round") == round_index + 1
+                          and (item.get("home"), item.get("away")) == (home, away)
+                          for item in career.get("results", []))
+            if already:
+                continue
+            other = simulate_match(
+                career, home, away,
+                _match_seed(career, round_index, home, away), round_index,
+            )
+            apply_match_result(career, other)
+            resolved += 1
+    career["round"] = round_index + 1
+    career["career_week"] = int(career.get("career_week", 0)) + 1
+    career["training_applied_round"] = -1
+    career["live_match"] = None
+    if career["round"] >= content.SEASON_ROUNDS:
+        finish_season(career)
+    else:
+        round_results = [item for item in career["results"]
+                         if item["season"] == career["season"]
+                         and item["round"] == career["round"]]
+        _news(career, content.NEWS_LINES["round_close"].format(
+            round=career["round"], count=len(round_results),
+            leader=club_by_id(_table_order(career)[0])["name"]), "digest")
+    return resolved
+
+
+def _settle_spatial_match(career: dict[str, Any], save_data: dict[str, Any],
+                          app: dict[str, Any]) -> None:
+    adapter = save_data.get("_career_adapter_state")
+    if not isinstance(adapter, VersionedCareerSave) or adapter.spatial_match_json is None:
+        app["message"] = "No spatial match is awaiting settlement."
+        return
+    session = resume_spatial_career_match(adapter)
+    if session.match.phase is not MatchPhase.FINISHED:
+        app["message"] = "Finish the match in the spatial engine before settling the result."
+        return
+    try:
+        exertion = _spatial_exertion_inputs(adapter, career, session)
+        updated, settled = settle_spatial_career_match(
+            adapter, session,
+            exertion_by_player=exertion if exertion is not None else None,
+        )
+        if not settled:
+            app["message"] = "This spatial match was already settled."
+            return
+        match_id = str(session.binding.match_id)
+        career_snapshot = updated.legacy_save["career"]
+        career.clear()
+        career.update(career_snapshot)
+        career.pop("spatial_matchday_runtime_v1", None)
+        count = _finish_spatial_round(career, match_id)
+        updated_payload = updated.legacy_save
+        updated_payload["career"] = copy.deepcopy(career)
+        updated = replace(updated, legacy_save_json=json.dumps(
+            updated_payload, ensure_ascii=False, allow_nan=False,
+            sort_keys=True, separators=(",", ":")))
+        save_data["_career_adapter_state"] = updated
+        app["_adapter"] = updated
+        app["page"] = "home"
+        app["nav_index"] = 0
+        app["spatial_watching"] = False
+        app["message"] = f"Spatial result saved · round closed · {count} fixtures resolved."
+    except (KeyError, TypeError, ValueError, RuntimeError) as exc:
+        app["message"] = f"Settlement needs attention: {exc}"
+
+
+def _handle_match_setup_key(key: int, career: dict[str, Any],
+                            save_data: dict[str, Any], app: dict[str, Any]) -> bool:
+    setup = app.get("match_setup")
+    if not isinstance(setup, dict):
+        app["page"] = "home"
+        return True
+    slots = formation_slots(setup["shape"])
+    selected = int(clamp(setup.get("selected_slot", 0), 0, len(slots) - 1))
+    if key in (27, ord("q"), ord("Q")):
+        app["page"] = "home"
+        app["message"] = "Matchday setup paused. The current league fixture is unchanged."
+    elif key in (curses.KEY_UP, ord("k")):
+        setup["selected_slot"] = max(0, selected - 1)
+    elif key in (curses.KEY_DOWN, ord("j")):
+        setup["selected_slot"] = min(len(slots) - 1, selected + 1)
+    elif key in (ord("f"), ord("F")):
+        shape = _cycle_choice(setup["shape"], tuple(FORMATION_SLOT_IDS))
+        adapter = save_data.get("_career_adapter_state")
+        try:
+            profiles, unavailable = _prepared_match_profiles(
+                adapter if isinstance(adapter, VersionedCareerSave)
+                else migrate_v2_save({"version": 2, "career": career}),
+                career, setup["club_id"])
+            del profiles
+            lineup = _matchday_lineup(career, setup["club_id"], shape, unavailable)
+            if len(lineup) != 11:
+                app["message"] = "That shape has fewer than 11 selectable players."
+            else:
+                positions = legal_formation_positions(
+                    setup["team_id"], default_formation_positions(shape))
+                setup.update(shape=shape, lineup_ids=lineup, positions=positions,
+                             selected_slot=0)
+                app["message"] = f"Formation set to {shape}; place its players before kickoff."
+        except (KeyError, TypeError, ValueError) as exc:
+            app["message"] = f"Formation could not be changed: {exc}"
+    elif key in (ord("t"), ord("T")):
+        styles = tuple(key for key, _label in MATCHDAY_PROFILE_STYLES)
+        setup["style_id"] = _cycle_choice(setup["style_id"], styles)
+        app["message"] = f"Match plan: {dict(MATCHDAY_PROFILE_STYLES)[setup['style_id']]}"
+    elif key in tuple(ord(symbol) for symbol in "1234567890A"):
+        symbol_index = "1234567890A".index(chr(key))
+        if symbol_index < len(setup["lineup_ids"]):
+            setup["selected_slot"] = symbol_index
+            player_id = setup["lineup_ids"][symbol_index]
+            app["message"] = f"Selected {career['players'][player_id]['name']} from your XI."
+    elif key in (ord("w"), ord("W"), ord("a"), ord("A"),
+                 ord("s"), ord("S"), ord("d"), ord("D")):
+        slot = slots[selected]
+        current = setup["positions"][slot]
+        dx = -2.0 if key in (ord("a"), ord("A")) else 2.0 if key in (ord("d"), ord("D")) else 0.0
+        dy = -2.0 if key in (ord("w"), ord("W")) else 2.0 if key in (ord("s"), ord("S")) else 0.0
+        proposed = dict(setup["positions"])
+        proposed[slot] = Position2D(current.x_m + dx, current.y_m + dy)
+        setup["positions"] = legal_formation_positions(setup["team_id"], proposed)
+        app["message"] = f"{career['players'][setup['lineup_ids'][selected]]['name']} placed at " \
+                          f"{setup['positions'][slot].x_m:.1f}, {setup['positions'][slot].y_m:.1f}m."
+    elif key in (10, 13, curses.KEY_ENTER):
+        _start_spatial_match(save_data, career, app)
+    return True
+
+
+def _handle_spatial_subs_key(key: int, career: dict[str, Any],
+                             save_data: dict[str, Any], app: dict[str, Any]) -> bool:
+    adapter = save_data.get("_career_adapter_state")
+    if not isinstance(adapter, VersionedCareerSave) or adapter.spatial_match_json is None:
+        app["page"] = "home"
+        return True
+    session = resume_spatial_career_match(adapter)
+    team_id = _spatial_user_team(session, career)
+    roster = session.match.teams[team_id]
+    active_ids = [player_id for player_id in roster.starting_ids
+                  if player_id in session.match.play.players]
+    active_ids.extend(sorted((player_id for player_id, state in session.match.play.players.items()
+                              if state.team_id == team_id and player_id not in active_ids),
+                             key=str))
+    bench = list(roster.eligible_bench())
+    keeper_required = session.match.keeper_replacement_team_id == team_id
+    if keeper_required:
+        bench = [profile for profile in bench if profile.primary_role.value == "goalkeeper"]
+    focus = app.get("spatial_sub_focus", "out")
+    if focus not in ("out", "in"):
+        focus = "in" if keeper_required else "out"
+        app["spatial_sub_focus"] = focus
+    out_index = int(clamp(app.get("spatial_sub_out_index", 0), 0,
+                          max(0, len(active_ids) - 1)))
+    in_index = int(clamp(app.get("spatial_sub_in_index", 0), 0,
+                         max(0, len(bench) - 1)))
+    if key in (27, ord("q"), ord("Q")):
+        app["page"] = "spatial_match"
+    elif key == 9:
+        app["spatial_sub_focus"] = "in" if focus == "out" else "out"
+    elif key in (curses.KEY_UP, ord("k")):
+        if focus == "in":
+            app["spatial_sub_in_index"] = max(0, in_index - 1)
+        else:
+            app["spatial_sub_out_index"] = max(0, out_index - 1)
+    elif key in (curses.KEY_DOWN, ord("j")):
+        if focus == "in":
+            app["spatial_sub_in_index"] = min(max(0, len(bench) - 1), in_index + 1)
+        else:
+            app["spatial_sub_out_index"] = min(max(0, len(active_ids) - 1), out_index + 1)
+    elif key in (10, 13, curses.KEY_ENTER):
+        if not active_ids or not bench:
+            app["message"] = "No eligible player pair is available."
+        else:
+            outgoing_id = active_ids[out_index]
+            if keeper_required and outgoing_id == session.match.play.possession_id:
+                app["message"] = (
+                    "Choose another outfield player: the active ball carrier cannot leave now."
+                )
+                app["page"] = "spatial_subs"
+            else:
+                _queue_spatial_substitution(
+                    career, save_data, app,
+                    str(outgoing_id), str(bench[in_index].player_id),
+                )
+                current_session = _spatial_session(save_data)
+                if (keeper_required and current_session is not None
+                        and current_session.match.keeper_replacement_team_id == team_id):
+                    app["page"] = "spatial_subs"
+                else:
+                    app["page"] = "spatial_match"
+    return True
+
+
+def _handle_spatial_match_key(key: int, career: dict[str, Any],
+                              save_data: dict[str, Any], app: dict[str, Any]) -> bool:
+    adapter = save_data.get("_career_adapter_state")
+    if not isinstance(adapter, VersionedCareerSave) or adapter.spatial_match_json is None:
+        app["page"] = "home"
+        return True
+    session = resume_spatial_career_match(adapter)
+    match = session.match
+    app["spatial_match_phase"] = match.phase
+    app["spatial_keeper_replacement"] = match.keeper_replacement_team_id
+    app["spatial_keeper_user_required"] = (
+        match.keeper_replacement_team_id == _spatial_user_team(session, career)
+        if match.keeper_replacement_team_id is not None else False
+    )
+    if key == -1:
+        if app.get("spatial_watching") and match.phase not in (
+                MatchPhase.FINISHED, MatchPhase.ABANDONED):
+            _advance_spatial_match(
+                career, save_data, app,
+                int(app.get("spatial_watch_ticks", 25)))
+        return True
+    if key == 9:
+        views = SPATIAL_MATCH_VIEWS
+        view = app.get("match_view", "live")
+        app["match_view"] = views[(views.index(view) + 1) % len(views)] if view in views else "live"
+    elif app.get("match_view") == "events" and key in (ord("m"), ord("M")):
+        app["show_movement_events"] = not app.get("show_movement_events", False)
+        visible = (list(match.events) if app["show_movement_events"]
+                   else _key_match_events(match.events))
+        app["event_index"] = max(0, len(visible) - 1)
+        app["message"] = ("Showing every movement event. M returns to the key-event chronology."
+                          if app["show_movement_events"] else
+                          "Movement detail is hidden; all event data remains in the match record.")
+    elif app.get("match_view") == "events" and key in (curses.KEY_UP, ord("k")):
+        visible = (list(match.events) if app.get("show_movement_events", False)
+                   else _key_match_events(match.events))
+        app["event_index"] = max(0, int(app.get("event_index", len(visible) - 1)) - 1)
+    elif app.get("match_view") == "events" and key in (curses.KEY_DOWN, ord("j")):
+        visible = (list(match.events) if app.get("show_movement_events", False)
+                   else _key_match_events(match.events))
+        app["event_index"] = min(max(0, len(visible) - 1),
+                                  int(app.get("event_index", len(visible) - 1)) + 1)
+    elif (key in (curses.KEY_UP, ord("k"))
+          and app.get("match_view") in ("stats", "players")):
+        app["spatial_roster_scroll"] = max(
+            0, int(app.get("spatial_roster_scroll", 0)) - 1)
+    elif (key in (curses.KEY_DOWN, ord("j"))
+          and app.get("match_view") in ("stats", "players")):
+        app["spatial_roster_scroll"] = int(app.get("spatial_roster_scroll", 0)) + 1
+    elif app.get("match_view") in ("live", "pitch") and key in (ord("["), ord("]")):
+        cycle_bounds = (app.get("spatial_pitch_bounds")
+                        if app.get("match_view") == "pitch"
+                        and app.get("spatial_pitch_zoom") else None)
+        player_ids = _spatial_player_cycle_ids(
+            match, str(app.get("spatial_selected_player_id", "")),
+            app.get("spatial_pitch_viewport"), cycle_bounds,
+        )
+        if player_ids:
+            selected = str(app.get("spatial_selected_player_id", ""))
+            current = next((index for index, player_id in enumerate(player_ids)
+                            if str(player_id) == selected),
+                           -1 if key == ord("]") else 0)
+            delta = 1 if key == ord("]") else -1
+            player_id = player_ids[(current + delta) % len(player_ids)]
+            app["spatial_selected_player_id"] = str(player_id)
+            app["spatial_pitch_focus_ball"] = False
+            profile = match.play.players[player_id].profile
+            app["message"] = (f"Selected {profile.display_name} · "
+                              f"{profile.primary_role.value.replace('_', ' ')}.")
+    elif (app.get("match_view") in ("live", "pitch") and key == ord("B")):
+        opened_from_live = app.get("match_view") == "live"
+        app["match_view"] = "pitch"
+        app["spatial_pitch_zoom"] = True
+        selected_id = str(app.get("spatial_selected_player_id", ""))
+        has_selected_player = any(
+            str(player_id) == selected_id for player_id in match.play.players)
+        if opened_from_live:
+            app["spatial_pitch_focus_ball"] = True
+        elif app.get("spatial_pitch_focus_ball") and has_selected_player:
+            app["spatial_pitch_focus_ball"] = False
+        elif app.get("spatial_pitch_focus_ball") and not has_selected_player:
+            app["message"] = "No selected player; close pitch view stays on the live ball."
+            return True
+        else:
+            app["spatial_pitch_focus_ball"] = True
+        if app.get("spatial_pitch_focus_ball"):
+            app["message"] = "Close pitch view follows the live ball; B returns to the selected player."
+        else:
+            profile = next((state.profile for player_id, state in match.play.players.items()
+                            if str(player_id) == selected_id), None)
+            name = profile.display_name if profile else "selected player"
+            app["message"] = f"Close pitch view follows {name}; B returns to the live ball."
+    elif (app.get("match_view") == "live"
+          and key in (ord("z"), ord("Z"))):
+        app["match_view"] = "pitch"
+        app["spatial_pitch_zoom"] = True
+        app["spatial_pitch_focus_ball"] = False
+        selected_id = str(app.get("spatial_selected_player_id", ""))
+        focus_target = ("selected player" if any(
+            str(player_id) == selected_id for player_id in match.play.players
+        ) else "live ball")
+        app["message"] = (f"Close pitch view follows the {focus_target}. "
+                           "Z restores the full pitch.")
+    elif (app.get("match_view") == "pitch"
+          and key in (ord("z"), ord("Z"))):
+        app["spatial_pitch_zoom"] = not app.get("spatial_pitch_zoom", False)
+        selected_id = str(app.get("spatial_selected_player_id", ""))
+        focus_target = ("live ball" if app.get("spatial_pitch_focus_ball") else
+                        "selected player" if any(
+            str(player_id) == selected_id for player_id in match.play.players
+        ) else "live ball")
+        app["message"] = (
+            f"Close pitch view follows the {focus_target}; Z restores the full pitch."
+            if app["spatial_pitch_zoom"] else
+            f"Full pitch restored; Z follows the {focus_target} again.")
+    elif match.phase is MatchPhase.FINISHED:
+        if key in (10, 13, curses.KEY_ENTER):
+            _settle_spatial_match(career, save_data, app)
+        elif key == 27:
+            app["page"] = "home"
+            app["message"] = "Full-time match and event record remain saved. M reopens the report."
+        return True
+    elif match.phase is MatchPhase.ABANDONED:
+        app["spatial_watching"] = False
+        if key == 27:
+            app["page"] = "home"
+            app["message"] = (
+                "Abandoned match saved without a league result; a competition policy is needed "
+                "before the round can advance."
+            )
+        else:
+            app["message"] = "This match is abandoned. Review its chronology or Esc to Home."
+        return True
+    elif key in (ord(" "),):
+        app["spatial_watching"] = not app.get("spatial_watching", False)
+        app["message"] = ("Match watch resumed." if app["spatial_watching"]
+                          else "Match paused; the spatial checkpoint is saved.")
+    elif key in (ord("."), ord(">")):
+        app["spatial_watching"] = False
+        _advance_spatial_match(career, save_data, app, 1)
+    elif key in (ord("-"), ord("+"), ord("=")):
+        speeds = (10, 25, 50, 100, 250)
+        current = int(app.get("spatial_watch_ticks", 25))
+        current_index = min(range(len(speeds)), key=lambda index: abs(speeds[index] - current))
+        next_index = min(len(speeds) - 1, current_index + 1) if key != ord("-") \
+            else max(0, current_index - 1)
+        app["spatial_watch_ticks"] = speeds[next_index]
+        app["message"] = f"Watch speed: {speeds[next_index]} simulation ticks per screen update."
+    elif key in (ord("s"), ord("S")):
+        app["spatial_sub_out_index"] = 0
+        app["spatial_sub_in_index"] = 0
+        app["spatial_sub_focus"] = "in" if app["spatial_keeper_user_required"] else "out"
+        app["page"] = "spatial_subs"
+    elif key in (ord("q"), ord("Q")):
+        app["spatial_watching"] = False
+        advanced = _advance_spatial_match(career, save_data, app, 500_000)
+        current = resume_spatial_career_match(save_data["_career_adapter_state"]).match
+        if current.phase is MatchPhase.FINISHED:
+            app["message"] = (
+                f"Quick-sim reached full time after {advanced} transitions; "
+                "review the chronology, then settle the round."
+            )
+        elif current.phase is not MatchPhase.ABANDONED and current.keeper_replacement_team_id is None:
+            app["message"] = f"Quick-sim stopped after {advanced} transitions; the match is still in progress."
+    elif key == 27:
+        app["spatial_watching"] = False
+        app["page"] = "home"
+        app["message"] = "Match paused. M returns to the saved live pitch and clock."
+    elif app.get("match_view") in ("live", "pitch") and 0 <= key < 128:
+        symbol = chr(key)
+        symbols = _spatial_player_symbols(match)
+        selected_id = next((player_id for player_id in match.play.players
+                            if symbols.get(str(player_id)) == symbol), None)
+        if selected_id is not None:
+            app["spatial_selected_player_id"] = str(selected_id)
+            app["spatial_pitch_focus_ball"] = False
+            profile = match.play.players[selected_id].profile
+            app["message"] = (f"Selected {profile.display_name} · "
+                              f"{profile.primary_role.value.replace('_', ' ')}.")
+    return True
+
+
 def _route_key(key: int, career: dict[str, Any] | None,
                save_data: dict[str, Any], app: dict[str, Any]) -> bool:
     """Handle one key; return False only when the player exits cleanly."""
     page = app.get("page", "home")
-    if key in (curses.KEY_RESIZE, -1):
+    if key == curses.KEY_RESIZE:
+        return True
+    if key == -1 and not (page == "spatial_match" and app.get("spatial_watching")):
+        return True
+    if page == "match_setup" and career:
+        _handle_match_setup_key(key, career, save_data, app)
+        _persist(save_data, career)
+        return True
+    if page == "spatial_match" and career:
+        _handle_spatial_match_key(key, career, save_data, app)
+        _persist(save_data, career)
+        return True
+    if page == "spatial_subs" and career:
+        _handle_spatial_subs_key(key, career, save_data, app)
+        _persist(save_data, career)
         return True
     if page == "team_talk" and career:
         _handle_team_talk_key(key, career, app)
@@ -3036,6 +5342,24 @@ def _route_key(key: int, career: dict[str, Any] | None,
         return True
     if page == "offer" and career:
         _handle_offer_key(key, career, app)
+        _persist(save_data, career)
+        return True
+    if page == "spatial_report":
+        if key in (curses.KEY_UP, ord("k")):
+            app["spatial_report_scroll"] = max(
+                0, int(app.get("spatial_report_scroll", 0)) - 1)
+        elif key in (curses.KEY_DOWN, ord("j")):
+            app["spatial_report_scroll"] = int(app.get("spatial_report_scroll", 0)) + 1
+        _persist(save_data, career)
+        return True
+    if page == "home" and key in (ord("r"), ord("R")) and career:
+        if _latest_managed_spatial_result(career):
+            app["page"] = "spatial_report"
+            app["nav_index"] = 0
+            app["spatial_report_scroll"] = 0
+            app["message"] = "Last spatial match report · score, scoring lineage and playing time."
+        else:
+            app["message"] = "No settled spatial match report is saved in this career yet."
         _persist(save_data, career)
         return True
     if page == "career_select":
@@ -3090,7 +5414,7 @@ def _route_key(key: int, career: dict[str, Any] | None,
                           0, MATCH_NAV_INDEX))
         current = _page_nav_index(page)
         if focus == MATCH_NAV_INDEX and career:
-            _start_matchday(career, app)
+            _start_matchday(career, app, save_data)
             _persist(save_data, career)
             return True
         if focus != current and focus < len(SECTION_PAGES):
@@ -3113,7 +5437,7 @@ def _route_key(key: int, career: dict[str, Any] | None,
         _advance_season_from_ui(career, app)
     elif key in (ord("m"), ord("M")) and career:
         app["nav_index"] = MATCH_NAV_INDEX
-        _start_matchday(career, app)
+        _start_matchday(career, app, save_data)
         if app.get("page") in SECTION_PAGES:
             app["nav_index"] = _page_nav_index(app["page"])
     elif page == "squad" and career:
@@ -3206,6 +5530,8 @@ def _create_selected_career(save_data: dict[str, Any], app: dict[str, Any]) -> b
     club_id = content.CLUBS[app.get("club_index", 0)]["id"]
     seed = random.SystemRandom().randrange(1, 2_000_000_000)
     career = new_career(club_id, seed)
+    save_data.pop("_career_adapter_state", None)
+    app.pop("_adapter", None)
     save_data["career"] = career
     save_data["version"] = 2
     save_data["_summary"] = _career_summary(career)
@@ -3227,6 +5553,9 @@ def _run(stdscr) -> int:
     stdscr.keypad(True)
     save_data = migrate_save(ts.load(SAVE_DEFAULTS))
     career = save_data.get("career") if isinstance(save_data.get("career"), dict) else None
+    match_engine = os.environ.get("TOUCHLINE_MATCH_ENGINE", "spatial").strip().lower()
+    if match_engine not in ("spatial", "legacy"):
+        match_engine = "spatial"
     if career:
         _ensure_player_ids(career)
         for cid, state in career.get("clubs", {}).items():
@@ -3235,12 +5564,30 @@ def _run(stdscr) -> int:
     app: dict[str, Any] = {
         "page": ("team_talk" if career and _needs_team_talk(career.get("live_match"))
                  else "match" if career and career.get("live_match") else
+                 "spatial_match" if career and _spatial_session(save_data) else
                  "home" if career else "career_select"),
-        "nav_index": (MATCH_NAV_INDEX if career and career.get("live_match") else 0),
+        "nav_index": (MATCH_NAV_INDEX if career and
+                      (career.get("live_match") or _spatial_session(save_data)) else 0),
         "club_index": 0, "squad_index": 0, "market_index": 0,
         "match_view": "live",
+        "match_engine": match_engine,
+        "_adapter": save_data.get("_career_adapter_state"),
+        "_save_data": save_data,
+        "spatial_watching": False,
+        "spatial_watch_ticks": 25,
         "message": "Choose a club and build a football life around its people.",
     }
+    spatial_session = _spatial_session(save_data)
+    if spatial_session is not None:
+        app["spatial_tactical_runtimes"] = tactical_runtimes(spatial_session, career or {})
+        app["spatial_match_phase"] = spatial_session.match.phase
+        app["spatial_keeper_replacement"] = spatial_session.match.keeper_replacement_team_id
+        app["spatial_keeper_user_required"] = (
+            spatial_session.match.keeper_replacement_team_id
+            == _spatial_user_team(spatial_session, career)
+            if career and spatial_session.match.keeper_replacement_team_id is not None
+            else False
+        )
     app["career"] = career
     app["data"] = save_data
     win, screen = ts.tv_curses(stdscr, "Ekse Slaan Ball")
@@ -3248,6 +5595,8 @@ def _run(stdscr) -> int:
     win.clear()
     win.keypad(True)
     while True:
+        win.timeout(50 if app.get("page") == "spatial_match"
+                    and app.get("spatial_watching") else -1)
         body = _draw_frame(win, career, app)
         _draw_page(win, body, career, app)
         win.noutrefresh()

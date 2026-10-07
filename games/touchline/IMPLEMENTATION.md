@@ -6,6 +6,8 @@
 
 Read [DESIGN.md](DESIGN.md) for product behavior and [ROADMAP.md](ROADMAP.md) for milestone acceptance. This document specifies how to reach those outcomes without turning the whole design into one rewrite. Package IDs are stable; update status and evidence after each delivery. Do not mark progress from the presence of scaffolding alone.
 
+Executor entry point: [LUNA_HANDOFF.md](LUNA_HANDOFF.md). Concrete shared records and acceptance cases: [ENGINEERING_CONTRACTS.md](ENGINEERING_CONTRACTS.md). Those documents clarify this plan; they do not certify implementation or make all packages part of one assignment.
+
 ## 1. Execution decisions
 
 1. Preserve the current playable career while a new match engine is developed under game-local modules. Experimental scenarios use separate save locations and cannot overwrite careers.
@@ -180,6 +182,8 @@ Leadership combines demonstrated conduct, communication, role opportunities and 
 
 Mentorship records include participants, formal/informal origin, focus areas, start/end dates, meaningful contacts, demonstrated examples, trust/compatibility evidence and reviews. Let the user propose pairs/groups and focuses; staff and players supply informed feedback rather than a hidden perfect-pair score. Tactical/positional mentoring feeds relevant learning and practice; personal mentoring feeds the experience/appraisal model. Bound mentor capacity and prevent the same contact being counted as several independent lessons. Support selective learning, unsuccessful pairings, changing mentors, continued guidance during injury where feasible and reduced contact after transfers.
 
+Include autonomous friendship/mentorship proposals through shared-context events, explicit offer/response states and capacity checks. A manager assignment is not required. Process confirmed separation/reunion through the same event/appraisal path used by other personal experiences, with once-only identity and retained cross-club relationships. See the detailed state transitions and scenarios in ENGINEERING_CONTRACTS.md.
+
 Build the following test stories with synthetic players; they are scenario inputs, not guaranteed narratives:
 
 | Scenario | Required observation |
@@ -192,6 +196,8 @@ Build the following test stories with synthetic players; they are scenario input
 | New academy arrival joins after original manager leaves | Retained people/routines can transmit culture; departures and new priorities can also change it. |
 | Formerly unreliable player improves | Updated observations can overturn an old scouting reputation; historical reports are retained. |
 | Repeated fines, praise or repeated processing of an event | No exploitable instant personality improvement or duplicate state change. |
+| Unassigned senior player offers help | A shared-context event can trigger a proposal and voluntary acceptance without a manager action; no contact means no developmental lesson. |
+| A close friend leaves or joins | Only relevant people receive contextual reactions; a reunion can strongly improve belonging without changing technical ability, creating instant tactical chemistry or stacking repeated bonuses. |
 
 ## 6. Data, persistence and compatibility
 
@@ -226,8 +232,9 @@ These are engineering goals, not observed capabilities or promises about every t
 ## 8. First implementation handoff
 
 ```text
-Work in games/touchline only. Read docs/GAME-BRIEF.md and the game's DESIGN.md,
-ROADMAP.md and IMPLEMENTATION.md. Execute P00 only: inspect the current tree,
+Work in games/touchline only. Read LUNA_HANDOFF.md and ENGINEERING_CONTRACTS.md
+there, docs/GAME-BRIEF.md, and the game's DESIGN.md, ROADMAP.md and
+IMPLEMENTATION.md. Execute P00 only: inspect the current tree,
 record the game-local module exception, establish reproducible existing-game
 tests/PTY evidence and benchmarks, and document baseline integrity gaps and
 the uncommitted shared UI dependency. Use isolated synthetic saves and preserve

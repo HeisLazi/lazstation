@@ -3,6 +3,8 @@
 **Planning baseline:** 24 September 2026. All milestones below are planned, not delivered.
 Read [DESIGN.md](DESIGN.md) first. This roadmap states milestone outcomes; [IMPLEMENTATION.md](IMPLEMENTATION.md) defines the engineering packages, dependencies and initial handoff. These documents record future work; this planning change contains no gameplay edits.
 
+For execution, start with [LUNA_HANDOFF.md](LUNA_HANDOFF.md) and use [ENGINEERING_CONTRACTS.md](ENGINEERING_CONTRACTS.md) to remove ambiguity about records, state changes and observable acceptance cases.
+
 ## Order and working rules
 
 Build depth on a small dataset before expanding leagues. Each milestone supplies a usable, inspectable result and evidence for the next. Preserve the current playable game during replacement; prototype code must not silently become the production engine.
@@ -89,6 +91,7 @@ Use headless verification for rules and `tools/ptytest.py` at 80×24 and 110×30
 - Test preferences for particular leagues/places and lifestyle features without treating whole countries as one culture or assigning preferences from nationality.
 - Introduce experience-driven habit/value development, earned leadership and compatible mentorship; preserve distinct temperaments and permit non-change or alternative paths.
 - Give mentoring explicit focuses, formal/informal relationships, contact limits and progress reviews; distinguish learning football decisions from copying a mentor's personality or ability.
+- Implement player-initiated friendship and mentoring, accepted/declined offers, contact capacity, separation and reunions. Benefits require existing relationships and cannot be farmed through repeated transfers.
 
 **Gate:** the same recruitment case follows different legitimate paths for head coach and manager. Delegation never expands authority. A sporting director can propose an alternative with reasons. A finance lead can flag future risk. A tiny club can still complete a season with combined staff roles.
 
@@ -132,6 +135,7 @@ Use headless verification for rules and `tools/ptytest.py` at 80×24 and 110×30
 | Player distinction | Controlled changes to anticipation, acceleration, touch or passing affect different stages/actions rather than one overall success multiplier. |
 | Personality and autonomy | Stable preferences, personal history and current context shape different responses while preserving credible improvisation and the player's technical profile. |
 | Personality development | Repeated meaningful experiences can change habits and values at credible rates; age, captaincy, mentorship assignment and punishment cannot guarantee transformation. |
+| Autonomous relationships | Players form bonds and offer help without manager assignment; actual contact, consent, history and capacity govern development; confirmed departures/reunions affect related people once. |
 | Transfer adaptation | Fee, expectations, role, location and relationships influence separate transition processes; lower fees never guarantee lower pressure or improved ability. |
 | Personal events | The same event can have different or negligible effects; leave updates availability; repeated purchases/support cannot farm performance bonuses. |
 | Coaching environment | A known policy can attract or deter a signing; consistency and exceptions matter; neither strictness nor leniency dominates every squad. |

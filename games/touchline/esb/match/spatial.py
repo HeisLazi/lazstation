@@ -37,6 +37,7 @@ class MotionLimits:
     maximum_speed_mps: float
     acceleration_mps2: float
     turn_rate_rps: float = 4.2
+    condition_factor: float = 1.0
 
     def __post_init__(self) -> None:
         for label, value in (
@@ -46,10 +47,45 @@ class MotionLimits:
         ):
             if type(value) not in (int, float) or not math.isfinite(value) or value <= 0:
                 raise ValueError(f"{label} must be positive and finite")
+        if (
+            type(self.condition_factor) not in (int, float)
+            or not math.isfinite(self.condition_factor)
+            or not 0 < self.condition_factor <= 1
+        ):
+            raise ValueError("condition factor must be finite and in (0, 1]")
 
 
-def limits_from_profile(profile: PlayerProfile, *, turn_rate_rps: float = 4.2) -> MotionLimits:
-    """Read explicit speed/acceleration measurements; never infer an overall rating."""
+@dataclass(frozen=True)
+class MotionConditionPolicy:
+    """Provisional retention at low readiness and full fatigue, exposed as inputs."""
+
+    minimum_readiness_retention: float = 0.80
+    maximum_fatigue_reduction: float = 0.25
+
+    def __post_init__(self) -> None:
+        for label, value in (
+            ("minimum readiness retention", self.minimum_readiness_retention),
+            ("maximum fatigue reduction", self.maximum_fatigue_reduction),
+        ):
+            if type(value) not in (int, float) or not math.isfinite(value) or not 0 <= value < 1:
+                raise ValueError(f"{label} must be finite and in [0, 1)")
+
+
+STANDARD_MOTION_CONDITION_POLICY = MotionConditionPolicy()
+
+
+def limits_from_profile(
+    profile: PlayerProfile,
+    *,
+    turn_rate_rps: float = 4.2,
+    condition_policy: MotionConditionPolicy = STANDARD_MOTION_CONDITION_POLICY,
+) -> MotionLimits:
+    """Scale explicit speed/acceleration by the profile's current condition.
+
+    At full readiness and zero fatigue, authored measurements are unchanged.
+    The default provisional model retains 80% capacity at zero readiness and
+    applies at most a further 25% reduction at full accumulated fatigue.
+    """
 
     if not isinstance(profile, PlayerProfile):
         raise TypeError("motion limits require a PlayerProfile")
@@ -60,7 +96,24 @@ def limits_from_profile(profile: PlayerProfile, *, turn_rate_rps: float = 4.2) -
         raise ValueError(f"{profile.display_name} requires an explicit maximum_speed measurement in m/s")
     if acceleration is None or acceleration.unit != "m/s^2":
         raise ValueError(f"{profile.display_name} requires an explicit acceleration measurement in m/s^2")
-    return MotionLimits(maximum_speed.value, acceleration.value, turn_rate_rps)
+    if not isinstance(condition_policy, MotionConditionPolicy):
+        raise TypeError("motion conditioning requires an explicit MotionConditionPolicy")
+    readiness_factor = (
+        condition_policy.minimum_readiness_retention
+        + (1.0 - condition_policy.minimum_readiness_retention)
+        * profile.readiness.match_readiness
+    )
+    fatigue_factor = 1.0 - (
+        condition_policy.maximum_fatigue_reduction
+        * profile.readiness.accumulated_fatigue
+    )
+    factor = readiness_factor * fatigue_factor
+    return MotionLimits(
+        maximum_speed.value * factor,
+        acceleration.value * factor,
+        turn_rate_rps,
+        factor,
+    )
 
 
 @dataclass(frozen=True)
@@ -224,10 +277,12 @@ def resolve_movement_snapshot(
 
 
 __all__ = [
+    "MotionConditionPolicy",
     "MotionLimits",
     "MovementIntent",
     "Pitch",
     "PlayerMotion",
+    "STANDARD_MOTION_CONDITION_POLICY",
     "advance_player",
     "limits_from_profile",
     "resolve_movement_snapshot",

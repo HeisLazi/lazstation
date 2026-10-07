@@ -1,0 +1,37 @@
+{
+  "timeout": 12,
+  "wait_before": 0.2,
+  "events": [
+    {"type": "key", "key": "j"},
+    {"type": "key", "key": "j"},
+    {"type": "key", "key": "ENTER"},
+    {"type": "snapshot", "name": "editor_start"},
+    {"type": "key", "key": "l"},
+    {"type": "key", "key": "i"},
+    {"type": "key", "key": "s"},
+    {"type": "key", "key": "o"},
+    {"type": "snapshot", "name": "editor_saved_loaded"},
+    {"type": "key", "key": "r"},
+    {"type": "snapshot", "name": "replay_start"},
+    {"type": "key", "key": "."},
+    {"type": "snapshot", "name": "replay_step"},
+    {"type": "key", "key": " "},
+    {"type": "wait", "seconds": 0.4},
+    {"type": "key", "key": " "},
+    {"type": "snapshot", "name": "replay_paused"},
+    {"type": "key", "key": "["},
+    {"type": "snapshot", "name": "replay_event_selected"},
+    {"type": "key", "key": "q"}
+  ],
+  "assertions": {
+    "exit_code": 0,
+    "output_contains": ["Plan saved", "REPLAY", "recorded state tick"],
+    "frames": {
+      "editor_start": {"contains": ["FORMATION + INSTRUCTIONS", "Instruction:", "retreat"]},
+      "editor_saved_loaded": {"contains": ["Plan loaded", "Selected LB", "28.0m"]},
+      "replay_start": {"contains": ["REPLAY", "Controlled open-play checkpoint", "HOME POSITIONS"]},
+      "replay_paused": {"contains": ["PAUSED", "HOME POSITIONS"]},
+      "replay_event_selected": {"contains": ["Event", "recorded state tick", "HOME POSITIONS"]}
+    }
+  }
+}

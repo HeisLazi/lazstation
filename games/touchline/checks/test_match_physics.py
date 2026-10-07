@@ -70,8 +70,13 @@ class MotionTests(unittest.TestCase):
         profile = PLAYER_DECISION_PAIR[0]
         limits = limits_from_profile(profile)
         values = {item.name: item.value for item in profile.capabilities.measurements}
-        self.assertEqual(limits.maximum_speed_mps, values["maximum_speed"])
-        self.assertEqual(limits.acceleration_mps2, values["acceleration"])
+        expected_factor = (
+            (0.80 + 0.20 * profile.readiness.match_readiness)
+            * (1.0 - 0.25 * profile.readiness.accumulated_fatigue)
+        )
+        self.assertAlmostEqual(limits.condition_factor, expected_factor)
+        self.assertAlmostEqual(limits.maximum_speed_mps, values["maximum_speed"] * expected_factor)
+        self.assertAlmostEqual(limits.acceleration_mps2, values["acceleration"] * expected_factor)
         self.assertGreater(limits.turn_rate_rps, 0.0)
 
     def test_movement_bounds_acceleration_turning_and_distance(self) -> None:

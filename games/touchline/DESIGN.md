@@ -319,6 +319,20 @@ Expose longitudinal evidence rather than hidden trait arithmetic: staff note a p
 
 Required long-horizon scenario: follow an initially structure-averse academy player through mixed experiences, a trusted relationship, increasing responsibility and eventual mentorship of a new arrival. Verify possible alternative outcomes, credible timescales, retention of individual quirks, save/resume continuity and no instant personality gains from repeated dialogue or fines.
 
+### 5.12 Player-initiated bonds, separation and reunions
+
+Players can make friends and initiate mentoring without a manager command. Shared training, travel, interests, supportive moments and compatible ways of working create opportunities. A senior player can notice someone struggling and offer help; the other player can welcome, decline or gradually accept it. Friendship can exist without mentoring, mentoring without close friendship, and either can coexist with competition for selection.
+
+Autonomous decisions use the person's perceived situation, affinity, trust, willingness and available time. Evaluate eligible contacts through actual shared contexts and existing relationships, not every possible pair on every simulation tick. Reserve capacity when help is accepted. Record an offer, response and later meaningful contacts; do not silently create instant best friends. The manager may only learn of a bond later through observable behavior or disclosure.
+
+A close friend's departure can materially reduce belonging, comfort and morale, especially for someone whose support network is small. It can also prompt a conversation, a request to follow them or changed willingness to renew. Reactions depend on the bond, circumstances and remaining support. A relationship can continue across clubs; reduced daily contact is not identical to a friendship ending.
+
+Signing two existing friends or reuniting close teammates can produce a substantial, visible morale/settlement lift for the people involved. It can influence destination preference, recruitment recommendations and the practical ease of joining. The benefit comes from an established bond, renewed contact and anticipated support; merely arriving in the same window does not create it. Friends still need time to learn a tactic and can compete for the same position.
+
+Separate a short-lived reunion reaction from sustained support. Route both through the existing bounded emotional model so the same friendship is not rewarded independently in every subsystem. Repeated transfers, loans, offer cancellations or replayed settlement cannot farm the effect. Departures must be confirmed before separation consequences occur; rumours can create distinct uncertainty but cannot be settled as completed moves.
+
+Small groups and informal leaders can develop through these relationships. Avoid instant team-wide morale cascades: each affected player requires their own relationship or communication path. Recruitment may surface a known connection and explain its likely value, but private friendships are not automatically available in every scout database. Do not make hiring a friend an automatic requirement or a universal optimal transfer strategy.
+
 ## 6. Scouting and analytics as a complete information system
 
 ### 6.1 Truth is not the club's database
