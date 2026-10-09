@@ -12,8 +12,10 @@ from beasts import SPECIES, TYPES
 
 ROUNDS = 6
 #: team size per round, ramping up so the bracket gets harder to just
-#: out-stall as well as out-damage
-TEAM_SIZE = [2, 3, 3, 4, 5, 6]
+#: out-stall as well as out-damage. Sized by simulation: with the Arena's PP and
+#: support rules, [2,3,3,4,5,6] was an attrition wall nobody could clear (see
+#: the arena notes), while this lets good play clear it about 1 run in 10.
+TEAM_SIZE = [2, 2, 3, 3, 3, 4]
 
 #: two or three name/blurb pairs per type, so a given type doesn't always
 #: introduce itself the same way on replay
@@ -56,7 +58,8 @@ def _species_of(*types: str) -> list[str]:
     return [slug for slug, d in SPECIES.items() if d["type"] in types]
 
 
-def generate_bracket(avg_level: int, rng: random.Random | None = None) -> list[dict]:
+def generate_bracket(avg_level: int, rng: random.Random | None = None,
+                     level_offset: int = 0) -> list[dict]:
     """Returns ROUNDS dicts: name, type(s), blurb, team=[(slug, level), ...].
 
     Levels are centred on the player's own squad average, escalating
@@ -64,6 +67,7 @@ def generate_bracket(avg_level: int, rng: random.Random | None = None) -> list[d
     any point in the game, not just once your team is maxed out.
     """
     rng = rng or random.Random()
+    avg_level += level_offset
     order = list(TYPES)
     rng.shuffle(order)
 

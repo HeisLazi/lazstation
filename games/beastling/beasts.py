@@ -237,7 +237,32 @@ MOVES = {
                          effect=("stage", "atk", 1, "self", 0.40)),
     "Hexing Gaze": _move("Gloom", 50, 95, "a look that finds the gap",
                          effect=("stage", "def", -1, "foe", 0.35)),
+    # ---- Arena-only moves (Tournament). Power 0 = a support move: no damage,
+    # the effect always lands if the move does. Story learnsets never include
+    # these, so Story's battle() never meets a power-0 move.
+    "Kindle":      _move("Ember", 0, 100, "builds heat, strikes faster",
+                         effect=("multi", [("atk", 2, "self"), ("spd", 1, "self")], 1.0)),
+    "Ebb":         _move("Tide", 0, 100, "pulls back and recovers",
+                         effect=("heal", 0.40, 1.0)),
+    "Soothe":      _move("Bloom", 0, 100, "mends, and clears the mind",
+                         effect=("heal_cure", 0.35, 1.0)),
+    "Brace":       _move("Stone", 0, 100, "digs in; nothing gets through",
+                         priority=4, effect=("protect", 1.0)),
+    "Jolt Web":    _move("Spark", 0, 90, "a net of static",
+                         effect=("status", "paralyze", 1.0)),
+    "Sap":         _move("Gloom", 0, 95, "drains the will to fight",
+                         effect=("multi", [("atk", -1, "foe"), ("def", -1, "foe")], 1.0)),
+    "Struggle":    _move("Stone", 40, 100, "a desperate lunge",
+                         effect=("recoil", 0.25, 1.0)),
 }
+
+#: Arena (Tournament) kits are built from these, see arena.build_kit:
+#: one off-type attack per type, so move choice is about the matchup, and
+#: one support move per type, so there is something to do besides attack.
+ARENA_COVERAGE = {"Ember": "Seed Volley", "Tide": "Flare Rush", "Bloom": "Cragfall",
+                  "Stone": "Arc Bolt", "Spark": "Duskwave", "Gloom": "Tide Pull"}
+ARENA_SUPPORT = {"Ember": "Kindle", "Tide": "Ebb", "Bloom": "Soothe",
+                 "Stone": "Brace", "Spark": "Jolt Web", "Gloom": "Sap"}
 
 # ---------------------------------------------------------------- species
 # slug: dict(name, type, base stats, learnset [(level, move), ...],
