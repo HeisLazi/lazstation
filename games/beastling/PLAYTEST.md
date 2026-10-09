@@ -87,12 +87,33 @@ Tip: after "Camp" -> "Save and quit", delete the scratch dir to start over.
 - [ ] Does the Spire have a "just one more floor" pull? Where does it stop being fun?
 - [ ] Retreat vs keep climbing: is the decision interesting?
 
-## 7. Tournament mode
+## 7. Tournament mode -- the Arena District
 
-- [ ] Main menu -> Tournament. Free draft: 36 species over two pages, page switch
-      works, header never scrolls off.
+The Tournament is its own little world: a hub of places (Arena Gate, Squad
+Hall, Market, Infirmary, Yard, Hall of Fame). HP and PP carry over between
+rounds; coins from prizes pay for treatment and supplies.
+
+- [ ] Main menu -> Tournament. Name screen is one line, then the District hub.
+- [ ] Squad Hall -> Free draft: 36 species over two pages. Typing a number from
+      the other page flips to it (it does NOT draft it); the Squad line lists
+      your picks from both pages.
 - [ ] Ranked draft: point costs shown, budget enforced.
-- [ ] Bracket: no healing between rounds -- tense or tedious?
+- [ ] Hub shows the run, how many are standing, and the next rival
+      (types, team size, levels). Does that change what you do first?
+- [ ] Arena Gate fight: moves show PP and ▲/▼ (super effective / resisted).
+      Does PP running out force real choices, or is it noise?
+- [ ] Swap menu: each beast shows "KOs in N, KO'd in M" against the current
+      foe. Is that readable at a glance? Does it make swaps feel informed?
+- [ ] Let a beast faint right after switching in: you must be ASKED who comes
+      next (no Cancel), and the screen says what happened.
+- [ ] Infirmary after a rough round: pick a beast, then heal / PP / revive.
+      Revive is per beast (about one round's prize). Can you afford
+      everything? Is choosing who to revive for the next rival a real choice?
+- [ ] Market items mid-fight (Potion, Super Potion, Full Heal, Revive, Ether):
+      worth the coins versus the Infirmary?
+- [ ] Yard: permanent training per species. Worth saving coins for between runs?
+- [ ] Try the lazy plan -- one squad type, one strong move every turn. How far
+      does it get? (Simulated: about 3.6 rounds of 6, vs 5.2 for careful play.)
 
 ## 8. 2v2 Synergy Duel (Camp, needs 2+ healthy beasts)
 
