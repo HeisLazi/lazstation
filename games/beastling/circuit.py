@@ -115,6 +115,21 @@ class CircuitGame(Game):
         self._trainer_name = trainer_name
         self._rank_label = rank_label
 
+    def swap_label(self, b: Beast) -> str:
+        """Who to send in is the Arena's central decision, so show what it
+        hinges on: type, HP, whether its best hit is super effective (+) or
+        resisted (-) against the current foe, and how that foe's best hit
+        lands on it."""
+        if not b.alive:
+            return f"{b.name:<11} {b.type:<5} (down)"
+        foe = arena.CURRENT.get("foe")
+        tag = ""
+        if foe is not None and foe.alive:
+            mine = max((arena.expected_damage(b, foe, m) for m in arena.usable_moves(b)), default=0)
+            theirs = max((arena.expected_damage(foe, b, m) for m in arena.usable_moves(foe)), default=0)
+            tag = "  +hits hard" if mine > 1.4 * theirs else ("  -outmatched" if theirs > 1.4 * mine else "")
+        return f"{b.name:<11} {b.type:<5} {b.hp:>3}/{b.max_hp:<3} HP{tag}"
+
     def header(self, title: str) -> None:
         ts.tv_clear(page=PAGE)
         left = f"  {title}"

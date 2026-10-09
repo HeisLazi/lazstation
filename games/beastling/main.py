@@ -19,6 +19,42 @@ from beasts import (ABILITY_DESC, CHAMPIONS, CHART, COMMON_DROPS, DROP_CHANCE, I
                     RARE_WEIGHT, STARTERS, TYPE_ABILITY, TYPE_SYNERGY, WEATHER_DESC,
                     WEATHER_DURATION, WEATHER_EFFECTS)
 
+_sdk_ask_int = ts.ask_int
+
+
+def _safe_ask_int(message: str, lo: int | None = None, hi: int | None = None,
+                  default: int | None = None) -> int:
+    """The SDK's ask_int, minus one trap found by an LLM playtester: every
+    invalid entry stacked an error line and a fresh prompt under the screen, so
+    three typos on any menu pushed the row counter past the edge and the cursor
+    seat silently wiped the whole menu, leaving a blank screen. Here a bad
+    entry re-prompts on the same row, with the complaint in the prompt text."""
+    st = ts._tv_state
+    if not (st.get("active") and ts._tty()):
+        return _sdk_ask_int(message, lo, hi, default)
+    row0, note = st["row"], ""
+    while True:
+        st["row"] = row0
+        screen = st["screen"]
+        col = screen.x + st["indent"] + 1
+        sys.stdout.write(f"\x1b[{screen.y + row0 + 1};{col}H" + " " * st["stage"])
+        raw = ts.prompt(message + note, "" if default is None else str(default))
+        try:
+            value = int(raw)
+        except ValueError:
+            note = " (numbers only)"
+            continue
+        if lo is not None and value < lo:
+            note = f" (minimum is {lo})"
+            continue
+        if hi is not None and value > hi:
+            note = f" (maximum is {hi})"
+            continue
+        return value
+
+
+ts.ask_int = _safe_ask_int
+
 # Vertical-centring target for `ts.tv_clear(page=PAGE)`. The real content
 # height of the worst-case battle screen is 17 print calls (verified by
 # direct execution, not arithmetic -- an earlier pass here claimed 15 and
@@ -1336,10 +1372,12 @@ class Game:
         else:
             self.box.append(foe)
 
+    def swap_label(self, b: Beast) -> str:
+        return (f"{b.name}  Lv {b.level}  {b.hp}/{b.max_hp} HP"
+                + ("  (down)" if not b.alive else ""))
+
     def swap_menu(self) -> bool:
-        options = [f"{b.name}  Lv {b.level}  {b.hp}/{b.max_hp} HP"
-                   + ("  (down)" if not b.alive else "")
-                   for b in self.party]
+        options = [self.swap_label(b) for b in self.party]
         if len(options) < 2:
             return False
         # A real, adjacent bug surfaced by the weather-pass row-budget
