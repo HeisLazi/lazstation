@@ -1,0 +1,13 @@
+[game]
+name = "Open Football"
+slug = "open-football"
+version = "0.2.0 (OpenFootManager)"
+author = "OpenFootManager"
+description = """
+Open-source football management simulation. Take a club, work the
+transfer market, pick tactics, chase trophies. Install with:
+yay -S openfootmanager-bin (AUR)."""
+tags = ["football", "management", "sim"]
+entry = ["openfootmanager"]
+min_cols = 80
+min_rows = 24

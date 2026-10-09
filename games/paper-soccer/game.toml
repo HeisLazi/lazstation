@@ -1,0 +1,12 @@
+[game]
+name = "Paper Soccer"
+slug = "paper-soccer"
+version = "1.0.1"
+author = "paper-soccer contributors"
+description = """
+Paper soccer in the console — networked pen-and-paper football on a
+grid. Install with: yay -S paper-soccer (AUR)."""
+tags = ["football", "quick", "terminal"]
+entry = ["paper-soccer"]
+min_cols = 80
+min_rows = 24

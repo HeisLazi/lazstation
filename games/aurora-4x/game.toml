@@ -1,0 +1,15 @@
+[game]
+name = "Aurora 4X"
+slug = "aurora-4x"
+version = "C# (Wine)"
+author = "Steve Walmsley"
+description = """
+NOT INSTALLED — free Windows game, runs under Wine. See INSTALL.md
+next to this file, then press enter to boot.
+
+The legendary 4X space strategy sim: design ships, survey systems,
+manage colonies and fight Newtonian fleet battles."""
+tags = ["strategy", "sim", "space", "wine"]
+entry = ["run.sh"]
+min_cols = 80
+min_rows = 24

@@ -7,8 +7,8 @@ description = """
 Classic Dwarf Fortress 53.16 (free version from Bay 12).
 
 Build a dwarven outpost in a randomly generated world. Opens its own
-window — lives at ~/dwarf-fortress-classic."""
+window — lives at ~/Games/df."""
 tags = ["strategy", "sim", "classic"]
-entry = ["/home/lazi/dwarf-fortress-classic/run_df"]
+entry = ["/home/lazi/Games/df/run_df"]
 min_cols = 80
 min_rows = 24

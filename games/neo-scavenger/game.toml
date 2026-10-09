@@ -1,0 +1,15 @@
+[game]
+name = "NEO Scavenger"
+slug = "neo-scavenger"
+version = "Steam"
+author = "Blue Bottle Games"
+description = """
+NOT OWNED — buy on Steam (app 248860), then press enter to boot.
+A free demo (app 270680) is on Steam too.
+
+Post-apocalyptic survival RPG: scavenge Detroit, track hunger,
+hypothermia and disease turn by turn. Has a native Linux build."""
+tags = ["roguelike", "survival", "rpg", "steam", "unowned"]
+entry = ["steam", "steam://rungameid/248860"]
+min_cols = 80
+min_rows = 24

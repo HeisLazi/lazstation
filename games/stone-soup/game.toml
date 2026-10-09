@@ -1,0 +1,12 @@
+[game]
+name = "Dungeon Crawl Stone Soup"
+slug = "stone-soup"
+version = "0.34"
+author = "DCSS devteam"
+description = """
+Dungeon Crawl Stone Soup — open-source dungeon crawl of exploration
+and treasure-hunting. Install with: sudo pacman -S crawl-tiles."""
+tags = ["roguelike", "dungeon", "tiles"]
+entry = ["crawl-tiles"]
+min_cols = 80
+min_rows = 24

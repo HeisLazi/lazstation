@@ -1,0 +1,15 @@
+[game]
+name = "Warsim: The Realm of Aslona"
+slug = "warsim"
+version = "Steam"
+author = "Huw Millichap"
+description = """
+NOT OWNED — buy on Steam (app 659540), then press enter to boot.
+
+Procedurally generated kingdom sim: raise armies, conquer, manage a
+realm of goblins, humans, demons and more. Windows-only, runs via
+Proton."""
+tags = ["strategy", "sim", "rpg", "steam", "unowned"]
+entry = ["steam", "steam://rungameid/659540"]
+min_cols = 80
+min_rows = 24

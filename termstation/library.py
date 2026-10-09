@@ -124,6 +124,52 @@ def discover() -> tuple[list[Game], list[str]]:
 
 
 # --------------------------------------------------------------------------
+# compartments: named shelves the library is split into.
+#
+# A game lands in the first compartment whose tag list shares a tag with
+# the game. Tagless or unmatched games fall through to the Cabinet, the
+# junk drawer everything eventually grows. Keep the lists in display
+# order; the console cycles them with `c`.
+COMPARTMENTS: list[tuple[str, str, list[str]]] = [
+    ("roguelikes", "Roguelikes", ["roguelike", "deckbuilder", "dungeon"]),
+    ("cards", "Cards & Casino", ["cards", "casino"]),
+    ("rpg", "RPG & Adventure",
+     ["rpg", "adventure", "tactical", "party", "creatures", "turn-based"]),
+    ("sports", "Sports", ["football", "sports", "racing"]),
+    ("strategy", "Strategy & Sim",
+     ["strategy", "sim", "management", "tactics", "survival", "space"]),
+    ("arena", "Fighters", ["combat", "action"]),
+    ("classics", "Classics", ["classic", "terminal", "curses"]),
+    ("workshop", "Workshop", ["wip"]),
+]
+CABINET_KEY = "cabinet"
+CABINET_TITLE = "Cabinet"
+
+
+def compartment_keys() -> list[str]:
+    """All shelf keys, with the show-everything shelf first."""
+    return ["all", *(key for key, _, _ in COMPARTMENTS)]
+
+
+def compartment_title(key: str) -> str:
+    if key == "all":
+        return "All Games"
+    for ckey, title, _ in COMPARTMENTS:
+        if ckey == key:
+            return title
+    return CABINET_TITLE
+
+
+def compartment_for(game: "Game") -> str:
+    """The shelf a game lives on: first compartment sharing a tag."""
+    tags = {t.lower() for t in game.tags}
+    for key, _, wanted in COMPARTMENTS:
+        if tags & {w.lower() for w in wanted}:
+            return key
+    return CABINET_KEY
+
+
+# --------------------------------------------------------------------------
 # play statistics
 # --------------------------------------------------------------------------
 

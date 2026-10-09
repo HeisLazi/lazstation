@@ -34,7 +34,9 @@ is harmless.
 | `lazstation info <slug>` | where a game's files, saves and logs live |
 | `lazstation doctor` | check the install and every manifest |
 
-In the console: `↑↓`/`jk` move, `enter` plays, `/` filters, `p` switches save
+In the console: `↑↓`/`jk` move, `enter` plays, `/` filters, `c` flips
+through the shelves (Roguelikes, Sports, Strategy & Sim, … — games are
+shelved by their tags, remembered between runs), `p` switches save
 profile, `b` toggles the boot animation, `r` rescans, `?` help, `q` powers off.
 
 ## Making a game
