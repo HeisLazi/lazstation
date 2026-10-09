@@ -21,8 +21,8 @@ import math
 import termstation_sdk as ts
 
 import arena
-from beasts import ABILITY_DESC, MOVES, SPECIES, TRAIN_LABEL, TRAIN_STEP, train_price
-from main import PAGE, PARTY_MAX, Beast, Game, bar
+from beasts import ABILITY_DESC, MOVES, SPECIES, TRAIN_LABEL, TRAIN_STEP, TYPES, train_price
+from main import PAGE, PARTY_MAX, Beast, Game, bar, effectiveness
 from tournament import ROUNDS, generate_bracket
 
 DRAFT_LEVEL = 30           # fixed level for every drafted Circuit beast --
@@ -120,14 +120,20 @@ class CircuitGame(Game):
         self._trainer_name = trainer_name
         self._rank_label = rank_label
 
-    def swap_label(self, b: Beast) -> str:
+    def swap_label(self, b: Beast, forced: bool = False) -> str:
         """Who to send in is the Arena's central decision, so show what it
         hinges on: type, HP, and how a straight trade with the current foe
         goes -- how many of its best hits the foe takes to go down, and how
         many of the foe's best hits it takes itself. Counts, not a verdict:
         the old "+hits hard / -outmatched" tags compared raw damage with a
         fixed ratio, so against a higher-level foe nearly the whole bench
-        read "-outmatched", including the right answer."""
+        read "-outmatched", including the right answer.
+
+        On a voluntary swap the foe gets a free hit on the newcomer, so "KO'd
+        in 1" there means it falls before acting. Round-2 playtesters swapped
+        two such beasts in on type alone, past a "KO'd in 1" they did not
+        weigh -- so that case says it in words (colour alone is invisible to
+        anyone reading the screen as text)."""
         if not b.alive:
             return f"{b.name:<11} {b.type:<5} (down)"
         label = f"{b.name:<11} {b.type:<5} {b.hp:>3}/{b.max_hp:<3} HP"
@@ -136,7 +142,11 @@ class CircuitGame(Game):
             return label
         mine = max((arena.expected_damage(b, foe, m) for m in arena.usable_moves(b)), default=0)
         theirs = max((arena.expected_damage(foe, b, m) for m in arena.usable_moves(foe)), default=0)
-        return f"{label}  KOs in {_hits(foe.hp, mine)}, KO'd in {_hits(b.hp, theirs)}"
+        if not forced and b is not self.lead() and theirs >= b.hp:
+            return f"{label}  " + ts.color("likely KO'd on entry", "bright_red")
+        kos, kod = _hits(foe.hp, mine), _hits(b.hp, theirs)
+        return (f"{label}  KOs in " + (ts.color(kos, "bright_green") if kos == "1" else kos)
+                + ", KO'd in " + (ts.color(kod, "bright_red") if kod == "1" else kod))
 
     def header(self, title: str) -> None:
         ts.tv_clear(page=PAGE)
@@ -222,20 +232,21 @@ def draft_squad(ranked: bool) -> list[Beast] | None:
                 return [Beast(s, DRAFT_LEVEL) for s in chosen]
             msg = "Pick at least one beast first."
             continue
+        where = ""
         if pick not in shown:
-            # A number from the page you can't see: show that page instead
-            # of drafting blind. An LLM playtester typed 28 meaning "next
-            # page" and silently drafted a 26-point beast it never saw.
+            # A number from the page you can't see: act on it, but turn to
+            # its page so the ☑ is in view and the line below names it. A
+            # round-1 playtester drafted a 26-point beast it never saw; the
+            # round-2 fix (flip, then type it again) cost everyone else a
+            # second keystroke. Acting AND showing covers both.
             page = pick // DRAFT_PAGE
-            msg = (f"#{pick + 1} {SPECIES[all_slugs[pick]]['name']} is here --"
-                   f" type {pick + 1} again to draft it.")
-            continue
+            where = f" -- it's on page {page + 1}"
 
         slug = all_slugs[pick]
         name = SPECIES[slug]["name"]
         if slug in chosen:
             chosen.remove(slug)
-            msg = f"Dropped {name}."
+            msg = f"Dropped {name}{where}."
             continue
         if len(chosen) >= PARTY_MAX:
             # tv_clear() FIRST, not after: with the full 20-species list
@@ -254,7 +265,8 @@ def draft_squad(ranked: bool) -> list[Beast] | None:
             ts.tv_pause()
             continue
         chosen.append(slug)
-        msg = f"Drafted {name} ({SPECIES[slug]['type']}" + (f", {point_cost(slug)}pt)." if ranked else ").")
+        msg = (f"Drafted {name} ({SPECIES[slug]['type']}" + (f", {point_cost(slug)}pt)" if ranked else ")")
+               + (where or "."))
 
 
 # ------------------------------------------------------------ the district
@@ -393,9 +405,14 @@ class District:
             if self.squad_room() != "abandon":
                 return ""
             self.end_run(reached=self.run["round"], champion=False, abandoned=True)
-        self.head("Squad Hall")
-        pick = ts.menu("Mode", ["Free   -- draft anyone, no budget",
-                                "Ranked -- points budget, climbs the rank ladder"], back="Back")
+        while True:
+            self.head("Squad Hall")
+            pick = ts.menu("Mode", ["Free   -- draft anyone, no budget",
+                                    "Ranked -- points budget, climbs the rank ladder",
+                                    "Type chart"], back="Back")
+            if pick != 2:
+                break
+            self.type_chart()
         if pick == -1:
             return ""
         ranked = pick == 1
@@ -412,6 +429,28 @@ class District:
                                "bracket": [dict(r, team=[list(t) for t in r["team"]]) for r in bracket]}
         self.game = self._new_game()
         return f"Squad registered. {len(squad)} beasts. Round 1 awaits at the Gate."
+
+    def type_chart(self) -> None:
+        """Attacking type down the side, defending type across the top.
+        Round-2 players guessed matchups out loud ("Stone beats Spark? Or
+        neutral?") and one got a defence backwards -- the ▲/▼ marks in a fight
+        only cover your own moves against the beast in front of you."""
+        self.game.header("Type chart")
+        ts.tv_print("  Attacking type (left) against defending type (top).")
+        ts.tv_print()
+        ts.tv_print("            " + "".join(f"{t:<7}" for t in TYPES))
+        for att in TYPES:
+            cells = []
+            for de in TYPES:
+                m = effectiveness(att, de)
+                cells.append(ts.color("  ▲    ", "bright_green") if m >= 2 else
+                             ts.color("  ▼    ", "bright_red") if m <= 0.5 else
+                             ts.color("  ·    ", "grey"))
+            ts.tv_print(f"    {att:<8}" + "".join(cells))
+        ts.tv_print()
+        ts.tv_print("  ▲ super effective (x2)    ▼ resisted (x0.5)    · normal")
+        ts.tv_print()
+        ts.tv_pause()
 
     def squad_room(self) -> str:
         """Mid-run, the Squad Hall is where you look your squad over. An LLM
@@ -431,12 +470,15 @@ class District:
                 full = sum(arena.move_pp(m) for m in b.moves)
                 options.append(f"{b.name[:11]:<11} {b.type:<5} [{bar(b.hp, b.max_hp, 8)}] "
                                f"{b.hp:>3}/{b.max_hp:<3} PP {pp}/{full}")
-            options.append("Abandon this run and draft a new squad")
+            options += ["Type chart", "Abandon this run and draft a new squad"]
             pick = ts.menu("Your squad -- pick one for a closer look", options, back="Back")
             if pick == -1:
                 return ""
             if pick < len(party):
                 self.beast_card(party[pick])
+                continue
+            if pick == len(party):
+                self.type_chart()
                 continue
             self.game.header("Squad Hall")
             ts.tv_print(f"  Ends this run at round {self.run['round'] + 1}. Coins, items, training stay.")
@@ -668,11 +710,25 @@ class District:
         total = {k: sum(p[k] for p in prices) for k in ("revive", "hp", "pp")}
         labels = {"revive": "Revive the fallen (half HP)", "hp": "Heal everyone's HP",
                   "pp": "Restore everyone's PP"}
-        choices = [(k, f"{labels[k]:<28}{total[k]:>5}c", total[k]) for k in labels if total[k]]
+        choices = [(k, f"{labels[k]:<36}{total[k]:>5}c", total[k]) for k in labels if total[k]]
         if not choices:
             return "Everyone is fit to fight."
-        if len(choices) > 1:
-            choices.append(("all", f"{'All of the above':<28}{sum(total.values()):>5}c", sum(total.values())))
+        # Can't afford every revive? Offer as many as the purse covers. A
+        # round-2 playtester with 413c saw "Revive the fallen 480c", gave up,
+        # and lost the next round three beasts short -- 360c would have
+        # brought back three of the four.
+        down = sorted((b for b, p in zip(party, prices) if p["revive"]),
+                      key=lambda b: -(b.max_hp + b.atk + b.dfn + b.spd))
+        some = []
+        if down and total["revive"] > self.coins():
+            each = treatment_prices(down[0], self.run["round"])["revive"]
+            n = self.coins() // each
+            if 0 < n < len(down):
+                some = down[:n]
+                choices.insert(1, ("some", f"{f'Revive {n} of {len(down)}, strongest first':<36}{n * each:>5}c",
+                                   n * each))
+        if len([c for c in choices if c[0] != "some"]) > 1:
+            choices.append(("all", f"{'All of the above':<36}{sum(total.values()):>5}c", sum(total.values())))
         self.game.header("The Infirmary -- everyone")
         ts.tv_print(f"  You have {ts.color(str(self.coins()), 'bright_yellow')} coins."
                     "  Revived beasts come back at half HP.")
@@ -680,6 +736,10 @@ class District:
         if pick == -1:
             return ""
         kind, _, cost = choices[pick]
+        if kind == "some":
+            if not self._pay(cost, [(b, "revive") for b in some]):
+                return "Not enough coins."
+            return "Back on their feet: " + ", ".join(b.name for b in some) + "."
         kinds = ["revive", "hp", "pp"] if kind == "all" else [kind]
         # Each beast is charged at the price shown, so a beast revived here
         # is not also healed past half by the same purchase.

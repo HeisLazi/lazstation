@@ -277,6 +277,16 @@ def effect_word(mult: float) -> str:
     return ""
 
 
+def hit_lines(attacker: str, move: str, defender: str, lost: int, mult: float, crit: bool) -> list[str]:
+    """The two log lines for a hit that landed. The effect word rides on the
+    damage line, not the "used" line: "<name> used <move>. A critical hit!
+    It's super effective!" ran past the 62-column picture and was clipped
+    mid-word (an LLM playtester saw "It barely scratch"). Same two rows."""
+    note = effect_word(mult)
+    return [f"{attacker} used {move}." + (" A critical hit!" if crit else ""),
+            f"  {defender} lost {lost} HP." + (f" {note}" if note else "")]
+
+
 CRIT_CHANCE = 1 / 16   # Gen-1-flavoured: rare enough to feel earned, not spammy
 CRIT_MULT = 1.5
 
@@ -1052,11 +1062,8 @@ class Game:
                 if not hit:
                     log.append(f"{attacker.name}'s {move} missed.")
                     continue
-                note = effect_word(mult)
-                if crit:
-                    note = ("A critical hit! " + note).strip()
-                log.append(f"{attacker.name} used {move}. {note}".strip())
-                log.append(f"  {defender.name} lost {min(dealt, defender.hp)} HP.")
+                log.extend(hit_lines(attacker.name, move, defender.name,
+                                     min(dealt, defender.hp), mult, crit))
                 log.extend(deal_damage(attacker, defender, dealt))
                 new_weather = MOVES[move]["sets_weather"]
                 if new_weather:
@@ -1290,11 +1297,8 @@ class Game:
                 if not hit:
                     log.append(f"{attacker.name}'s {move} missed.")
                     continue
-                note = effect_word(mult)
-                if crit:
-                    note = ("A critical hit! " + note).strip()
-                log.append(f"{attacker.name} used {move}. {note}".strip())
-                log.append(f"  {defender.name} lost {min(dealt, defender.hp)} HP.")
+                log.extend(hit_lines(attacker.name, move, defender.name,
+                                     min(dealt, defender.hp), mult, crit))
                 log.extend(deal_damage(attacker, defender, dealt))
                 new_weather = MOVES[move]["sets_weather"]
                 if new_weather:
@@ -1372,51 +1376,52 @@ class Game:
         else:
             self.box.append(foe)
 
-    def swap_label(self, b: Beast) -> str:
-        return (f"{b.name}  Lv {b.level}  {b.hp}/{b.max_hp} HP"
-                + ("  (down)" if not b.alive else ""))
+    def swap_label(self, b: Beast, forced: bool = False) -> str:
+        return f"{b.name}  Lv {b.level}  {b.hp}/{b.max_hp} HP"
+
+    def swap_choices(self) -> list[int]:
+        """Party indices the swap menu lists, in order: only beasts still
+        standing. Downed ones used to take a number too, and picking one just
+        asked again -- dead options on a screen where every row counts."""
+        return [i for i, b in enumerate(self.party) if b.alive]
 
     def swap_menu(self, forced: bool = False, lines: list[str] | None = None,
                   heading: str = "Send out which beast?") -> bool:
         """Put a chosen beast out front. `forced` is the replacement after the
         lead goes down: no Cancel (there is nothing to go back to -- LLM
-        playtesters read a Cancel there as a way out and lost a beat to it),
-        and a downed pick asks again. `lines` go above the list, so the
-        screen can say what just happened before it asks."""
-        options = [self.swap_label(b) for b in self.party]
-        if len(options) < 2:
+        playtesters read a Cancel there as a way out and lost a beat to it).
+        `lines` go above the list, so the screen can say what just happened
+        before it asks."""
+        choices = self.swap_choices()
+        if len(choices) < 2:
             return False
-        lead = self.lead()
-        note = ""
-        while True:
-            # A real, adjacent bug surfaced by the weather-pass row-budget
-            # review: this used to draw straight on top of whatever was
-            # already on screen -- the full battle display, already close to
-            # the row budget on its own -- with no clear first. A party of
-            # even 2-3 beasts was enough to push it over the edge and blank
-            # the screen the same way travel()/the draft screen once did.
-            ts.tv_clear()
-            for line in lines or ():
-                ts.tv_print(line)
-            if note:
-                ts.tv_print(ts.color(f"  {note}", "bright_red"))
-            pick = ts.menu(heading, options, back=None if forced else "Cancel")
-            if pick == -1:
-                return False
-            chosen = self.party[pick]
-            if not chosen.alive:
-                note = f"{chosen.name} is down -- pick one still standing."
-                continue
-            if chosen is lead and not forced:
-                # Already the active lead -- a no-op, not a real swap, and it
-                # must not cost a turn now that voluntary swaps do (see
-                # battle()). Compared by identity, not index 0: a beast that
-                # fainted earlier can sit at the front of the party while the
-                # lead is further down.
-                return False
-            self.party.remove(chosen)
-            self.party.insert(0, chosen)
-            return True
+        # A real, adjacent bug surfaced by the weather-pass row-budget
+        # review: this used to draw straight on top of whatever was
+        # already on screen -- the full battle display, already close to
+        # the row budget on its own -- with no clear first. A party of
+        # even 2-3 beasts was enough to push it over the edge and blank
+        # the screen the same way travel()/the draft screen once did.
+        ts.tv_clear()
+        for line in lines or ():
+            ts.tv_print(line)
+        down = [b.name for b in self.party if not b.alive]
+        if down:
+            ts.tv_print(ts.color(f"  Down: {', '.join(down)}", "grey"))
+        pick = ts.menu(heading, [self.swap_label(self.party[i], forced) for i in choices],
+                       back=None if forced else "Cancel")
+        if pick == -1:
+            return False
+        chosen = self.party[choices[pick]]
+        if chosen is self.lead() and not forced:
+            # Already the active lead -- a no-op, not a real swap, and it
+            # must not cost a turn now that voluntary swaps do (see
+            # battle()). Compared by identity, not index 0: a beast that
+            # fainted earlier can sit at the front of the party while the
+            # lead is further down.
+            return False
+        self.party.remove(chosen)
+        self.party.insert(0, chosen)
+        return True
 
     # ------------------------------------------------------------- world
     def explore(self, route: dict) -> None:

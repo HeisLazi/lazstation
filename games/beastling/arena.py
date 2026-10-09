@@ -25,8 +25,8 @@ import termstation_sdk as ts
 from beasts import (ARENA_COVERAGE, ARENA_SUPPORT, MOVES, SPECIES, WEATHER_DESC,
                     WEATHER_DURATION)
 from main import (STAGE_NAME, Beast, apply_ability_on_hit, apply_move_effect, beast_line,
-                  check_mending_berry, check_vengeful, damage, deal_damage, effect_word,
-                  effectiveness, may_act, resolve_status_upkeep, show_log)
+                  check_mending_berry, check_vengeful, damage, deal_damage, effectiveness,
+                  hit_lines, may_act, resolve_status_upkeep, show_log)
 
 ARENA_DAMAGE = 1.25          # global damage multiplier: mistakes must cost HP
 #: Type effectiveness is raised to this power in the Arena (2.0 -> 2.46,
@@ -299,11 +299,7 @@ def use_move(att: Beast, de: Beast, mv: str, weather: str | None) -> tuple[list[
     if not hit:
         lines.append(f"{att.name}'s {mv} missed.")
         return lines, None
-    note = effect_word(mult)
-    if crit:
-        note = ("A critical hit! " + note).strip()
-    lines.append(f"{att.name} used {mv}. {note}".strip())
-    lines.append(f"  {de.name} lost {min(dealt, de.hp)} HP.")
+    lines.extend(hit_lines(att.name, mv, de.name, min(dealt, de.hp), mult, crit))
     lines.extend(deal_damage(att, de, dealt))
     if spec["sets_weather"]:
         set_weather = spec["sets_weather"]
@@ -355,13 +351,43 @@ def item_menu(game, log: list[str] | None) -> bool:
         return False
     name = stock[pick]
     spec = ARENA_ITEMS[name]
+    # Only beasts the item would actually help -- a Revive lists the downed,
+    # a Potion the hurt, and so on. No dead options.
+    def helps(b: Beast) -> bool:
+        if "revive" in spec:
+            return not b.alive
+        if not b.alive:
+            return False
+        if "heal" in spec:
+            return b.hp < b.max_hp
+        if spec.get("cure"):
+            return bool(b.status)
+        return any(b.pp.get(m, 0) < move_pp(m) for m in b.moves)
+    targets = [b for b in game.party if helps(b)]
+    if not targets:
+        say(f"Nobody needs a {name} right now.")
+        return False
     ts.tv_clear()
-    who = ts.menu(f"{name} on which beast?",
-                  [f"{b.name}  {b.hp}/{b.max_hp} HP" + ("  (down)" if not b.alive else "")
-                   + (f"  {b.status}" if b.status else "") for b in game.party], back="Cancel")
+    foe, lead = CURRENT.get("foe"), game.lead()
+    if log is not None and foe is not None and foe.alive and lead is not None:
+        # Round-2 playtesters drank 40-HP Potions into 60-HP hits, turn after
+        # turn, without seeing the trade. Show it, with the same estimate the
+        # swap list uses.
+        hit = max((expected_damage(foe, lead, m) for m in usable_moves(foe)), default=0)
+        ts.tv_print("  An item spends your turn; the foe still acts.")
+        ts.tv_print(f"  {foe.name}'s best hit on {lead.name}: about {round(hit)} HP.")
+
+    def row(b: Beast) -> str:
+        text = f"{b.name:<11} {b.hp:>3}/{b.max_hp:<3} HP" if b.alive else f"{b.name:<11} down"
+        if "heal" in spec:
+            text += f"  -> {min(b.max_hp, b.hp + spec['heal'])}/{b.max_hp}"
+        elif "revive" in spec:
+            text += f"  -> {max(1, int(b.max_hp * spec['revive']))}/{b.max_hp}"
+        return text + (f"  {b.status}" if b.status and b.alive else "")
+    who = ts.menu(f"{name} on which beast?", [row(b) for b in targets], back="Cancel")
     if who == -1:
         return False
-    b = game.party[who]
+    b = targets[who]
     if "revive" in spec:
         if b.alive:
             say(f"{b.name} isn't down.")
@@ -482,9 +508,12 @@ def arena_fight(game, team: list[Beast], title: str, trainer: str) -> str:
                 mine = ("move", me.moves[choice - 1])
             elif choice == n + 1:
                 old = me
+                if len(game.healthy()) < 2:
+                    log.append("Nobody else is standing to swap in.")
+                    continue
                 if not game.swap_menu(lines=[
                         f"  Facing {foe.name} ({foe.type})  {foe.hp}/{foe.max_hp} HP",
-                        "  Swapping uses your turn -- the foe still acts."]):
+                        "  Swapping uses your turn; the newcomer takes the next hit."]):
                     continue
                 leave_field(old)
                 # prev_me must follow the swap: it is how the next turn knows
