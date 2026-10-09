@@ -21,7 +21,7 @@ import math
 import termstation_sdk as ts
 
 import arena
-from beasts import SPECIES, TRAIN_LABEL, TRAIN_STEP, train_price
+from beasts import ABILITY_DESC, MOVES, SPECIES, TRAIN_LABEL, TRAIN_STEP, train_price
 from main import PAGE, PARTY_MAX, Beast, Game, bar
 from tournament import ROUNDS, generate_bracket
 
@@ -374,7 +374,7 @@ class District:
             gate = "The Arena Gate  -- next rival" if run else "The Arena Gate  -- (needs a squad)"
             pick = ts.menu("The District", [
                 gate,
-                "Squad Hall      -- draft a squad",
+                "Squad Hall      -- your squad up close" if run else "Squad Hall      -- draft a squad",
                 "The Market      -- supplies, for coins",
                 "The Infirmary   -- patch up between rounds",
                 "The Yard        -- permanent training",
@@ -389,13 +389,11 @@ class District:
 
     # ---- the Squad Hall
     def squad_hall(self) -> str:
-        self.head("Squad Hall")
         if self.run:
-            ts.tv_print("  You're already in a run. Starting over forfeits it (items stay).")
-            ts.tv_print()
-            if not ts.confirm("  Abandon the current run?", default=False):
+            if self.squad_room() != "abandon":
                 return ""
             self.end_run(reached=self.run["round"], champion=False, abandoned=True)
+        self.head("Squad Hall")
         pick = ts.menu("Mode", ["Free   -- draft anyone, no budget",
                                 "Ranked -- points budget, climbs the rank ladder"], back="Back")
         if pick == -1:
@@ -414,6 +412,56 @@ class District:
                                "bracket": [dict(r, team=[list(t) for t in r["team"]]) for r in bracket]}
         self.game = self._new_game()
         return f"Squad registered. {len(squad)} beasts. Round 1 awaits at the Gate."
+
+    def squad_room(self) -> str:
+        """Mid-run, the Squad Hall is where you look your squad over. An LLM
+        playtester went here "to check the squad before round 4" and found
+        only an abandon-run prompt. Returns "abandon" if the player chose to
+        start over, else ""."""
+        while True:
+            party = self.game.party
+            self.game.header(f"Squad Hall -- round {self.run['round'] + 1}/{RUN_ROUNDS}")
+            ts.tv_print(ts.color(f"  {self.rival_line()}", "grey"))
+            options = []
+            for b in party:
+                if not b.alive:
+                    options.append(f"{b.name[:11]:<11} {b.type:<5} DOWN")
+                    continue
+                pp = sum(b.pp.get(m, 0) for m in b.moves)
+                full = sum(arena.move_pp(m) for m in b.moves)
+                options.append(f"{b.name[:11]:<11} {b.type:<5} [{bar(b.hp, b.max_hp, 8)}] "
+                               f"{b.hp:>3}/{b.max_hp:<3} PP {pp}/{full}")
+            options.append("Abandon this run and draft a new squad")
+            pick = ts.menu("Your squad -- pick one for a closer look", options, back="Back")
+            if pick == -1:
+                return ""
+            if pick < len(party):
+                self.beast_card(party[pick])
+                continue
+            self.game.header("Squad Hall")
+            ts.tv_print(f"  Ends this run at round {self.run['round'] + 1}. Coins, items, training stay.")
+            ts.tv_print()
+            if ts.confirm("  Abandon it and draft a new squad?", default=False):
+                return "abandon"
+
+    def beast_card(self, b: Beast) -> None:
+        """Everything a between-rounds decision hangs on, for one beast:
+        stats, ability, and what each move actually does, with its PP."""
+        self.game.header(f"Squad Hall -- {b.name}")
+        ts.tv_print(f"  {b.name}  {ts.color(b.type, 'cyan')}  Lv {b.level}   "
+                    + (f"{b.hp}/{b.max_hp} HP" if b.alive else ts.color("DOWN", "bright_red")))
+        ts.tv_print(f"  ATK {b.atk}  DEF {b.dfn}  SPD {b.spd}   Ability: {b.ability}")
+        ts.tv_print(ts.color(f"    {ABILITY_DESC[b.ability]}", "grey"))
+        ts.tv_print(ts.rule("─"))
+        for m in b.moves:
+            spec = MOVES[m]
+            power = "support" if spec["power"] == 0 else f"pow {spec['power']}"
+            left = b.pp.get(m, 0)
+            pp = ts.color(f"PP {left:>2}/{arena.move_pp(m):<2}", "grey" if left else "bright_red")
+            ts.tv_print(f"  {m:<12} {spec['type']:<5} {power:<7} acc {spec['accuracy']:>3}   {pp}")
+            ts.tv_print(ts.color(f"      {arena.effect_text(m) or spec['desc']}", "grey"))
+        ts.tv_print()
+        ts.tv_pause()
 
     # ---- the Arena Gate
     def gate(self) -> str:

@@ -113,6 +113,49 @@ def kind_of(move: str) -> str | None:
     return e[0] if MOVES[move]["power"] == 0 and e else None
 
 
+_STAT = {"atk": "Atk", "def": "Def", "spd": "Spd"}
+_MAY = {"burn": "burn", "sleep": "put to sleep", "paralyze": "paralyze", "poison": "poison",
+        "confused": "confuse"}
+_DOES = {"burn": "burns the foe", "sleep": "puts the foe to sleep", "paralyze": "paralyzes the foe",
+         "poison": "poisons the foe", "confused": "confuses the foe"}
+
+
+def effect_text(move: str) -> str:
+    """What a move does, in mechanics rather than flavour -- for the squad
+    card, where the choice of who to bring hangs on it."""
+    spec = MOVES[move]
+    e, bits = spec["effect"], []
+
+    def pct(x: float) -> str:
+        return f"{round(x * 100)}%"
+
+    def stages(changes) -> str:
+        who = "you" if changes[0][2] == "self" else "foe"
+        return who + " " + ", ".join(f"{_STAT[s]} {d:+d}" for s, d, _ in changes)
+
+    if spec["priority"] > 0 and spec["power"] > 0:
+        bits.append("strikes first")
+    if e:
+        kind = e[0]
+        if kind == "status":
+            bits.append(_DOES.get(e[1], e[1]) if e[2] >= 1 else f"may {_MAY.get(e[1], e[1])} ({pct(e[2])})")
+        elif kind == "stage":
+            bits.append(stages([(e[1], e[2], e[3])]) + ("" if e[4] >= 1 else f" ({pct(e[4])})"))
+        elif kind == "multi":
+            bits.append(stages(e[1]))
+        elif kind == "heal":
+            bits.append(f"heals {pct(e[1])} HP")
+        elif kind == "heal_cure":
+            bits.append(f"heals {pct(e[1])} HP, cures status")
+        elif kind == "protect":
+            bits.append("blocks the next hit; less sure if used twice running")
+        elif kind == "recoil":
+            bits.append(f"{pct(e[1])} recoil")
+    if spec.get("sets_weather"):
+        bits.append(f"brings {spec['sets_weather']}")
+    return "; ".join(bits)
+
+
 def expected_damage(att: Beast, de: Beast, move: str) -> float:
     """What the damage formula gives on average (no randomness), as HP."""
     spec = MOVES[move]
