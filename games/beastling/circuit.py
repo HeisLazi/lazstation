@@ -16,6 +16,8 @@ badges/money/lures to show.
 """
 from __future__ import annotations
 
+import math
+
 import termstation_sdk as ts
 
 import arena
@@ -88,13 +90,9 @@ def ensure_character(profile: dict) -> dict:
     ts.tv_clear(page=PAGE)
     ts.tv_print(ts.title("T H E   C I R C U I T"))
     ts.tv_print()
-    ts.tv_print(ts.box([
-        "  Before you draft, the Circuit wants a name for its records.",
-        "",
-        "  This trainer is separate from your Story-mode save --",
-        "  nothing here needs to be caught first. Draft from every",
-        "  known species instead.",
-    ]))
+    # One line, not a box of rules: an LLM playtester's first reaction to
+    # the old five-line explainer was "too much text, get me to the action".
+    ts.tv_print("  A name for the Circuit's records (separate from Story mode).")
     ts.tv_print()
     name = ts.prompt("  Trainer name") or "Drafter"
     profile["name"] = name[:16]
@@ -103,6 +101,13 @@ def ensure_character(profile: dict) -> dict:
 
 
 # ---------------------------------------------------------- circuit HUD
+def _hits(hp: int, per_hit: float) -> str:
+    """Hits of `per_hit` average damage needed to take `hp` down."""
+    if per_hit <= 0 or hp / per_hit > 9:
+        return "9+"
+    return str(max(1, math.ceil(hp / per_hit)))
+
+
 class CircuitGame(Game):
     """Reuses `Game.battle()` (and everything it calls) wholesale --
     that's where all the actual combat depth lives -- but Circuit mode
@@ -117,18 +122,21 @@ class CircuitGame(Game):
 
     def swap_label(self, b: Beast) -> str:
         """Who to send in is the Arena's central decision, so show what it
-        hinges on: type, HP, whether its best hit is super effective (+) or
-        resisted (-) against the current foe, and how that foe's best hit
-        lands on it."""
+        hinges on: type, HP, and how a straight trade with the current foe
+        goes -- how many of its best hits the foe takes to go down, and how
+        many of the foe's best hits it takes itself. Counts, not a verdict:
+        the old "+hits hard / -outmatched" tags compared raw damage with a
+        fixed ratio, so against a higher-level foe nearly the whole bench
+        read "-outmatched", including the right answer."""
         if not b.alive:
             return f"{b.name:<11} {b.type:<5} (down)"
+        label = f"{b.name:<11} {b.type:<5} {b.hp:>3}/{b.max_hp:<3} HP"
         foe = arena.CURRENT.get("foe")
-        tag = ""
-        if foe is not None and foe.alive:
-            mine = max((arena.expected_damage(b, foe, m) for m in arena.usable_moves(b)), default=0)
-            theirs = max((arena.expected_damage(foe, b, m) for m in arena.usable_moves(foe)), default=0)
-            tag = "  +hits hard" if mine > 1.4 * theirs else ("  -outmatched" if theirs > 1.4 * mine else "")
-        return f"{b.name:<11} {b.type:<5} {b.hp:>3}/{b.max_hp:<3} HP{tag}"
+        if foe is None or not foe.alive:
+            return label
+        mine = max((arena.expected_damage(b, foe, m) for m in arena.usable_moves(b)), default=0)
+        theirs = max((arena.expected_damage(foe, b, m) for m in arena.usable_moves(foe)), default=0)
+        return f"{label}  KOs in {_hits(foe.hp, mine)}, KO'd in {_hits(b.hp, theirs)}"
 
     def header(self, title: str) -> None:
         ts.tv_clear(page=PAGE)
@@ -145,6 +153,7 @@ def draft_squad(ranked: bool) -> list[Beast] | None:
     all_slugs = sorted(SPECIES, key=lambda s: (SPECIES[s]["type"], point_cost(s)))
     chosen: list[str] = []
     page = 0
+    msg = ""
 
     while True:
         # No `page=` here, unlike every other screen in this game: `page`
@@ -168,6 +177,16 @@ def draft_squad(ranked: bool) -> list[Beast] | None:
         ts.tv_print(ts.color(left + (right + "  ").rjust(max(1, width - len(left) - 1)),
                              "bright_cyan"))
         ts.tv_print(ts.rule("─"))
+        # The whole squad, whichever page its members are on -- the ☑ marks
+        # alone split it across two pages.
+        names = [SPECIES[s]["name"] for s in chosen]
+        for cut in (11, 9, 7, 5):                  # six full names overflow 62 columns
+            squad = ", ".join(nm[:cut] for nm in names)
+            if len(squad) <= width - 10:
+                break
+        ts.tv_print(f"  Squad: {squad or 'nobody yet'}")
+        ts.tv_print(ts.color(f"  {msg}", "bright_green") if msg else "")
+        msg = ""
 
         # Two columns per page, not ts.menu(): 36 species in one column is
         # taller than the 20-row picture at the declared 66x24 minimum, so
@@ -190,7 +209,7 @@ def draft_squad(ranked: bool) -> list[Beast] | None:
         for r in range(half):
             right = cells[r + half] if r + half < len(cells) else ""
             ts.tv_print(f"  {cells[r].ljust(col_w)}{right}")
-        ts.tv_print(f"  {n + 1:>2}   Page {page + 1}/{pages} (switch)   "
+        ts.tv_print(f"  {n + 1:>2}   Other page ({page + 1}/{pages})   "
                     f"{n + 2:>2}   Confirm squad   {n + 3:>2}   Cancel")
         pick = ts.ask_int("choose", 1, n + 3) - 1
         if pick == n + 2:
@@ -201,11 +220,22 @@ def draft_squad(ranked: bool) -> list[Beast] | None:
         if pick == n + 1:
             if chosen:
                 return [Beast(s, DRAFT_LEVEL) for s in chosen]
+            msg = "Pick at least one beast first."
+            continue
+        if pick not in shown:
+            # A number from the page you can't see: show that page instead
+            # of drafting blind. An LLM playtester typed 28 meaning "next
+            # page" and silently drafted a 26-point beast it never saw.
+            page = pick // DRAFT_PAGE
+            msg = (f"#{pick + 1} {SPECIES[all_slugs[pick]]['name']} is here --"
+                   f" type {pick + 1} again to draft it.")
             continue
 
         slug = all_slugs[pick]
+        name = SPECIES[slug]["name"]
         if slug in chosen:
             chosen.remove(slug)
+            msg = f"Dropped {name}."
             continue
         if len(chosen) >= PARTY_MAX:
             # tv_clear() FIRST, not after: with the full 20-species list
@@ -224,11 +254,45 @@ def draft_squad(ranked: bool) -> list[Beast] | None:
             ts.tv_pause()
             continue
         chosen.append(slug)
+        msg = f"Drafted {name} ({SPECIES[slug]['type']}" + (f", {point_cost(slug)}pt)." if ranked else ").")
 
 
 # ------------------------------------------------------------ the district
 YARD_CAP = 6                 # training points per stat in the Yard (profile-wide)
 RUN_ROUNDS = ROUNDS
+REVIVE_BASE, REVIVE_STEP = 60, 20    # a revive costs about one round's prize
+
+
+def round_prize(round_idx: int) -> int:
+    """Coins for clearing round `round_idx` (0-based), before any bonus."""
+    return 50 + 20 * (round_idx + 1)
+
+
+def treatment_prices(b: Beast, round_idx: int) -> dict:
+    """The Infirmary's prices for one beast before round `round_idx`
+    (0-based). HP and PP upkeep climb 25% a round. A revive is per beast and
+    pegged near one round's prize, so losing a beast costs about a round's
+    winnings. It used to be one all-or-nothing package at 160c x the round
+    multiplier per body -- 960c by round 3, more than any purse, so one bad
+    fight ended the run (two of three LLM playtesters hit exactly that)."""
+    if not b.alive:
+        return {"hp": 0, "pp": 0, "revive": REVIVE_BASE + REVIVE_STEP * round_idx}
+    mult = 1 + 0.25 * round_idx
+    missing_hp = b.max_hp - b.hp
+    missing_pp = sum(max(0, arena.move_pp(m) - b.pp.get(m, 0)) for m in b.moves)
+    return {"hp": int((8 + missing_hp // 3) * mult) if missing_hp else 0,
+            "pp": int((6 + missing_pp // 2) * mult) if missing_pp else 0,
+            "revive": 0}
+
+
+def apply_treatment(b: Beast, kind: str) -> None:
+    if kind == "revive" and not b.alive:
+        b.hp = max(1, b.max_hp // 2)
+        b.reset_combat_state()
+    elif kind == "hp" and b.alive:
+        b.hp = b.max_hp
+    elif kind == "pp" and b.alive:
+        arena.restore_pp(b)
 
 
 def squad_blob(party: list[Beast]) -> list[dict]:
@@ -302,6 +366,7 @@ class District:
                 standing = sum(1 for b in self.game.party if b.alive)
                 ts.tv_print(ts.color(f"  Run: {run['mode']}, round {run['round'] + 1}/{RUN_ROUNDS}"
                                      f" -- {standing}/{len(self.game.party)} standing", "bright_cyan"))
+                ts.tv_print(ts.color(f"  {self.rival_line()}", "grey"))
             else:
                 ts.tv_print(ts.color("  No run yet. The Squad Hall is where you start one.", "grey"))
             ts.tv_print(ts.color(f"  {notice}", "bright_green") if notice else "")
@@ -380,7 +445,7 @@ class District:
             return ""
         run["round"] = i + 1
         fallen = sum(1 for b in self.game.party if not b.alive) - fallen_before
-        prize = 50 + 20 * (i + 1) + (25 if fallen == 0 else 0)
+        prize = round_prize(i) + (25 if fallen == 0 else 0)
         champion = run["round"] >= RUN_ROUNDS
         if champion:
             prize += 200
@@ -464,57 +529,117 @@ class District:
                 self.save()
 
     # ---- the Infirmary
-    def infirmary_prices(self) -> dict:
-        party = self.game.party
-        mult = 1 + 0.25 * (self.run["round"] if self.run else 0)
-        hp = sum(8 + (b.max_hp - b.hp) // 3 for b in party if b.alive and b.hp < b.max_hp)
-        pp = sum(14 for b in party if b.alive and any(b.pp[m] < arena.move_pp(m) for m in b.moves))
-        revive = 160 * sum(1 for b in party if not b.alive)
-        return {"hp": int(hp * mult), "pp": int(pp * mult), "revive": int(revive * mult)}
+    def rival_line(self) -> str:
+        """Who the Gate holds next -- what every between-round choice hinges on."""
+        run = self.run
+        if not run or run["round"] >= RUN_ROUNDS:
+            return ""
+        r = run["bracket"][run["round"]]
+        levels = [lv for _, lv in r["team"]]
+        return (f"Next: {r['name']} -- {'/'.join(r['types'])}, {len(r['team'])} beasts,"
+                f" Lv {min(levels)}-{max(levels)}")
+
+    @staticmethod
+    def _ward_line(b: Beast, price: dict) -> str:
+        if not b.alive:
+            return f"{b.name[:11]:<11} {'DOWN':<20}  revive {price['revive']}c"
+        need = "  ".join(x for x in (f"heal {price['hp']}c" if price["hp"] else "",
+                                     f"PP {price['pp']}c" if price["pp"] else "") if x)
+        return (f"{b.name[:11]:<11} [{bar(b.hp, b.max_hp, 8)}] {b.hp:>3}/{b.max_hp:<3}  "
+                + (need or "fit to fight"))
 
     def infirmary(self) -> str:
+        """The beast list IS the menu: pick who to treat, then what. Per beast,
+        so after a rough round you choose who comes back for the next rival
+        instead of facing one price for everything."""
         if not self.run:
             return "The Infirmary is for squads in a run. Nobody here to treat."
         msg = ""
         while True:
-            cost = self.infirmary_prices()
-            # No blank rows on this screen: 6 beasts + the 3-option menu leave
+            party = self.game.party
+            prices = [treatment_prices(b, self.run["round"]) for b in party]
+            # No blank rows on this screen: 6 beasts + Everyone + Back leave
             # almost no slack at 66x24, and spending a row on padding blanked
             # the whole screen (the silent cursor-seat wipe) when first built.
             self.game.header("The Infirmary")
-            ts.tv_print(f"  Nurse Odalys: \"Prices climb with the round.\"  "
+            ts.tv_print(f"  Nurse Odalys: \"Prices climb each round.\"  "
                         f"{ts.color(str(self.coins()), 'bright_yellow')}c")
-            if msg:
-                ts.tv_print(ts.color(f"  {msg}", "bright_green"))
-            for b in self.game.party:
-                pp_full = all(b.pp[m] >= arena.move_pp(m) for m in b.moves)
-                ts.tv_print(f"  {b.name[:11]:<11} [{bar(b.hp, b.max_hp, 8)}] {b.hp:>3}/{b.max_hp:<3}"
-                            + ("" if pp_full else " PP low") + ("" if b.alive else "  DOWN"))
-            pick = ts.menu("Treatment", [
-                f"Heal everyone's HP        {cost['hp']:>4}c" if cost["hp"] else "Heal everyone's HP        (all well)",
-                f"Restore everyone's PP     {cost['pp']:>4}c" if cost["pp"] else "Restore everyone's PP     (all full)",
-                f"Revive the fallen (half)  {cost['revive']:>4}c" if cost["revive"] else "Revive the fallen         (nobody down)",
-            ], back="Back")
+            ts.tv_print(ts.color(f"  {self.rival_line()}", "grey"))
+            ts.tv_print(ts.color(f"  {msg}", "bright_green") if msg else "")
+            options = [self._ward_line(b, p) for b, p in zip(party, prices)]
+            options.append("Everyone -- treat the whole squad at once")
+            pick = ts.menu("Treat who?", options, back="Back")
             if pick == -1:
                 return ""
-            key = ["hp", "pp", "revive"][pick]
-            if cost[key] == 0:
-                msg = "Nothing to do there."
-            elif self.coins() < cost[key]:
-                msg = "Not enough coins."
+            if pick == len(party):
+                msg = self._treat_all(prices)
             else:
-                self.profile["coins"] -= cost[key]
-                for b in self.game.party:
-                    if key == "hp" and b.alive:
-                        b.hp = b.max_hp
-                    elif key == "pp" and b.alive:
-                        arena.restore_pp(b)
-                    elif key == "revive" and not b.alive:
-                        b.hp = max(1, b.max_hp // 2)
-                        b.reset_combat_state()
-                msg = {"hp": "Everyone is patched up.", "pp": "Moves restored.",
-                       "revive": "The fallen are back on their feet."}[key]
-                self.save()
+                msg = self._treat_one(party[pick], prices[pick])
+
+    def _pay(self, cost: int, beasts_kinds: list[tuple[Beast, str]]) -> bool:
+        if self.coins() < cost:
+            return False
+        self.profile["coins"] -= cost
+        for b, kind in beasts_kinds:
+            apply_treatment(b, kind)
+        self.save()
+        return True
+
+    def _treat_one(self, b: Beast, price: dict) -> str:
+        if not b.alive:
+            choices = [("revive", f"Revive at half HP   {price['revive']:>4}c", price["revive"])]
+        else:
+            choices = []
+            if price["hp"]:
+                choices.append(("hp", f"Heal HP to full     {price['hp']:>4}c", price["hp"]))
+            if price["pp"]:
+                choices.append(("pp", f"Restore all PP      {price['pp']:>4}c", price["pp"]))
+            if price["hp"] and price["pp"]:
+                choices.append(("both", f"Both                {price['hp'] + price['pp']:>4}c",
+                                price["hp"] + price["pp"]))
+        if not choices:
+            return f"{b.name} is fit to fight."
+        self.game.header(f"The Infirmary -- {b.name}")
+        ts.tv_print(f"  {b.name} ({b.type})  {b.hp}/{b.max_hp} HP" + ("  DOWN" if not b.alive else "")
+                    + f"     you have {ts.color(str(self.coins()), 'bright_yellow')}c")
+        cells = [f"{m:<13}{b.pp.get(m, 0):>2}/{arena.move_pp(m):<2}" for m in b.moves]
+        for r in range(0, len(cells), 2):
+            ts.tv_print("    " + "   ".join(cells[r:r + 2]))
+        pick = ts.menu("Treatment", [c[1] for c in choices], back="Back")
+        if pick == -1:
+            return ""
+        kind, _, cost = choices[pick]
+        kinds = ["hp", "pp"] if kind == "both" else [kind]
+        if not self._pay(cost, [(b, k) for k in kinds]):
+            return "Not enough coins."
+        return {"revive": f"{b.name} is back on its feet (half HP).", "hp": f"{b.name} is patched up.",
+                "pp": f"{b.name}'s moves are restored.", "both": f"{b.name} is good as new."}[kind]
+
+    def _treat_all(self, prices: list[dict]) -> str:
+        party = self.game.party
+        total = {k: sum(p[k] for p in prices) for k in ("revive", "hp", "pp")}
+        labels = {"revive": "Revive the fallen (half HP)", "hp": "Heal everyone's HP",
+                  "pp": "Restore everyone's PP"}
+        choices = [(k, f"{labels[k]:<28}{total[k]:>5}c", total[k]) for k in labels if total[k]]
+        if not choices:
+            return "Everyone is fit to fight."
+        if len(choices) > 1:
+            choices.append(("all", f"{'All of the above':<28}{sum(total.values()):>5}c", sum(total.values())))
+        self.game.header("The Infirmary -- everyone")
+        ts.tv_print(f"  You have {ts.color(str(self.coins()), 'bright_yellow')} coins."
+                    "  Revived beasts come back at half HP.")
+        pick = ts.menu("Treatment", [c[1] for c in choices], back="Back")
+        if pick == -1:
+            return ""
+        kind, _, cost = choices[pick]
+        kinds = ["revive", "hp", "pp"] if kind == "all" else [kind]
+        # Each beast is charged at the price shown, so a beast revived here
+        # is not also healed past half by the same purchase.
+        work = [(b, k) for b, p in zip(party, prices) for k in kinds if p[k]]
+        if not self._pay(cost, work):
+            return "Not enough coins."
+        return {"revive": "The fallen are back on their feet.", "hp": "Everyone is patched up.",
+                "pp": "Moves restored.", "all": "The whole squad is seen to."}[kind]
 
     # ---- the Yard
     def yard(self) -> str:

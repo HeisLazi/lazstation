@@ -378,13 +378,19 @@ def arena_fight(game, team: list[Beast], title: str, trainer: str) -> str:
         me = game.lead()
         if me is None:
             return "lost"
-        CURRENT["foe"], CURRENT["team"] = team[idx], team
-        if prev_me is not None and not prev_me.alive and len(game.healthy()) >= 2:
-            ts.tv_clear()
-            game.swap_menu()                       # free choice of who comes in
-            me = game.lead()
-        prev_me = me
         foe = team[idx]
+        CURRENT["foe"], CURRENT["team"] = foe, team
+        if prev_me is not None and not prev_me.alive:
+            # Your beast went down: you choose who comes in, for free. The
+            # menu wipes the battle screen, so it repeats what just happened
+            # first -- a bare "send out which beast?" read as a glitch.
+            if len(game.healthy()) >= 2:
+                game.swap_menu(forced=True, heading=f"{prev_me.name} is down -- send out who?",
+                               lines=[*(f"  {line}" for line in log[-4:]), "",
+                                      f"  Facing {foe.name} ({foe.type})  {foe.hp}/{foe.max_hp} HP"])
+                me = game.lead()
+            log.append(f"You send out {me.name}!")
+        prev_me = me
         weather_set_this_turn = False
         log.extend(check_vengeful(me))
         log.extend(check_vengeful(foe))
@@ -433,10 +439,16 @@ def arena_fight(game, team: list[Beast], title: str, trainer: str) -> str:
                 mine = ("move", me.moves[choice - 1])
             elif choice == n + 1:
                 old = me
-                if not game.swap_menu():
+                if not game.swap_menu(lines=[
+                        f"  Facing {foe.name} ({foe.type})  {foe.hp}/{foe.max_hp} HP",
+                        "  Swapping uses your turn -- the foe still acts."]):
                     continue
                 leave_field(old)
-                me = game.lead()
+                # prev_me must follow the swap: it is how the next turn knows
+                # whose faint to ask about. Left on the old beast, a newcomer
+                # KO'd on the switch-in brought the old one back with no
+                # menu and no message (found by an LLM playtester).
+                me = prev_me = game.lead()
                 log.append(f"You send out {me.name}!")
                 mine = ("swapped",)
             else:

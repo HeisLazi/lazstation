@@ -1376,29 +1376,47 @@ class Game:
         return (f"{b.name}  Lv {b.level}  {b.hp}/{b.max_hp} HP"
                 + ("  (down)" if not b.alive else ""))
 
-    def swap_menu(self) -> bool:
+    def swap_menu(self, forced: bool = False, lines: list[str] | None = None,
+                  heading: str = "Send out which beast?") -> bool:
+        """Put a chosen beast out front. `forced` is the replacement after the
+        lead goes down: no Cancel (there is nothing to go back to -- LLM
+        playtesters read a Cancel there as a way out and lost a beat to it),
+        and a downed pick asks again. `lines` go above the list, so the
+        screen can say what just happened before it asks."""
         options = [self.swap_label(b) for b in self.party]
         if len(options) < 2:
             return False
-        # A real, adjacent bug surfaced by the weather-pass row-budget
-        # review: this used to draw straight on top of whatever was
-        # already on screen -- the full battle display, already close to
-        # the row budget on its own -- with no clear first. A party of
-        # even 2-3 beasts was enough to push it over the edge and blank
-        # the screen the same way travel()/the draft screen once did.
-        ts.tv_clear()
-        pick = ts.menu("Send out which beast?", options, back="Cancel")
-        if pick == -1 or pick == 0:
-            # pick == 0 is already the active lead -- selecting it is a
-            # no-op, not a real swap, and must not cost a turn now that
-            # voluntary swaps do (see battle()).
-            return False
-        chosen = self.party[pick]
-        if not chosen.alive:
-            return False
-        self.party.remove(chosen)
-        self.party.insert(0, chosen)
-        return True
+        lead = self.lead()
+        note = ""
+        while True:
+            # A real, adjacent bug surfaced by the weather-pass row-budget
+            # review: this used to draw straight on top of whatever was
+            # already on screen -- the full battle display, already close to
+            # the row budget on its own -- with no clear first. A party of
+            # even 2-3 beasts was enough to push it over the edge and blank
+            # the screen the same way travel()/the draft screen once did.
+            ts.tv_clear()
+            for line in lines or ():
+                ts.tv_print(line)
+            if note:
+                ts.tv_print(ts.color(f"  {note}", "bright_red"))
+            pick = ts.menu(heading, options, back=None if forced else "Cancel")
+            if pick == -1:
+                return False
+            chosen = self.party[pick]
+            if not chosen.alive:
+                note = f"{chosen.name} is down -- pick one still standing."
+                continue
+            if chosen is lead and not forced:
+                # Already the active lead -- a no-op, not a real swap, and it
+                # must not cost a turn now that voluntary swaps do (see
+                # battle()). Compared by identity, not index 0: a beast that
+                # fainted earlier can sit at the front of the party while the
+                # lead is further down.
+                return False
+            self.party.remove(chosen)
+            self.party.insert(0, chosen)
+            return True
 
     # ------------------------------------------------------------- world
     def explore(self, route: dict) -> None:
