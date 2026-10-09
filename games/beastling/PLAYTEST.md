@@ -95,22 +95,31 @@ rounds; coins from prizes pay for treatment and supplies.
 
 - [ ] Main menu -> Tournament. Name screen is one line, then the District hub.
 - [ ] Squad Hall -> Free draft: 36 species over two pages. Typing a number from
-      the other page flips to it (it does NOT draft it); the Squad line lists
-      your picks from both pages.
+      the other page drafts it AND turns to that page ("-- it's on page 2");
+      the Squad line lists your picks from both pages.
+- [ ] Squad Hall -> Type chart (before drafting, and mid-run): readable? Did
+      you use it when planning?
 - [ ] Ranked draft: point costs shown, budget enforced.
 - [ ] Hub shows the run, how many are standing, and the next rival
       (types, team size, levels). Does that change what you do first?
 - [ ] Arena Gate fight: moves show PP and ▲/▼ (super effective / resisted).
       Does PP running out force real choices, or is it noise?
 - [ ] Swap menu: each beast shows "KOs in N, KO'd in M" against the current
-      foe. Is that readable at a glance? Does it make swaps feel informed?
+      foe, and only beasts still standing are listed ("Down:" names the rest).
+      A beast that would fall to the foe's free hit reads "likely KO'd on
+      entry". Readable at a glance? Do swaps feel informed?
 - [ ] Let a beast faint right after switching in: you must be ASKED who comes
       next (no Cancel), and the screen says what happened.
+- [ ] Mid-run Squad Hall: your squad with HP/PP; a card per beast shows what
+      each move actually does. Abandoning needs an explicit yes.
 - [ ] Infirmary after a rough round: pick a beast, then heal / PP / revive.
-      Revive is per beast (about one round's prize). Can you afford
-      everything? Is choosing who to revive for the next rival a real choice?
-- [ ] Market items mid-fight (Potion, Super Potion, Full Heal, Revive, Ether):
-      worth the coins versus the Infirmary?
+      Revive is per beast (about one round's prize). Short of coins, the
+      Everyone screen offers "Revive N of M, strongest first". Is choosing
+      who to revive for the next rival a real choice?
+- [ ] Items mid-fight: the target list shows HP after the item and the foe's
+      best hit on your lead. Does that stop you wasting a turn? Is a 40-HP
+      Potion ever worth it in later rounds? (Potion strength is unchanged and
+      unmeasured -- your call.)
 - [ ] Yard: permanent training per species. Worth saving coins for between runs?
 - [ ] Try the lazy plan -- one squad type, one strong move every turn. How far
       does it get? (Simulated: about 3.6 rounds of 6, vs 5.2 for careful play.)
