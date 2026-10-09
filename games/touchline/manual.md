@@ -1,0 +1,128 @@
+# Ekse Slaan Ball
+
+You are the manager of one of twelve original clubs across the Sable Coast
+League and Tideway Championship. Each tier plays ten home-and-away rounds;
+both competitions settle each week, then two clubs rise and two fall at the
+season break. Players, contracts, finances and academy arrivals carry forward.
+
+## The desk
+
+Choose a club to start. The Home page shows your next fixture, current plan,
+table position, board confidence, transfer room and the latest state-driven
+news. The save updates after each decision and match window.
+
+| Key | Page or action |
+|---|---|
+| `1`–`7` | Home, Squad, Plan, Training, Market, Table, Logs |
+| Left/Right, `Enter` | Browse the section bar, then open the focused page or Matchday |
+| `M` | Start or resume matchday from any desk page |
+| `?` | In-game controls and system guide |
+| `Q` | Save and quit |
+| `Tab` | Move to the next main page; number keys remain direct jumps |
+
+## Squad and selection
+
+Browse the roster with Up/Down. Press `X` to toggle a starter. If the XI is
+full, the selected player replaces the weakest like-for-like starter; the
+match engine fills any remaining gaps. `!` means a player is still injured.
+Press `V` to accept a fair incoming offer for the selected player. Keep at
+least eleven players registered.
+
+Fitness is short-term readiness. Sharpness reflects match readiness. Form is
+recent performance. Morale and manager trust respond to results, minutes and
+ratings. Player attributes and potential are individual; the broad position
+rating is only a quick comparison.
+
+## Tactical plan
+
+The Plan page changes the shape in and out of possession independently:
+
+| Key | Instruction |
+|---|---|
+| `I` / `O` | Cycle the in-possession / out-of-possession shape |
+| `P` | Press intensity |
+| `L` | Defensive line |
+| `W` | Width |
+| `B` | Build-up style |
+| `T` | Tempo |
+| `-` / `+` | Adjust the currently focused instruction |
+
+Left/Right now browse the section bar. Press one of `I/O/P/L/W/B/T` to focus
+and cycle that instruction directly, or use `-`/`+` to adjust the last focused
+instruction in either direction.
+
+Every plan has a visible trade-off. High pressure can create high regains but
+uses more energy. A high line compresses space while giving direct balls a
+route behind. Short build-up protects possession but asks players to pass under
+pressure. Width opens crossing lanes and can leave wider transition space.
+Formation profiles also feed the match model: 3-5-2 adds a midfield screen but
+leaves more room behind its back three; 4-3-3 adds box presence; 4-4-2 balances
+forward occupation and midfield cover. The Plan page explains the selected
+shape, and the profile values live beside the formation slots in `content.py`.
+
+## Weekly preparation
+
+On Training, use Up/Down to choose a focus and Enter to set it. Press `I` to
+cycle intensity. Training applies once when matchday starts. Recovery improves
+readiness; technical sessions build skill or tactical familiarity; high
+intensity increases fatigue and injury exposure. Those are probabilities and
+costs, not automatic injuries.
+
+## Matchday
+
+When you start a match, choose a team talk before kickoff. The preview shows
+how each starter is expected to respond; the delivered talk makes a small,
+personality-specific morale change and is recorded in the match events. It does
+not grant a hidden ability or tactical bonus.
+
+Press Enter to play the next 15-minute window. `Tab` cycles three views over
+the same match: Live shows the latest incident and its recorded explanation;
+Events lists incidents newest-first, with Up/Down browsing the chronology and
+the selected action's recorded explanation beside it; Stats shows the
+event-derived score, shots, xG, passes and player contributions. The same
+ledger drives goals, shots, player performances, the report and career news.
+Better finishing changes conversion; it does not manufacture better chances.
+The opposing manager can adapt to the score late in the match.
+
+| Key | Match action |
+|---|---|
+| `Enter` | Play the next 15 minutes; at full time, settle the whole round |
+| `1` | Cycle your press |
+| `2` | Cycle your defensive line |
+| `3` | Cycle your width |
+| `4` | Open Changes; select the outgoing and incoming players, then confirm (five per match) |
+| `Tab` | Cycle Live, Events and Stats |
+| Up/Down | Browse incidents in Events (newer/older) |
+| `Q` | Quick-sim the remaining periods with the same match engine |
+| `Esc` | Pause and return to Home; `M` resumes |
+
+In Changes, use `Tab` to switch between the on-pitch and available-player lists,
+then Up/Down to select each player. Enter confirms the exact pairing; Escape
+cancels without changing the lineup. Only medically cleared players are
+available, and a goalkeeper can only replace the goalkeeper.
+
+At full time, press Enter again to update all six fixtures across both tiers,
+the tables, finances, player form, morale, trust and injury outlook for the round.
+
+## Recruitment
+
+Scout a target with `S`. The report has a confidence level and ranges for
+skills, value, wages and potential; further reports cost £2k and reduce
+uncertainty. Press `O` to negotiate. The arrows adjust transfer fee and weekly
+wage separately. A counteroffer exposes the agent's changed terms; `C` accepts
+the counter. The club enforces cash, transfer and wage ceilings. Incoming
+players become part of the same persistent squad and can be trained, selected
+or sold later.
+
+## League and career
+
+The table shows your current division and sorts by points, goal difference,
+goals scored, then club name. The two leagues each have six clubs and ten
+rounds; every opponent is met home and away. The top two in Tideway are
+promoted and the bottom two in Sable Coast are relegated. Complete the final
+round, review the movement, then press Enter on Home to begin the next season.
+Players age, deals run down, and every club receives a new academy prospect.
+Club membership and the fixtures adapt to promotion and relegation.
+
+The career autosaves in the console's selected save slot. Quit with `Q` at a
+desk page; an active match can be resumed from Home.

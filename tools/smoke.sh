@@ -50,6 +50,10 @@ echo "games"
 for dir in games/*/; do
   slug=$(basename "$dir")
   [ -f "$dir/game.toml" ] || continue
+  if [ ! -f "$dir/main.py" ]; then
+    printf '  \033[33m○\033[0m %s external entry, skipped (covered by doctor)\n' "$slug"
+    continue
+  fi
   out=$(render "$slug" 80 24 $'\n\n1\n')
   if grep -q "╔" <<<"$out" && grep -q "╚" <<<"$out"; then
     pass "$slug renders with its frame intact"

@@ -90,6 +90,7 @@ class Console:
         self.scroll = 0.0
         self.filter = ""
         self.searching = False
+        self.compartment = "all"
         self.message = ""
         self.msg_until = 0.0
         self.fast_boot = False
@@ -107,6 +108,9 @@ class Console:
         self.born = time.monotonic()
         self.prev_game: Game | None = None
         self.change_at = 0.0
+        saved = self.load_config().get("compartment", "all")
+        if saved in library.compartment_keys():
+            self.compartment = saved
         self.refresh_library()
 
     def load_config(self) -> dict:
@@ -124,7 +128,7 @@ class Console:
             paths.CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
             data = self.load_config()
             data.update(theme=self.theme, fast_boot=self.fast_boot,
-                        profile=self.profile)
+                        profile=self.profile, compartment=self.compartment)
             tmp = paths.CONFIG_FILE.with_suffix(".tmp")
             tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
             tmp.replace(paths.CONFIG_FILE)
@@ -189,12 +193,26 @@ class Console:
 
     @property
     def visible(self) -> list[Game]:
+        games = self.all_games
+        if self.compartment != "all":
+            games = [g for g in games
+                     if library.compartment_for(g) == self.compartment]
         if not self.filter:
-            return self.all_games
+            return games
         n = self.filter.lower()
-        return [g for g in self.all_games
+        return [g for g in games
                 if n in g.name.lower() or n in g.slug.lower()
                 or any(n in t.lower() for t in g.tags)]
+
+    def cycle_compartment(self, step: int = 1) -> None:
+        """Flip to the next shelf. The console remembers it between runs."""
+        keys = library.compartment_keys()
+        nxt = keys[(keys.index(self.compartment) + step) % len(keys)]
+        self.compartment = nxt
+        self.select(0)
+        self.scroll = 0.0
+        self.save_config()
+        self.say(f"{library.compartment_title(nxt).lower()} shelf")
 
     @property
     def current(self) -> Game | None:
@@ -265,12 +283,19 @@ class Console:
         head = f"{brand.NAME}"
         canvas.text(1, 0, head, fx.scale(tone, 0.85 + 0.15 * pulse))
         total_awards = sum(len(v) for v in self.awards.values())
-        meta = f"{self.profile}   {len(self.all_games)} games   ★ {total_awards}"
+        shelf = library.compartment_title(self.compartment)
+        meta = (f"{self.profile}   {shelf}   {len(games)}/{len(self.all_games)}"
+                f"   ★ {total_awards}")
         canvas.text(max(1, width - len(meta) - 1), 0, meta, INK)
 
         row_y = 6
         if not games:
-            msg = "no games found" if not self.filter else f"nothing matches '{self.filter}'"
+            if self.filter:
+                msg = f"nothing matches '{self.filter}'"
+            elif self.compartment != "all":
+                msg = f"nothing on the {shelf.lower()} shelf yet"
+            else:
+                msg = "no games found"
             canvas.text(max(1, (width - len(msg)) // 2), row_y, msg, AMBER)
             canvas.text(max(1, (width - 22) // 2), row_y + 2,
                         "lazstation new my-game", INK)
@@ -574,6 +599,8 @@ class Console:
             elif key == ord("/"):
                 self.searching = True
                 self.filter = ""
+            elif key in (ord("c"), ord("C")):
+                self.cycle_compartment()
             elif key in (ord("r"), ord("R")):
                 self.refresh_library()
                 self.say("library refreshed")
@@ -771,6 +798,7 @@ class Console:
             "  1 2 3      choose a save slot for this game",
             "  a          awards you have unlocked",
             "  /          search by name or tag      esc clears",
+            "  c          next shelf (roguelikes, sports, …)",
             "  p          switch save profile",
             "  r          rescan for new games",
             "  b          toggle the boot animation",

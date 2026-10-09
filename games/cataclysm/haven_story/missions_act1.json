@@ -1,0 +1,181 @@
+[
+  {
+    "id": "MISSION_HAVEN_Q1_WATER",
+    "type": "mission_definition",
+    "name": { "str": "Act 1 - Water for Old Tom" },
+    "description": "ACT 1 (Crossroads): bring Old Tom one unit of clean water. No fighting, just proof you are useful. Doing this earns Tom's chit and his word - and Micah the scavenger only deals with people Tom vouches for.",
+    "goal": "MGOAL_FIND_ITEM",
+    "item": "water_clean",
+    "difficulty": 1,
+    "value": 5000,
+    "origins": [ "ORIGIN_OPENER_NPC", "ORIGIN_ANY_NPC" ],
+    "followup": "MISSION_HAVEN_Q2_MICAH",
+    "end": {
+      "effect": [
+        { "u_add_var": "haven_q1_done", "value": "yes" },
+        { "u_buy_item": "haven_chit" },
+        { "u_add_morale": "morale_feeling_good", "bonus": 15, "max_bonus": 40, "duration": "4 hours", "decay_start": "2 hours" }
+      ]
+    },
+    "dialogue": {
+      "describe": "My well's gone sour and my knees are older than this war.",
+      "offer": "Name's Tom. I keep the crossroads garden alive and I know every soul worth knowing between here and Haven. My well's gone sour, so I need one unit of clean water - boiled, purified, whatever, as long as it's safe. Do that and I'll give you my chit and my word. Flash that chit at Micah, the scavenger, and he'll deal with you. Without my word he won't even open his shutter.",
+      "accepted": "Water. Clean. I'll be on the porch.",
+      "rejected": "Then the garden dies with me, I suppose.",
+      "advice": "Boil river water in a pot, or check houses for sealed bottles and tanks. One unit is all I ask. And keep the noise down - the thirsty aren't the only things that walk here.",
+      "inquire": "Any clean water yet? The seedlings are curling.",
+      "success": "Clean as rain. You're good people. Take my chit - Micah honors it. Tell him Tom sent you, and he'll open up work that pays in real parts. The road east runs through his yard.",
+      "success_lie": "That jug sloshes wrong. Don't lie to an old man about water.",
+      "failure": "Then I'll drink the sour well and take my chances."
+    }
+  },
+  {
+    "id": "MISSION_HAVEN_Q2_MICAH",
+    "type": "mission_definition",
+    "name": { "str": "Act 1 - Micah's Price" },
+    "description": "ACT 1 (Crossroads): Tom vouched for you, so Micah will deal. Clear the dead (6 zombies) off his salvage yard so he can work. Pays in a working car alternator - the part Lena needs to light the radio tower. Combat mission: bring a weapon and bandages.",
+    "goal": "MGOAL_KILL_MONSTER_SPEC",
+    "monster_species": "ZOMBIE",
+    "monster_kill_goal": 6,
+    "difficulty": 2,
+    "value": 20000,
+    "origins": [ "ORIGIN_SECONDARY" ],
+    "followup": "MISSION_HAVEN_Q3_TOWER",
+    "end": {
+      "effect": [
+        { "u_add_var": "haven_q2_done", "value": "yes" },
+        { "u_buy_item": "alternator_car" },
+        { "u_add_morale": "morale_feeling_good", "bonus": 20, "max_bonus": 50, "duration": "6 hours", "decay_start": "3 hours" }
+      ]
+    },
+    "dialogue": {
+      "describe": "Tom's chit? Then you're someone. I've got dead stock and dead customers.",
+      "offer": "Tom's word opens my shutter - that's how the crossroads works: you do for Tom, Tom speaks for you, I deal with you. My salvage yard is crawling - six of the dead, maybe more, nesting in the wrecks. Clear them out so I can strip in peace, and I'll pay you with the best thing I own: a working car alternator. Lena up at the tower has been begging for one. You bring her that part, she lights the tower, and the whole crossroads hears Haven again.",
+      "accepted": "Six dead. Yard's yours when it's quiet.",
+      "rejected": "Then the yard stays dead and so does the tower.",
+      "advice": "Crowbar or nail bat, keep a door between you and them, and fight tired and you fight dead. Lure them out one at a time. If you're green, ask around first - there's hound work in a cellar that pays in a real blade.",
+      "inquire": "Yard quiet yet? I can hear them from here.",
+      "success": "Quiet. Real quiet. A deal's a deal - the alternator's yours, tested and good. Take it to Lena at the radio tower. She fits it, the tower lights, and you'll hear 91.1 from here to Haven. You earned this the crossroads way: water bought trust, trust bought work, work buys light.",
+      "success_lie": "I can still hear them moaning in my yard. Count again.",
+      "failure": "Then I'll burn the yard with everything in it."
+    }
+  },
+  {
+    "id": "MISSION_HAVEN_Q3_TOWER",
+    "type": "mission_definition",
+    "name": { "str": "Act 1 - Light the Tower" },
+    "description": "ACT 1 FINALE (Crossroads): carry the working car alternator to Lena so she can repair the radio tower generator. Handing it over completes Act 1, lights the tower, and earns Lena's marked road map east - your ticket to Act 2.",
+    "goal": "MGOAL_CONDITION",
+    "goal_condition": { "u_has_item": "alternator_car" },
+    "difficulty": 2,
+    "value": 30000,
+    "origins": [ "ORIGIN_SECONDARY" ],
+    "followup": "MISSION_HAVEN_Q4_ROAD",
+    "end": {
+      "effect": [
+        { "u_sell_item": "alternator_car" },
+        { "u_add_var": "haven_act1_done", "value": "yes" },
+        { "u_buy_item": "haven_roadmap" },
+        { "u_add_morale": "morale_feeling_good", "bonus": 30, "max_bonus": 60, "duration": "8 hours", "decay_start": "4 hours" }
+      ]
+    },
+    "dialogue": {
+      "describe": "The tower's dark and Haven's voice is fading. I need that alternator.",
+      "offer": "You're the one Micah paid in parts? Good. I'm Lena. This tower used to relay the Haven broadcast across the whole county, but the generator's alternator is fried. Fit me a working car alternator and I'll have her lit by dusk. The whole crossroads will hear 91.1 again - and I'll mark you the route east on my own map. That map is worth more than bullets: fuel, water, and which roads are dead.",
+      "accepted": "Bring the alternator. Tools are warm already.",
+      "rejected": "Then the tower stays dark and Haven stays a rumor.",
+      "advice": "Micah pays one out for yard work - or the Tinker, down the road, owes me a debt and keeps a spare. Either road ends at my workbench. Keep the part dry and don't stop for anything with too many legs.",
+      "inquire": "Got that alternator? The sun's dropping and the tower crew is waiting.",
+      "success": "Fitted. Charging. Listen - there it is. Haven is lit. The light stays on. The crossroads can hear it again because of you: water for Tom, blood for Micah, light for everyone. Take my map. East. Keep the tank above half, and don't stop where the radio goes quiet.",
+      "success_lie": "That's a burnt-out husk, not a working part. Don't.",
+      "failure": "Then we listen to static and call it music."
+    }
+  },
+  {
+    "id": "MISSION_HAVEN_Q4_ROAD",
+    "type": "mission_definition",
+    "name": { "str": "Act 1 Complete - The Long Road Ahead" },
+    "description": "ACT 1 COMPLETE. Lena lit the tower and marked your map. Report in with the map to close Act 1 and hear what waits on the road east (Acts 2-5 outline + Haven endgoal).",
+    "goal": "MGOAL_CONDITION",
+    "goal_condition": { "u_has_item": "haven_roadmap" },
+    "difficulty": 0,
+    "value": 0,
+    "origins": [ "ORIGIN_SECONDARY" ],
+    "end": {
+      "effect": [
+        { "u_add_var": "haven_act1_closed", "value": "yes" },
+        { "u_add_morale": "morale_feeling_good", "bonus": 40, "max_bonus": 80, "duration": "12 hours", "decay_start": "6 hours" }
+      ]
+    },
+    "dialogue": {
+      "describe": "Act 1 done. The tower is lit. Here is the shape of the whole journey.",
+      "offer": "Crossroads is behind you now - water, trust, light. Ahead is the Long Road, and I won't lie: it gets harder. Act 2 is the drive east - fuel, a running car, and the burnt towns. Act 3 is Glass City, where a hospital computer holds the truth about the outbreak and you'll choose what to carry out: medicine or answers. Act 4 is Static, where you'll learn what 91.1 really is - and why the courier's chit was stamped with next month's date. Act 5 is Haven Gate itself, with three ways in: fighting, sneaking, or paying. And past the gate? Haven. A bed, a wall, a work board with contracts, and the whole sandbox as your postgame. That is what you're playing for. (Acts 2-5 arrive in the next Haven Story updates - your map, chit and flyer carry over.)",
+      "accepted": "East. Tank above half.",
+      "rejected": "The road waits. It is patient.",
+      "advice": "Stock the map's waypoints: fuel, clean water, ammo. Train driving and first aid. Haven doesn't open its gate for the unready.",
+      "inquire": "Map still in your pack? Then you're still Haven-bound.",
+      "success": "Act 1 closed: the crossroads is lit and you are road-ready. When the next chapter lands, your save carries forward - flyer, chit, map and all. The light stays on.",
+      "success_lie": "Show me Lena's marks or it didn't happen.",
+      "failure": "The map stays folded. The road stays waiting."
+    }
+  },
+  {
+    "id": "MISSION_HAVEN_SIDE_CELLAR",
+    "type": "mission_definition",
+    "name": { "str": "Side Job - Hounds in the Cellar" },
+    "description": "OPTIONAL side job (any survivor can offer it): put down 3 zombie dogs nesting in a root cellar. Hard, bloody work that pays in a real blade - a machete that makes Micah's salvage yard much easier. Skip it or take it; the crossroads doesn't judge.",
+    "goal": "MGOAL_KILL_MONSTER_TYPE",
+    "monster_type": "mon_zombie_dog",
+    "monster_kill_goal": 3,
+    "difficulty": 3,
+    "value": 15000,
+    "origins": [ "ORIGIN_ANY_NPC" ],
+    "end": {
+      "effect": [
+        { "u_add_var": "haven_cellar_done", "value": "yes" },
+        { "u_buy_item": "machete" },
+        { "u_add_morale": "morale_feeling_good", "bonus": 20, "max_bonus": 50, "duration": "6 hours", "decay_start": "3 hours" }
+      ]
+    },
+    "dialogue": {
+      "describe": "Something's nesting in my cellar and it growls like my old dog. It isn't.",
+      "offer": "Three hounds went in my cellar during the panic. They came back wrong - fast, hairless, hungry. Put all three down and I'll pay you with my good machete. Fair warning: they're quicker than the shamblers in Micah's yard. Take this job if you want a real blade before yard work - or skip it, no shame. The crossroads always has more work than hands.",
+      "accepted": "Cellar door sticks. Kick it.",
+      "rejected": "Then I nail the cellar shut and lose half my stores.",
+      "advice": "Don't fight three at once. Noise pulls one at a time. Spear or bat, never fists, and bandage before you feel brave. Dogs bleed you quick.",
+      "inquire": "Cellar quiet? I still hear scratching.",
+      "success": "Quiet at last. The machete's yours - kept its edge through the whole fall. Micah's yard will feel a lot fairer with this in your hand.",
+      "success_lie": "Scratching says otherwise.",
+      "failure": "Then the cellar stays sealed and I starve slower."
+    }
+  },
+  {
+    "id": "MISSION_HAVEN_SIDE_TINKER",
+    "type": "mission_definition",
+    "name": { "str": "Side Job - The Tinker's Debt" },
+    "description": "OPTIONAL side job (any survivor can offer it): bring the Tinker one unit of scrap metal. He owes Lena a debt and will settle it by handing over his SPARE car alternator - a second route to the part Lena needs, no yard-clearing required. Your choice: Micah's way or the Tinker's way.",
+    "goal": "MGOAL_FIND_ITEM",
+    "item": "scrap",
+    "difficulty": 1,
+    "value": 10000,
+    "origins": [ "ORIGIN_ANY_NPC" ],
+    "end": {
+      "effect": [
+        { "u_add_var": "haven_tinker_done", "value": "yes" },
+        { "u_buy_item": "alternator_car" },
+        { "u_add_morale": "morale_feeling_good", "bonus": 15, "max_bonus": 40, "duration": "4 hours", "decay_start": "2 hours" }
+      ]
+    },
+    "dialogue": {
+      "describe": "Lena's tower, my debt, your hands. Everybody wins.",
+      "offer": "I owe Lena for a winter she kept my kids fed, and she needs a car alternator for the tower. I've got a spare - but my stock is my life, so it costs. Bring me one unit of scrap metal and the spare alternator is yours to carry to her. No zombies, no yard, just salvage. Your call: earn Micah's the loud way, or settle my debt the quiet way. Both roads light the same tower.",
+      "accepted": "Scrap for a spare. Fair trade.",
+      "rejected": "Then my debt keeps and the tower keeps dark.",
+      "advice": "Wrecks along the road, ovens, lockers - scrap is everywhere if you pry. One unit. Mind the glass and the owners.",
+      "inquire": "Any scrap yet? The spare's gathering dust.",
+      "success": "Debt paid. The spare's good - tested it myself. Tell Lena the Tinker settles up. Take it to her tower and watch the county light up.",
+      "success_lie": "That's roofing tar, friend. Try again.",
+      "failure": "Then I melt it down myself come winter."
+    }
+  }
+]

@@ -1,0 +1,123 @@
+[
+  {
+    "id": "MISSION_HAVEN_VEX1_CURE",
+    "type": "mission_definition",
+    "name": { "str": "Side Arc - A Cure for What Ales You" },
+    "description": "SIDE ARC (30+ min, any survivor can start it): the Ash Jackals point you at Dr. Morrow, who swears he is building a cure. First, prove useful - bring him one bottle of disinfectant to sterilize his bench. Easy work. Too easy.",
+    "goal": "MGOAL_FIND_ITEM",
+    "item": "disinfectant",
+    "difficulty": 1,
+    "value": 8000,
+    "origins": [ "ORIGIN_ANY_NPC" ],
+    "followup": "MISSION_HAVEN_VEX2_CLINIC",
+    "end": {
+      "effect": [
+        { "u_add_var": "haven_vex1_done", "value": "yes" },
+        { "u_buy_item": "antibiotics" },
+        { "u_add_morale": "morale_feeling_good", "bonus": 10, "max_bonus": 30, "duration": "3 hours", "decay_start": "1 hour" }
+      ]
+    },
+    "dialogue": {
+      "describe": "The gang's got a pet doctor and the doctor's got a shopping list.",
+      "offer": "So the Jackals found you. I'm Kess - I do the gang's talking because I'm the only one who does it without smiling. The doc - Morrow - is ours. Found him under a pile of his own diplomas, still wearing a clean coat, which out here is either a miracle or a warning. He says he's building a cure and he needs hands. First job's stupid-simple: one bottle of disinfectant, to sterilize his bench. You do that, the doc pays in real antibiotics, and we all learn what kind of useful you are.",
+      "accepted": "Bleach run. Don't drink the merchandise.",
+      "rejected": "Then the doc stays dirty and you stay unknown.",
+      "advice": "Houses, clinics, janitor closets - disinfectant is everywhere people used to be clean. Morrow's pitch, by the way, is worth hearing twice: first for the science, second for the parts where he giggles. Doc pays in antibiotics and promises. Promises don't stop bleeding, so you take the antibiotics first and believe him later. That's gang policy. That's also just policy.",
+      "inquire": "Bench still dirty? Morrow's pouting. It's awful.",
+      "success": "Sterile! The doc actually clapped. Here - antibiotics, as agreed, counted twice because Kess doesn't trust anyone, including herself. Morrow's got bigger work now, clinic-sized. Ask him about Jenner. And kid - read everything he hands you. Twice.",
+      "success_lie": "That's mouthwash. I know the difference and so does the smell.",
+      "failure": "Then Morrow sulks and the Jackals note you down as decorative."
+    }
+  },
+  {
+    "id": "MISSION_HAVEN_VEX2_CLINIC",
+    "type": "mission_definition",
+    "name": { "str": "Side Arc - The Jenner Clinic Job" },
+    "description": "SIDE ARC: Morrow needs the research folder out of the Jenner Clinic, and the clinic is occupied - clear 8 of the dead so his work can come home. What you skim on the walk back changes the whole job.",
+    "goal": "MGOAL_KILL_MONSTER_SPEC",
+    "monster_species": "ZOMBIE",
+    "monster_kill_goal": 8,
+    "difficulty": 3,
+    "value": 25000,
+    "origins": [ "ORIGIN_SECONDARY" ],
+    "end": {
+      "effect": [
+        { "u_add_var": "haven_vex2_done", "value": "yes" },
+        { "u_buy_item": "haven_research_notes" },
+        { "u_add_morale": "morale_feeling_good", "bonus": 20, "max_bonus": 50, "duration": "6 hours", "decay_start": "3 hours" }
+      ]
+    },
+    "dialogue": {
+      "describe": "Eight dead between science and its folder.",
+      "offer": "Morrow here! Wonderful news - my whole life's work is sitting in the Jenner Clinic in a red folder, and only EIGHT of the deceased are sitting on it! I counted. From a safe distance. With binoculars. Clear them out, bring me the folder, and the cure takes its first real step. Oh - and do grab any pharmaceuticals you see. For the cure. Mostly for the cure.",
+      "accepted": "Red folder! Science thanks you in advance!",
+      "rejected": "Then the folder moulders and so does hope. No pressure.",
+      "advice": "Clinics are tight corridors - spear range is king, doorways are your best friend, and never fight tired. Kess adds: bleed them at the entrance, don't go room to room like a census taker. And strip the pharma room while you're in there. Morrow calls it 'field expenses.' Kess calls it 'the actual pay.'",
+      "inquire": "Folder? Folder folder folder?",
+      "success": "You skim the folder on the walk back. Page nine: 'SPECIMEN 12 ATE SPECIMEN 11. Promising.' Page ten is a shopping list, and human growth hormone is ON it, underlined twice. Your hands do the shaking for you. Morrow isn't making a cure. He's making CUSTOMERS - stronger zombies, bred on purpose, and the failures are just called data. Kess reads over your shoulder, goes very quiet, and says: 'Okay. New plan. You pick how he stops. Alone - walk in there yourself, hero style, probably die. Or with us - tonight, fire, witnesses. Pick ONE. The other goes stale by morning.'",
+      "success_lie": "The folder's still in the clinic and the clinic's still occupied. Walk back.",
+      "failure": "Then the folder stays and Specimen 13 gets a head start."
+    }
+  },
+  {
+    "id": "MISSION_HAVEN_VEX3A_SOLO",
+    "type": "mission_definition",
+    "name": { "str": "Side Arc Finale - Storm the Lab Alone" },
+    "description": "SIDE ARC FINALE (choice - pick this OR Bring the Jackals, not both): walk into Morrow's lab alone and kill Specimen 12, his prize brute. Near-suicide in a small room. Nobody sane does this, which is why the crossroads will talk about it forever.",
+    "goal": "MGOAL_KILL_MONSTER_TYPE",
+    "monster_type": "mon_zombie_brute",
+    "monster_kill_goal": 1,
+    "difficulty": 5,
+    "value": 40000,
+    "origins": [ "ORIGIN_ANY_NPC" ],
+    "end": {
+      "effect": [
+        { "u_add_var": "haven_vex_done", "value": "solo" },
+        { "u_buy_item": "panacea" },
+        { "u_add_morale": "morale_feeling_good", "bonus": 50, "max_bonus": 100, "duration": "24 hours", "decay_start": "12 hours" }
+      ]
+    },
+    "dialogue": {
+      "describe": "One room. One brute. No witnesses. Your call.",
+      "offer": "Kess, flat: 'So. Solo. You walk in, it's you and Twelve in a room built for science, which means no windows and one door. Take the stairs down loud - you want it facing you, not the wall. Aim for the knees first; brutes fall like sheds. If you live, you take everything in his stash, including the panacea he swore didn't exist - spoiler, it exists, he's just saving it for his favorite specimen, which was going to be EVERYONE. And if you don't live - I'll tell the story right. Promise.'",
+      "accepted": "Loud stairs. Knees first. See you after.",
+      "rejected": "Smart. The gang option stays open. Fire and witnesses.",
+      "advice": "Best armor, best weapon, every bandage you own, and go in at full health or don't go. Molotov first through the door if you have one - the room is small and Twelve is big. This is the hardest fight of Act 1 by design. Come back with the gang instead whenever pride allows.",
+      "inquire": "Twelve still standing? Then so are you. Good start.",
+      "success": "Morrow, cornered behind his own bench, holding a clipboard like a shield: 'Wait - WAIT. Do you know what you've DONE? Twelve was WEEKS from docile! Weeks! ...Fine. Note this down. Final observation: the specimen was me.' Kess arrives with the gang, looks at the room, looks at you, and just says: 'Huh.' The crossroads will say that 'huh' for years. Morrow's stash is yours - including the panacea. His last letter, unsent, is addressed to a Glass City hospital. Act 3 will want to read it.",
+      "success_lie": "Twelve's still rearranging the furniture down there. Try again.",
+      "failure": "Then Twelve keeps growing and the Jackals stop saying your name."
+    }
+  },
+  {
+    "id": "MISSION_HAVEN_VEX3B_GANG",
+    "type": "mission_definition",
+    "name": { "str": "Side Arc Finale - Bring the Jackals" },
+    "description": "SIDE ARC FINALE (choice - pick this OR Storm the Lab Alone, not both): rally the Ash Jackals and storm Morrow's lab together - fifteen of the dead between you and his bench, with fire and witnesses. The gang remembers who brings them a good fight.",
+    "goal": "MGOAL_KILL_MONSTER_SPEC",
+    "monster_species": "ZOMBIE",
+    "monster_kill_goal": 15,
+    "difficulty": 4,
+    "value": 35000,
+    "origins": [ "ORIGIN_ANY_NPC" ],
+    "end": {
+      "effect": [
+        { "u_add_var": "haven_vex_done", "value": "gang" },
+        { "u_buy_item": "haven_jackal_patch" },
+        { "u_buy_item": "molotov" },
+        { "u_add_morale": "morale_feeling_good", "bonus": 40, "max_bonus": 80, "duration": "12 hours", "decay_start": "6 hours" }
+      ]
+    },
+    "dialogue": {
+      "describe": "Pest control with witnesses.",
+      "offer": "Kess, already grinning: 'The gang option! Correct choice. Here's the shape of it: you bring fire - molotovs, torches, anything that burns going down stairs - and we bring bodies. Fifteen dead minimum between the street and Morrow's bench, including whatever Twelve's become, and we do it LOUD so none of them get behind us. Morrow talks when he's cornered. Let him. His excuses are the funniest thing you'll hear all month, right up until they aren't.'",
+      "accepted": "Listen up! The bleach man built a better zombie and kept the receipts! We go tonight, we bring fire, and the new kid brings the grudge. Anyone who dies gets named after a cocktail. MOVE.",
+      "rejected": "Then the gang stands down and Twelve keeps eating interns.",
+      "advice": "Bring every molotov you own or can make - the Jackals cover the doors while you burn the rooms. Let the gang take the front; your job is Morrow's bench and anything big standing near it. Fifteen dead is the count - the street, the stairs, the lab, all of it. And grab the stash after: Morrow's panacea fund is real and it's ours now.",
+      "inquire": "Count's short. The lab still squirms.",
+      "success": "Morrow, zip-tied to his own bench with lab tape, still lecturing: 'You primitives wouldn't understand peer review!' Kess, sewing the Jackal patch onto your jacket: 'Wear this. Means you bring good fights and read the fine print.' The gang torches the specimens, splits Morrow's stash with you - panacea and all - and Morrow gets walked east at dawn with a day's water, which is more mercy than Specimen 11 got. In his desk: a letter to a Glass City hospital, half an apology, half a shopping list. Act 3 is going to love that letter.",
+      "success_lie": "Kess counts the torches and shakes her head. Back in.",
+      "failure": "Then the gang scatters and Morrow publishes. God help the peer reviewers."
+    }
+  }
+]

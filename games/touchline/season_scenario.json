@@ -1,0 +1,635 @@
+{
+  "timeout": 12,
+  "events": [
+    {
+      "type": "key",
+      "key": "ENTER",
+      "wait": 0.08
+    },
+    {
+      "type": "snapshot",
+      "name": "home"
+    },
+    {
+      "type": "key",
+      "key": "3",
+      "wait": 0.06
+    },
+    {
+      "type": "snapshot",
+      "name": "tactics"
+    },
+    {
+      "type": "key",
+      "key": "o",
+      "wait": 0.06
+    },
+    {
+      "type": "snapshot",
+      "name": "shape-change"
+    },
+    {
+      "type": "key",
+      "key": "1",
+      "wait": 0.06
+    },
+    {
+      "type": "snapshot",
+      "name": "home-ready"
+    },
+    {
+      "type": "key",
+      "key": "M",
+      "wait": 0.06
+    },
+    {
+      "type": "key",
+      "key": "ENTER",
+      "wait": 0.06
+    },
+    {
+      "type": "key",
+      "key": "ENTER",
+      "wait": 0.06
+    },
+    {
+      "type": "key",
+      "key": "ENTER",
+      "wait": 0.06
+    },
+    {
+      "type": "key",
+      "key": "ENTER",
+      "wait": 0.06
+    },
+    {
+      "type": "key",
+      "key": "ENTER",
+      "wait": 0.06
+    },
+    {
+      "type": "key",
+      "key": "ENTER",
+      "wait": 0.06
+    },
+    {
+      "type": "key",
+      "key": "ENTER",
+      "wait": 0.06
+    },
+    {
+      "type": "snapshot",
+      "name": "match-01"
+    },
+    {
+      "type": "key",
+      "key": "ENTER",
+      "wait": 0.08
+    },
+    {
+      "type": "snapshot",
+      "name": "round-01"
+    },
+    {
+      "type": "key",
+      "key": "M",
+      "wait": 0.06
+    },
+    {
+      "type": "key",
+      "key": "ENTER",
+      "wait": 0.06
+    },
+    {
+      "type": "key",
+      "key": "ENTER",
+      "wait": 0.06
+    },
+    {
+      "type": "key",
+      "key": "ENTER",
+      "wait": 0.06
+    },
+    {
+      "type": "key",
+      "key": "ENTER",
+      "wait": 0.06
+    },
+    {
+      "type": "key",
+      "key": "ENTER",
+      "wait": 0.06
+    },
+    {
+      "type": "key",
+      "key": "ENTER",
+      "wait": 0.06
+    },
+    {
+      "type": "key",
+      "key": "ENTER",
+      "wait": 0.06
+    },
+    {
+      "type": "snapshot",
+      "name": "match-02"
+    },
+    {
+      "type": "key",
+      "key": "ENTER",
+      "wait": 0.08
+    },
+    {
+      "type": "snapshot",
+      "name": "round-02"
+    },
+    {
+      "type": "key",
+      "key": "M",
+      "wait": 0.06
+    },
+    {
+      "type": "key",
+      "key": "ENTER",
+      "wait": 0.06
+    },
+    {
+      "type": "key",
+      "key": "ENTER",
+      "wait": 0.06
+    },
+    {
+      "type": "key",
+      "key": "ENTER",
+      "wait": 0.06
+    },
+    {
+      "type": "key",
+      "key": "ENTER",
+      "wait": 0.06
+    },
+    {
+      "type": "key",
+      "key": "ENTER",
+      "wait": 0.06
+    },
+    {
+      "type": "key",
+      "key": "ENTER",
+      "wait": 0.06
+    },
+    {
+      "type": "key",
+      "key": "ENTER",
+      "wait": 0.06
+    },
+    {
+      "type": "snapshot",
+      "name": "match-03"
+    },
+    {
+      "type": "key",
+      "key": "ENTER",
+      "wait": 0.08
+    },
+    {
+      "type": "snapshot",
+      "name": "round-03"
+    },
+    {
+      "type": "key",
+      "key": "M",
+      "wait": 0.06
+    },
+    {
+      "type": "key",
+      "key": "ENTER",
+      "wait": 0.06
+    },
+    {
+      "type": "key",
+      "key": "ENTER",
+      "wait": 0.06
+    },
+    {
+      "type": "key",
+      "key": "ENTER",
+      "wait": 0.06
+    },
+    {
+      "type": "key",
+      "key": "ENTER",
+      "wait": 0.06
+    },
+    {
+      "type": "key",
+      "key": "ENTER",
+      "wait": 0.06
+    },
+    {
+      "type": "key",
+      "key": "ENTER",
+      "wait": 0.06
+    },
+    {
+      "type": "key",
+      "key": "ENTER",
+      "wait": 0.06
+    },
+    {
+      "type": "snapshot",
+      "name": "match-04"
+    },
+    {
+      "type": "key",
+      "key": "ENTER",
+      "wait": 0.08
+    },
+    {
+      "type": "snapshot",
+      "name": "round-04"
+    },
+    {
+      "type": "key",
+      "key": "M",
+      "wait": 0.06
+    },
+    {
+      "type": "key",
+      "key": "ENTER",
+      "wait": 0.06
+    },
+    {
+      "type": "key",
+      "key": "ENTER",
+      "wait": 0.06
+    },
+    {
+      "type": "key",
+      "key": "ENTER",
+      "wait": 0.06
+    },
+    {
+      "type": "key",
+      "key": "ENTER",
+      "wait": 0.06
+    },
+    {
+      "type": "key",
+      "key": "ENTER",
+      "wait": 0.06
+    },
+    {
+      "type": "key",
+      "key": "ENTER",
+      "wait": 0.06
+    },
+    {
+      "type": "key",
+      "key": "ENTER",
+      "wait": 0.06
+    },
+    {
+      "type": "snapshot",
+      "name": "match-05"
+    },
+    {
+      "type": "key",
+      "key": "ENTER",
+      "wait": 0.08
+    },
+    {
+      "type": "snapshot",
+      "name": "round-05"
+    },
+    {
+      "type": "key",
+      "key": "M",
+      "wait": 0.06
+    },
+    {
+      "type": "key",
+      "key": "ENTER",
+      "wait": 0.06
+    },
+    {
+      "type": "key",
+      "key": "ENTER",
+      "wait": 0.06
+    },
+    {
+      "type": "key",
+      "key": "ENTER",
+      "wait": 0.06
+    },
+    {
+      "type": "key",
+      "key": "ENTER",
+      "wait": 0.06
+    },
+    {
+      "type": "key",
+      "key": "ENTER",
+      "wait": 0.06
+    },
+    {
+      "type": "key",
+      "key": "ENTER",
+      "wait": 0.06
+    },
+    {
+      "type": "key",
+      "key": "ENTER",
+      "wait": 0.06
+    },
+    {
+      "type": "snapshot",
+      "name": "match-06"
+    },
+    {
+      "type": "key",
+      "key": "ENTER",
+      "wait": 0.08
+    },
+    {
+      "type": "snapshot",
+      "name": "round-06"
+    },
+    {
+      "type": "key",
+      "key": "M",
+      "wait": 0.06
+    },
+    {
+      "type": "key",
+      "key": "ENTER",
+      "wait": 0.06
+    },
+    {
+      "type": "key",
+      "key": "ENTER",
+      "wait": 0.06
+    },
+    {
+      "type": "key",
+      "key": "ENTER",
+      "wait": 0.06
+    },
+    {
+      "type": "key",
+      "key": "ENTER",
+      "wait": 0.06
+    },
+    {
+      "type": "key",
+      "key": "ENTER",
+      "wait": 0.06
+    },
+    {
+      "type": "key",
+      "key": "ENTER",
+      "wait": 0.06
+    },
+    {
+      "type": "key",
+      "key": "ENTER",
+      "wait": 0.06
+    },
+    {
+      "type": "snapshot",
+      "name": "match-07"
+    },
+    {
+      "type": "key",
+      "key": "ENTER",
+      "wait": 0.08
+    },
+    {
+      "type": "snapshot",
+      "name": "round-07"
+    },
+    {
+      "type": "key",
+      "key": "M",
+      "wait": 0.06
+    },
+    {
+      "type": "key",
+      "key": "ENTER",
+      "wait": 0.06
+    },
+    {
+      "type": "key",
+      "key": "ENTER",
+      "wait": 0.06
+    },
+    {
+      "type": "key",
+      "key": "ENTER",
+      "wait": 0.06
+    },
+    {
+      "type": "key",
+      "key": "ENTER",
+      "wait": 0.06
+    },
+    {
+      "type": "key",
+      "key": "ENTER",
+      "wait": 0.06
+    },
+    {
+      "type": "key",
+      "key": "ENTER",
+      "wait": 0.06
+    },
+    {
+      "type": "key",
+      "key": "ENTER",
+      "wait": 0.06
+    },
+    {
+      "type": "snapshot",
+      "name": "match-08"
+    },
+    {
+      "type": "key",
+      "key": "ENTER",
+      "wait": 0.08
+    },
+    {
+      "type": "snapshot",
+      "name": "round-08"
+    },
+    {
+      "type": "key",
+      "key": "M",
+      "wait": 0.06
+    },
+    {
+      "type": "key",
+      "key": "ENTER",
+      "wait": 0.06
+    },
+    {
+      "type": "key",
+      "key": "ENTER",
+      "wait": 0.06
+    },
+    {
+      "type": "key",
+      "key": "ENTER",
+      "wait": 0.06
+    },
+    {
+      "type": "key",
+      "key": "ENTER",
+      "wait": 0.06
+    },
+    {
+      "type": "key",
+      "key": "ENTER",
+      "wait": 0.06
+    },
+    {
+      "type": "key",
+      "key": "ENTER",
+      "wait": 0.06
+    },
+    {
+      "type": "key",
+      "key": "ENTER",
+      "wait": 0.06
+    },
+    {
+      "type": "snapshot",
+      "name": "match-09"
+    },
+    {
+      "type": "key",
+      "key": "ENTER",
+      "wait": 0.08
+    },
+    {
+      "type": "snapshot",
+      "name": "round-09"
+    },
+    {
+      "type": "key",
+      "key": "M",
+      "wait": 0.06
+    },
+    {
+      "type": "key",
+      "key": "ENTER",
+      "wait": 0.06
+    },
+    {
+      "type": "key",
+      "key": "ENTER",
+      "wait": 0.06
+    },
+    {
+      "type": "key",
+      "key": "ENTER",
+      "wait": 0.06
+    },
+    {
+      "type": "key",
+      "key": "ENTER",
+      "wait": 0.06
+    },
+    {
+      "type": "key",
+      "key": "ENTER",
+      "wait": 0.06
+    },
+    {
+      "type": "key",
+      "key": "ENTER",
+      "wait": 0.06
+    },
+    {
+      "type": "key",
+      "key": "ENTER",
+      "wait": 0.06
+    },
+    {
+      "type": "snapshot",
+      "name": "match-10"
+    },
+    {
+      "type": "key",
+      "key": "ENTER",
+      "wait": 0.08
+    },
+    {
+      "type": "snapshot",
+      "name": "round-10"
+    },
+    {
+      "type": "snapshot",
+      "name": "season-review"
+    },
+    {
+      "type": "key",
+      "key": "Q",
+      "wait": 0.08
+    }
+  ],
+  "assertions": {
+    "exit_code": 0,
+    "frames": {
+      "home": {
+        "contains": [
+          "EKSE SLAAN BALL",
+          "[1 HOME]",
+          "M MATCH",
+          "NEXT MATCH",
+          "╔",
+          "╗",
+          "╚",
+          "╝"
+        ]
+      },
+      "tactics": {
+        "contains": [
+          "[3 PLAN]",
+          "MATCH PLAN",
+          "4-3-3"
+        ]
+      },
+      "shape-change": {
+        "contains": [
+          "3-5-2",
+          "midfield overload"
+        ]
+      },
+      "home-ready": {
+        "contains": [
+          "NEXT MATCH"
+        ]
+      },
+      "match-01": {
+        "contains": [
+          "LATEST MOMENT",
+          "FULL TIME"
+        ]
+      },
+      "round-10": {
+        "contains": [
+          "SEASON 1 REVIEW"
+        ]
+      },
+      "season-review": {
+        "contains": [
+          "SEASON 1 REVIEW",
+          "╔",
+          "╗",
+          "╚",
+          "╝"
+        ]
+      }
+    }
+  }
+}

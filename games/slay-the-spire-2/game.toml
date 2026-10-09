@@ -1,0 +1,14 @@
+[game]
+name = "Slay the Spire 2"
+slug = "slay-the-spire-2"
+version = "Steam"
+author = "Mega Crit"
+description = """
+NOT OWNED — buy on Steam (app 2868840), then press enter to boot.
+
+The sequel to the roguelike deckbuilder. Climb a new Spire with new
+characters, cards and relics. Has a native Linux build."""
+tags = ["roguelike", "cards", "deckbuilder", "steam", "unowned"]
+entry = ["steam", "steam://rungameid/2868840"]
+min_cols = 80
+min_rows = 24

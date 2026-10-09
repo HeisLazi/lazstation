@@ -1,0 +1,13 @@
+[
+  {
+    "type": "scenario",
+    "id": "haven_bound",
+    "name": "Haven Bound (Story)",
+    "points": 0,
+    "description": "You woke to the shelter radio hissing the same loop: 'Haven is lit. The light stays on. Bring what you can carry.' Outside lies a dead courier with a Haven chit stamped with NEXT MONTH'S date. Someone out east is alive, organized, and expecting people. Your endgoal: cross the wastes and REACH HAVEN. Survive the first day, then find people and ask for work - the road east starts with water, trust, and a working radio tower.",
+    "allowed_locs": [ "sloc_shelter_a", "sloc_shelter_b", "sloc_shelter_c" ],
+    "start_name": "Evac Shelter",
+    "missions": [ "MISSION_HAVEN_INTRO" ],
+    "flags": [ "CITY_START" ]
+  }
+]

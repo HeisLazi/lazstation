@@ -1,0 +1,15 @@
+[game]
+name = "Rogue"
+slug = "rogue"
+version = "5.4.4"
+author = "Toy / Arnold / Wichman"
+description = """
+The original terminal roguelike lineage, Qt edition.
+
+Six classic versions (Unix 3.6.3–5.4.2, PC 1.1/1.48) plus the
+Rog-O-Matic AI player. Built locally from source at
+~/Games/Rogue-Collection-main (needs a display)."""
+tags = ["roguelike", "classic", "collection"]
+entry = ["/home/lazi/Games/Rogue-Collection-main/build/release/rogue-collection"]
+min_cols = 80
+min_rows = 24

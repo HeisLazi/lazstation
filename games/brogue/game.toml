@@ -1,0 +1,12 @@
+[game]
+name = "Brogue"
+slug = "brogue"
+version = "1.15.1 (CE)"
+author = "Brian Walker / Community Edition"
+description = """
+Brogue Community Edition — a 26-level dungeon crawl to the Amulet
+of Yendor. Install with: yay -S brogue-ce (AUR)."""
+tags = ["roguelike", "classic", "terminal"]
+entry = ["brogue-ce"]
+min_cols = 80
+min_rows = 24

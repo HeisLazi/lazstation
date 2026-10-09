@@ -1,0 +1,20 @@
+[
+  {
+    "id": "MISSION_HAVEN_INTRO",
+    "type": "mission_definition",
+    "name": { "str": "The Voice on 91.1" },
+    "description": "INTRO - your endgoal: reach HAVEN, the settlement that is still lit far to the east.  Night one: the shelter radio loops 'Haven is lit. The light stays on. Bring what you can carry.'  Outside lies a dead courier with a Haven chit stamped with NEXT MONTH'S date.  Someone out east is alive, organized, and expecting people.  Survive your first day, read the Haven flyer in your pack, then find living people and ask them for work.  The road east starts with water, trust, and a working radio tower.",
+    "goal": "MGOAL_CONDITION",
+    "goal_condition": { "math": [ "time_since('cataclysm', 'unit':'days') >= 1" ] },
+    "difficulty": 0,
+    "value": 0,
+    "origins": [ "ORIGIN_GAME_START" ],
+    "start": { "effect": [ { "u_spawn_item": "haven_flyer" } ] },
+    "end": {
+      "effect": [
+        { "u_add_var": "haven_intro_done", "value": "yes" },
+        { "u_add_morale": "morale_feeling_good", "bonus": 20, "max_bonus": 50, "duration": "6 hours", "decay_start": "3 hours" }
+      ]
+    }
+  }
+]

@@ -1,0 +1,14 @@
+[game]
+name = "Caves of Qud"
+slug = "caves-of-qud"
+version = "1.0 (Steam)"
+author = "Freehold Games"
+description = """
+NOT OWNED — buy on Steam (app 333640), then press enter to boot.
+
+Hugo Award-winning science fantasy roguelike: mutant or true kin,
+70+ factions, fully simulated world. Has a native Linux build."""
+tags = ["roguelike", "rpg", "steam", "unowned"]
+entry = ["steam", "steam://rungameid/333640"]
+min_cols = 80
+min_rows = 24

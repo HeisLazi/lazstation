@@ -40,25 +40,31 @@ def render(data: str, cols=80, rows=24) -> str:
                     if cx >= cols: cx = 0; cy += 1
             elif cmd == "X":      # ECH: erase n chars at the cursor, no move
                 n = nums[0] if nums else 1
-                for x in range(cx, min(cols, cx + n)): grid[cy][x] = " "
+                if 0 <= cy < rows:
+                    for x in range(cx, min(cols, cx + n)): grid[cy][x] = " "
             elif cmd == "P":      # DCH: delete n chars, shifting left
                 n = nums[0] if nums else 1
-                row = grid[cy][:cx] + grid[cy][cx+n:] + [" "] * n
-                grid[cy] = row[:cols]
+                if 0 <= cy < rows:
+                    row = grid[cy][:cx] + grid[cy][cx+n:] + [" "] * n
+                    grid[cy] = row[:cols]
             elif cmd == "@":      # ICH: insert n blanks, shifting right
                 n = nums[0] if nums else 1
-                row = grid[cy][:cx] + [" "] * n + grid[cy][cx:]
-                grid[cy] = row[:cols]
+                if 0 <= cy < rows:
+                    row = grid[cy][:cx] + [" "] * n + grid[cy][cx:]
+                    grid[cy] = row[:cols]
             elif cmd == "L":      # IL: insert n blank lines
                 n = nums[0] if nums else 1
-                for _ in range(n):
-                    grid.insert(cy, [" "] * cols); grid.pop()
+                if 0 <= cy < rows:
+                    for _ in range(n):
+                        grid.insert(cy, [" "] * cols); grid.pop()
             elif cmd == "M":      # DL: delete n lines
                 n = nums[0] if nums else 1
-                for _ in range(n):
-                    grid.pop(cy); grid.append([" "] * cols)
+                if 0 <= cy < rows:
+                    for _ in range(n):
+                        grid.pop(cy); grid.append([" "] * cols)
             elif cmd == "K":
-                for x in range(cx, cols): grid[cy][x] = " "
+                if 0 <= cy < rows:
+                    for x in range(cx, cols): grid[cy][x] = " "
             i += m.end(); continue
         if ch == "\n":
             cy += 1; cx = 0; i += 1; continue

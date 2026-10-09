@@ -4,7 +4,7 @@ There is no interactive terminal in an agent session, so these render a game
 into plain text you can read.
 
     vt.py        replays terminal output (cursor moves, erases, colour) onto a grid
-    ptytest.py   runs a command in a PTY of a given size, sends keystrokes, returns output
+    ptytest.py   drives a command in a PTY, captures frames, and checks scenarios
 
 Render a game at 80x24, pressing enter then three 'd's:
 
@@ -15,6 +15,12 @@ Render a game at 80x24, pressing enter then three 'd's:
 Note: these replay what the program *sent*, accumulating frames, so a moving
 sprite can leave a trail in the output that is not present on a real terminal.
 Judge layout and borders from it, not motion blur.
+
+`ptytest.py` still accepts positional raw keys for quick checks. For repeatable
+paths, pass `--script scenario.json`; JSON events support named keys, text,
+waits, terminal resizes, and named snapshots. Scenario assertions can check
+the child exit code, captured output, and snapshot text. See
+`docs/GAME-BRIEF.md` for the full schema and examples.
 
 ## Known limits of the replay
 

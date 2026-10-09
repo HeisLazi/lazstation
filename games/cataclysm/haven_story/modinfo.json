@@ -1,0 +1,11 @@
+[
+  {
+    "type": "MOD_INFO",
+    "id": "haven_story",
+    "name": "Haven Story - Story Mode",
+    "authors": [ "lazi" ],
+    "description": "A story mode for Cataclysm: Dark Days Ahead. Adds an endgoal - reach Haven, the settlement that is still lit - plus an intro and an Act 1 quest hub (fetch, combat and repair jobs that unlock each other) around any shelter. Sandbox-safe: quests are optional and any NPC can give them. v1 ships Intro + Act 1; Acts 2-5 and the Haven finale are outlined in STORY.md.",
+    "category": "content",
+    "dependencies": [ "dda" ]
+  }
+]

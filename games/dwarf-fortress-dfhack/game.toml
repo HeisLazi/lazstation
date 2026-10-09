@@ -1,0 +1,15 @@
+[game]
+name = "Dwarf Fortress + DFHack"
+slug = "dwarf-fortress-dfhack"
+version = "53.16-r2"
+author = "Bay 12 Games + DFHack team"
+description = """
+Dwarf Fortress 53.16 with DFHack modding framework loaded.
+
+Same fortress, plus the DFHack console, quality-of-life plugins and
+scripting. Start here if you want to mod. Lives at
+~/Games/df (launch with ./dfhack)."""
+tags = ["strategy", "sim", "modded"]
+entry = ["/home/lazi/Games/df/dfhack"]
+min_cols = 80
+min_rows = 24

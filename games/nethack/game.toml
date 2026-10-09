@@ -1,0 +1,12 @@
+[game]
+name = "NetHack"
+slug = "nethack"
+version = "3.6"
+author = "The NetHack DevTeam"
+description = """
+NetHack — the classic dungeon exploration game. Descend, grab the
+Amulet of Yendor, ascend. Install with: sudo pacman -S nethack."""
+tags = ["roguelike", "classic", "terminal"]
+entry = ["nethack"]
+min_cols = 80
+min_rows = 24
