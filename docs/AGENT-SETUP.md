@@ -107,7 +107,7 @@ sudo usermod -aG games $USER   # re-login after this
 
 ```bash
 python3 -m termstation doctor            # 22/22 ✓
-python3 -m unittest discover -s tests    # 16 tests OK
+python3 -m unittest discover -s tests    # 35 tests OK (19 are Beastling suites)
 bash tools/smoke.sh                      # all green EXCEPT:
 ```
 
