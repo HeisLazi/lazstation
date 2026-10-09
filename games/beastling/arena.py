@@ -26,7 +26,7 @@ from beasts import (ARENA_COVERAGE, ARENA_SUPPORT, MOVES, SPECIES, WEATHER_DESC,
                     WEATHER_DURATION)
 from main import (STAGE_NAME, Beast, apply_ability_on_hit, apply_move_effect, beast_line,
                   check_mending_berry, check_vengeful, damage, deal_damage, effectiveness,
-                  hit_lines, may_act, resolve_status_upkeep, show_log)
+                  hit_lines, may_act, resolve_status_upkeep)
 
 ARENA_DAMAGE = 1.25          # global damage multiplier: mistakes must cost HP
 #: Type effectiveness is raised to this power in the Arena (2.0 -> 2.46,
@@ -426,6 +426,33 @@ def item_menu(game, log: list[str] | None) -> bool:
 
 
 # --------------------------------------------------------------------- the fight
+#: Log rows on the battle screen. Four is the most the 66x24 minimum affords
+#: (the screen's last spare row), and enough for a typical KO turn: the hit,
+#: the damage, and "X is down -- Y sends out Z!".
+LOG_ROWS = 4
+
+
+def _turn_log(log: list[str], start: int) -> None:
+    """Only this turn's events (and anything since). Showing the last few
+    lines regardless of turn left a miss from the PREVIOUS turn on screen,
+    and round-3 playtesters read it as their new move repeating; with three
+    rows, a KO turn also scrolled its own attacker line away."""
+    recent = log[start:][-LOG_ROWS:]
+    for line in recent:
+        ts.tv_print(f"  {line}")
+    for _ in range(LOG_ROWS - len(recent)):
+        ts.tv_print()
+
+
+def _down_then(log: list[str], name: str, merged: str, alone: str) -> None:
+    """'X is out of the fight!' + the replacement, as one line when it fits."""
+    line = f"{name} is down -- {merged}"
+    if log and log[-1] == f"{name} is out of the fight!" and len(line) <= 58:
+        log[-1] = line
+    else:
+        log.append(alone)
+
+
 def _bench_pick(team: list[Beast], me: Beast) -> int | None:
     alive = [(threat(b, me) - 0.5 * threat(me, b), j) for j, b in enumerate(team) if b.alive]
     return max(alive)[1] if alive else None
@@ -439,6 +466,7 @@ def arena_fight(game, team: list[Beast], title: str, trainer: str) -> str:
         b.protected, b.protect_streak = False, 0
     idx = 0
     log = [f"{trainer} sends out {team[0].name}!"]
+    turn_mark = 0                          # where the latest turn's events start in `log`
     weather, wturns = None, 0
     memo: dict = {}
     prev_me: Beast | None = None
@@ -455,10 +483,10 @@ def arena_fight(game, team: list[Beast], title: str, trainer: str) -> str:
             # first -- a bare "send out which beast?" read as a glitch.
             if len(game.healthy()) >= 2:
                 game.swap_menu(forced=True, heading=f"{prev_me.name} is down -- send out who?",
-                               lines=[*(f"  {line}" for line in log[-4:]), "",
+                               lines=[*(f"  {line}" for line in log[turn_mark:][-4:]), "",
                                       f"  Facing {foe.name} ({foe.type})  {foe.hp}/{foe.max_hp} HP"])
                 me = game.lead()
-            log.append(f"You send out {me.name}!")
+            _down_then(log, prev_me.name, f"you send out {me.name}!", f"You send out {me.name}!")
         prev_me = me
         weather_set_this_turn = False
         log.extend(check_vengeful(me))
@@ -476,7 +504,7 @@ def arena_fight(game, team: list[Beast], title: str, trainer: str) -> str:
                                  "bright_yellow"))
         else:
             ts.tv_print(ts.rule("─"))
-        show_log(log, keep=3)
+        _turn_log(log, turn_mark)
         ts.tv_print(ts.rule("─"))
         for i, m in enumerate(me.moves, 1):
             spec = MOVES[m]
@@ -495,7 +523,9 @@ def arena_fight(game, team: list[Beast], title: str, trainer: str) -> str:
             tail += f"    {ts.color(str(n + 2), 'bright_cyan')}  item"
         ts.tv_print(tail)
 
-        # ---- the player's choice
+        # ---- the player's choice. A turn only starts once a choice sticks: a
+        # backed-out menu or "No PP left" redraws with the last turn still up.
+        mark = len(log)
         if forced:
             log.append(f"{me.name} has no PP left!")
             mine = ("move", "Struggle")
@@ -527,16 +557,20 @@ def arena_fight(game, team: list[Beast], title: str, trainer: str) -> str:
                 if not item_menu(game, log):
                     continue
                 mine = ("item",)
+        turn_mark = mark
 
         # ---- the foe's choice; a switch happens before any attack lands
         theirs = ai_decide(foe, me, team, idx, memo)
         if theirs[0] == "switch":
             leave_field(foe)
+            old_foe = foe
             idx = theirs[1]
             foe = team[idx]
             for b in (me, foe):
                 b.protected = False
-            log.append(f"{trainer} sends out {foe.name}!")
+            # Says who LEFT, too: two bare "sends out" lines in a row read as
+            # a double summon to round-3 playtesters.
+            log.append(f"{trainer} swaps {old_foe.name} for {foe.name}!")
             theirs = ("swapped",)
 
         actions = []
@@ -578,4 +612,5 @@ def arena_fight(game, team: list[Beast], title: str, trainer: str) -> str:
                 return "won"
             idx = nxt
             memo["cooldown"] = 0
-            log.append(f"{trainer} sends out {team[idx].name}!")
+            sends = f"{trainer} sends out {team[idx].name}!"
+            _down_then(log, foe.name, sends, sends)
