@@ -1056,7 +1056,7 @@ class Game:
                 if crit:
                     note = ("A critical hit! " + note).strip()
                 log.append(f"{attacker.name} used {move}. {note}".strip())
-                log.append(f"  {defender.name} lost {dealt} HP.")
+                log.append(f"  {defender.name} lost {min(dealt, defender.hp)} HP.")
                 log.extend(deal_damage(attacker, defender, dealt))
                 new_weather = MOVES[move]["sets_weather"]
                 if new_weather:
@@ -1294,7 +1294,7 @@ class Game:
                 if crit:
                     note = ("A critical hit! " + note).strip()
                 log.append(f"{attacker.name} used {move}. {note}".strip())
-                log.append(f"  {defender.name} lost {dealt} HP.")
+                log.append(f"  {defender.name} lost {min(dealt, defender.hp)} HP.")
                 log.extend(deal_damage(attacker, defender, dealt))
                 new_weather = MOVES[move]["sets_weather"]
                 if new_weather:

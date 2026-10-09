@@ -260,7 +260,7 @@ def use_move(att: Beast, de: Beast, mv: str, weather: str | None) -> tuple[list[
     if crit:
         note = ("A critical hit! " + note).strip()
     lines.append(f"{att.name} used {mv}. {note}".strip())
-    lines.append(f"  {de.name} lost {dealt} HP.")
+    lines.append(f"  {de.name} lost {min(dealt, de.hp)} HP.")
     lines.extend(deal_damage(att, de, dealt))
     if spec["sets_weather"]:
         set_weather = spec["sets_weather"]
