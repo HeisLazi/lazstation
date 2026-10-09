@@ -18,9 +18,10 @@ from __future__ import annotations
 
 import termstation_sdk as ts
 
-from beasts import SPECIES
-from main import PAGE, PARTY_MAX, Beast, Game
-from tournament import generate_bracket
+import arena
+from beasts import SPECIES, TRAIN_LABEL, TRAIN_STEP, train_price
+from main import PAGE, PARTY_MAX, Beast, Game, bar
+from tournament import ROUNDS, generate_bracket
 
 DRAFT_LEVEL = 30           # fixed level for every drafted Circuit beast --
                             # this is a team-building exercise, not a grind
@@ -65,11 +66,16 @@ def point_cost(slug: str) -> int:
 
 # ---------------------------------------------------------------- profile
 def load_profile() -> dict:
-    return ts.load(
+    profile = ts.load(
         {"name": "", "rank_score": 0, "wins": 0, "losses": 0,
          "best_round_free": 0, "best_round_ranked": 0},
         name="circuit",
     )
+    # The District's own state; older Circuit saves simply gain these.
+    defaults = {"coins": 150, "bag": {"Potion": 2}, "training": {}, "run": None, "history": []}
+    for key, value in defaults.items():
+        profile.setdefault(key, value if not isinstance(value, (dict, list)) else type(value)(value))
+    return profile
 
 
 def save_profile(profile: dict) -> None:
@@ -205,107 +211,375 @@ def draft_squad(ranked: bool) -> list[Beast] | None:
         chosen.append(slug)
 
 
-# ---------------------------------------------------------------- bracket
-def play_bracket(profile: dict, squad: list[Beast], ranked: bool) -> None:
-    bracket = generate_bracket(DRAFT_LEVEL)
-    game = CircuitGame(profile["name"], tier_for(profile["rank_score"]))
-    game.party = squad
-    mode_label = "Ranked" if ranked else "Free"
+# ------------------------------------------------------------ the district
+YARD_CAP = 6                 # training points per stat in the Yard (profile-wide)
+RUN_ROUNDS = ROUNDS
 
-    game.header("The Circuit")
-    ts.tv_print()
-    ts.tv_print(ts.box([
-        f"  {mode_label} mode -- {len(bracket)} rounds. No healing between them.",
-        "",
-        f"  Squad ({len(squad)}): " + ", ".join(b.name for b in squad),
-    ]))
-    ts.tv_print()
-    if not ts.confirm("  Enter the circuit?", default=True):
-        return
 
-    reached = 0
-    for i, rival in enumerate(bracket, 1):
-        game.header(f"Round {i}/{len(bracket)}")
+def squad_blob(party: list[Beast]) -> list[dict]:
+    return [{"slug": b.slug, "hp": b.hp, "pp": dict(b.pp), "train": dict(b.train)} for b in party]
+
+
+def squad_from_blob(blob: list[dict]) -> list[Beast]:
+    squad = []
+    for d in blob:
+        b = Beast(d["slug"], DRAFT_LEVEL)
+        b.train = {k: int(v) for k, v in d.get("train", {}).items() if k in TRAIN_STEP}
+        arena.prepare(b)
+        b.pp.update({m: int(v) for m, v in d.get("pp", {}).items() if m in b.pp})
+        b.hp = max(0, min(int(d.get("hp", b.max_hp)), b.max_hp))
+        squad.append(b)
+    return squad
+
+
+class District:
+    """The Tournament's own little world: a hub of places. Resources that
+    matter during a run -- HP, PP, items, coins -- all live here, so WHEN you
+    spend them (and on what) is part of the game, not a menu you click through."""
+
+    def __init__(self, profile: dict) -> None:
+        self.profile = profile
+        self.game = self._new_game()
+
+    # ---- plumbing
+    def _new_game(self) -> CircuitGame:
+        g = CircuitGame(self.profile["name"], tier_for(self.profile.get("rank_score", 0)))
+        g.inventory = self.profile["bag"]          # shared: item use mutates the profile
+        run = self.profile.get("run")
+        g.party = squad_from_blob(run["squad"]) if run else []
+        return g
+
+    def save(self) -> None:
+        run = self.profile.get("run")
+        if run:
+            run["squad"] = squad_blob(self.game.party)
+        save_profile(self.profile)
+
+    @property
+    def run(self) -> dict | None:
+        return self.profile.get("run")
+
+    def coins(self) -> int:
+        return self.profile["coins"]
+
+    def head(self, title: str) -> None:
+        self.game.header(title)
         ts.tv_print()
+
+    def say(self, *lines: str) -> None:
+        for line in lines:
+            ts.tv_print(f"  {line}")
+        ts.tv_print()
+        ts.tv_pause()
+
+    # ---- the hub
+    def loop(self) -> None:
+        notice = ""
+        while True:
+            p = self.profile
+            tier = tier_for(p.get("rank_score", 0))
+            ts.tv_clear(page=PAGE)
+            ts.tv_print(ts.title("T H E   A R E N A   D I S T R I C T"))
+            ts.tv_print(f"  {p['name']} -- {tier}   {ts.color(str(self.coins()), 'bright_yellow')} coins"
+                        f"   {p.get('wins', 0)}W {p.get('losses', 0)}L")
+            run = self.run
+            if run:
+                standing = sum(1 for b in self.game.party if b.alive)
+                ts.tv_print(ts.color(f"  Run: {run['mode']}, round {run['round'] + 1}/{RUN_ROUNDS}"
+                                     f" -- {standing}/{len(self.game.party)} standing", "bright_cyan"))
+            else:
+                ts.tv_print(ts.color("  No run yet. The Squad Hall is where you start one.", "grey"))
+            ts.tv_print(ts.color(f"  {notice}", "bright_green") if notice else "")
+            notice = ""
+            gate = "The Arena Gate  -- next rival" if run else "The Arena Gate  -- (needs a squad)"
+            pick = ts.menu("The District", [
+                gate,
+                "Squad Hall      -- draft a squad",
+                "The Market      -- supplies, for coins",
+                "The Infirmary   -- patch up between rounds",
+                "The Yard        -- permanent training",
+                "Hall of Fame    -- records",
+            ], back="Leave the District")
+            if pick == -1:
+                self.save()
+                return
+            notice = [self.gate, self.squad_hall, self.market, self.infirmary,
+                      self.yard, self.hall_of_fame][pick]() or ""
+            self.save()
+
+    # ---- the Squad Hall
+    def squad_hall(self) -> str:
+        self.head("Squad Hall")
+        if self.run:
+            ts.tv_print("  You're already in a run. Starting over forfeits it (items stay).")
+            ts.tv_print()
+            if not ts.confirm("  Abandon the current run?", default=False):
+                return ""
+            self.end_run(reached=self.run["round"], champion=False, abandoned=True)
+        pick = ts.menu("Mode", ["Free   -- draft anyone, no budget",
+                                "Ranked -- points budget, climbs the rank ladder"], back="Back")
+        if pick == -1:
+            return ""
+        ranked = pick == 1
+        squad = draft_squad(ranked)
+        if not squad:
+            return ""
+        for b in squad:
+            b.train = dict(self.profile["training"].get(b.slug, {}))
+            arena.prepare(b)
+            b.hp = b.max_hp
+        bracket = generate_bracket(DRAFT_LEVEL, level_offset=-2)
+        self.profile["run"] = {"mode": "Ranked" if ranked else "Free", "round": 0,
+                               "squad": squad_blob(squad),
+                               "bracket": [dict(r, team=[list(t) for t in r["team"]]) for r in bracket]}
+        self.game = self._new_game()
+        return f"Squad registered. {len(squad)} beasts. Round 1 awaits at the Gate."
+
+    # ---- the Arena Gate
+    def gate(self) -> str:
+        run = self.run
+        if not run:
+            return "No squad yet -- the Squad Hall is the first stop."
+        if not self.game.healthy():
+            return "Your whole squad is down. The Infirmary can revive them."
+        i = run["round"]
+        rival = run["bracket"][i]
+        self.head(f"Round {i + 1}/{RUN_ROUNDS}")
+        levels = [lv for _, lv in rival["team"]]
         ts.tv_print(ts.box([
-            f"  {rival['name']}  —  {'/'.join(rival['types'])}",
+            f"  {rival['name']}  --  {'/'.join(rival['types'])}",
             "",
             f"  {rival['blurb']}",
             "",
-            f"  Team of {len(rival['team'])}.",
-        ]))
+            f"  Team of {len(rival['team'])}, levels {min(levels)}-{max(levels)}."
+            + ("  The final." if i == RUN_ROUNDS - 1 else ""),
+        ], fg="yellow" if i == RUN_ROUNDS - 1 else "amber"))
         ts.tv_print()
-        if not game.healthy():
-            break
-        ts.tv_pause("press enter to fight")
+        if not ts.confirm("  Step into the arena?", default=True):
+            return ""
+        foes = [Beast(s, lv) for s, lv in rival["team"]]
+        fallen_before = sum(1 for b in self.game.party if not b.alive)
+        result = arena.arena_fight(self.game, foes, f"Round {i + 1}", rival["name"])
+        if result != "won":
+            self.end_run(reached=i, champion=False)
+            return ""
+        run["round"] = i + 1
+        fallen = sum(1 for b in self.game.party if not b.alive) - fallen_before
+        prize = 50 + 20 * (i + 1) + (25 if fallen == 0 else 0)
+        champion = run["round"] >= RUN_ROUNDS
+        if champion:
+            prize += 200
+        self.profile["coins"] += prize
+        if champion:
+            self.end_run(reached=RUN_ROUNDS, champion=True, prize=prize)
+            return ""
+        self.head("Round cleared")
+        ts.tv_print(ts.box([
+            f"  You beat {rival['name']}.",
+            "",
+            f"  Prize: {prize} coins" + ("  (clean win bonus)" if fallen == 0 else ""),
+            f"  Next: round {run['round'] + 1}/{RUN_ROUNDS}. Your HP and PP stay as they are.",
+            "  The Infirmary and Market are open -- spend wisely.",
+        ], fg="yellow"))
+        ts.tv_print()
+        ts.tv_pause()
+        return ""
 
-        won_round = True
-        for slug, level in rival["team"]:
-            foe = Beast(slug, level)
-            result = game.battle(foe, wild=False, title=f"Round {i} · {rival['name']}",
-                                  trainer=rival["name"])
-            if result == "lost":
-                won_round = False
-                break
-        if not won_round:
-            break
-        reached = i
-
-    champion = reached == len(bracket)
-    if ranked:
-        profile["rank_score"] = profile.get("rank_score", 0) + reached
-    if champion:
-        profile["wins"] = profile.get("wins", 0) + 1
-    else:
-        profile["losses"] = profile.get("losses", 0) + 1
-    key = "best_round_ranked" if ranked else "best_round_free"
-    profile[key] = max(profile.get(key, 0), reached)
-    save_profile(profile)
-
-    game.header("The Circuit")
-    ts.tv_print()
-    new_tier = tier_for(profile.get("rank_score", 0))
-    if champion:
-        lines = ["  You cleared the whole circuit."]
+    def end_run(self, reached: int, champion: bool, prize: int = 0, abandoned: bool = False) -> None:
+        p, run = self.profile, self.run
+        ranked = run["mode"] == "Ranked"
+        consolation = 0 if (champion or abandoned) else 10 * reached
+        p["coins"] += consolation
+        if ranked and not abandoned:
+            p["rank_score"] = p.get("rank_score", 0) + reached
+        if not abandoned:
+            p["wins" if champion else "losses"] = p.get("wins" if champion else "losses", 0) + 1
+            key = "best_round_ranked" if ranked else "best_round_free"
+            p[key] = max(p.get(key, 0), reached)
+        squad_names = ", ".join(SPECIES[b["slug"]]["name"] for b in run["squad"])
+        p.setdefault("history", []).append(
+            {"mode": run["mode"], "reached": reached, "champion": champion, "abandoned": abandoned,
+             "squad": squad_names})
+        p["history"] = p["history"][-8:]
+        p["run"] = None
+        self.game = self._new_game()
+        save_profile(p)
+        if abandoned:
+            return
+        self.head("The Arena")
+        if champion:
+            lines = ["  You cleared the whole circuit.", "", f"  Prize: {prize} coins"]
+            ts.unlock("circuit-champion", "Circuit Champion", "Won a full Circuit run")
+        else:
+            lines = [f"  Your squad went down in round {reached + 1}/{RUN_ROUNDS}.", "",
+                     f"  Consolation: {consolation} coins"]
+            if reached >= 3:
+                ts.unlock("circuit-contender", "Circuit Contender", "Reached round 4 of a Circuit run")
         if ranked:
-            lines += ["", f"  Rank score {profile['rank_score']} -- {new_tier}."]
-        ts.tv_print(ts.box(lines, fg="yellow"))
-        ts.unlock("circuit-champion", "Circuit Champion", "Won a full Circuit run")
-    else:
-        lines = [f"  Your squad went down in round {reached + 1}/{len(bracket)}."]
-        if ranked:
-            lines += ["", f"  Rank score {profile['rank_score']} -- {new_tier}."]
-        ts.tv_print(ts.box(lines))
-        if reached >= 3:
-            ts.unlock("circuit-contender", "Circuit Contender", "Reached round 4 of a Circuit run")
-    ts.tv_print()
-    ts.tv_pause()
+            lines += [f"  Rank score {p['rank_score']} -- {tier_for(p['rank_score'])}."]
+        ts.tv_print(ts.box(lines, fg="yellow" if champion else "amber"))
+        ts.tv_print()
+        ts.tv_pause()
+
+    # ---- the Market
+    def market(self) -> str:
+        msg = ""
+        bag = self.profile["bag"]
+        while True:
+            self.head("The Market")
+            ts.tv_print(f"  \"Prices are prices.\" -- Pip.   You have "
+                        f"{ts.color(str(self.coins()), 'bright_yellow')} coins.")
+            ts.tv_print(ts.color(f"  {msg}", "bright_green") if msg else "")
+            names = list(arena.ARENA_ITEMS)
+            options = [f"{n:<13}{arena.ARENA_ITEMS[n]['price']:>4}c  x{bag.get(n, 0)}  "
+                       f"{arena.ARENA_ITEMS[n]['desc']}" for n in names]
+            pick = ts.menu("Buy", options, back="Back")
+            if pick == -1:
+                return ""
+            n = names[pick]
+            price = arena.ARENA_ITEMS[n]["price"]
+            if self.coins() < price:
+                msg = "Not enough coins."
+            elif bag.get(n, 0) >= 9:
+                msg = "You can't carry more of those."
+            else:
+                self.profile["coins"] -= price
+                bag[n] = bag.get(n, 0) + 1
+                msg = f"Bought {n}."
+                self.save()
+
+    # ---- the Infirmary
+    def infirmary_prices(self) -> dict:
+        party = self.game.party
+        mult = 1 + 0.25 * (self.run["round"] if self.run else 0)
+        hp = sum(8 + (b.max_hp - b.hp) // 3 for b in party if b.alive and b.hp < b.max_hp)
+        pp = sum(14 for b in party if b.alive and any(b.pp[m] < arena.move_pp(m) for m in b.moves))
+        revive = 160 * sum(1 for b in party if not b.alive)
+        return {"hp": int(hp * mult), "pp": int(pp * mult), "revive": int(revive * mult)}
+
+    def infirmary(self) -> str:
+        if not self.run:
+            return "The Infirmary is for squads in a run. Nobody here to treat."
+        msg = ""
+        while True:
+            cost = self.infirmary_prices()
+            # No blank rows on this screen: 6 beasts + the 3-option menu leave
+            # almost no slack at 66x24, and spending a row on padding blanked
+            # the whole screen (the silent cursor-seat wipe) when first built.
+            self.game.header("The Infirmary")
+            ts.tv_print(f"  Nurse Odalys: \"Prices climb with the round.\"  "
+                        f"{ts.color(str(self.coins()), 'bright_yellow')}c")
+            if msg:
+                ts.tv_print(ts.color(f"  {msg}", "bright_green"))
+            for b in self.game.party:
+                pp_full = all(b.pp[m] >= arena.move_pp(m) for m in b.moves)
+                ts.tv_print(f"  {b.name[:11]:<11} [{bar(b.hp, b.max_hp, 8)}] {b.hp:>3}/{b.max_hp:<3}"
+                            + ("" if pp_full else " PP low") + ("" if b.alive else "  DOWN"))
+            pick = ts.menu("Treatment", [
+                f"Heal everyone's HP        {cost['hp']:>4}c" if cost["hp"] else "Heal everyone's HP        (all well)",
+                f"Restore everyone's PP     {cost['pp']:>4}c" if cost["pp"] else "Restore everyone's PP     (all full)",
+                f"Revive the fallen (half)  {cost['revive']:>4}c" if cost["revive"] else "Revive the fallen         (nobody down)",
+            ], back="Back")
+            if pick == -1:
+                return ""
+            key = ["hp", "pp", "revive"][pick]
+            if cost[key] == 0:
+                msg = "Nothing to do there."
+            elif self.coins() < cost[key]:
+                msg = "Not enough coins."
+            else:
+                self.profile["coins"] -= cost[key]
+                for b in self.game.party:
+                    if key == "hp" and b.alive:
+                        b.hp = b.max_hp
+                    elif key == "pp" and b.alive:
+                        arena.restore_pp(b)
+                    elif key == "revive" and not b.alive:
+                        b.hp = max(1, b.max_hp // 2)
+                        b.reset_combat_state()
+                msg = {"hp": "Everyone is patched up.", "pp": "Moves restored.",
+                       "revive": "The fallen are back on their feet."}[key]
+                self.save()
+
+    # ---- the Yard
+    def yard(self) -> str:
+        training = self.profile["training"]
+        slugs = sorted(SPECIES, key=lambda s: (SPECIES[s]["type"], SPECIES[s]["name"]))
+        msg = ""
+
+        def draw() -> None:
+            self.head("The Yard")
+            ts.tv_print(f"  Coach Brann: \"Training sticks to the species.\"")
+            ts.tv_print(f"  You have {ts.color(str(self.coins()), 'bright_yellow')} coins."
+                        + (ts.color(f"   {msg}", "bright_green") if msg else ""))
+
+        while True:
+            options = [f"{SPECIES[s]['name']:<11} {SPECIES[s]['type']:<5} "
+                       f"trained {sum(training.get(s, {}).values())}/{len(TRAIN_STEP) * YARD_CAP}"
+                       for s in slugs]
+            pick = self.game.paged_menu("Train which species?", options, "Back", draw=draw)
+            if pick == -1:
+                return ""
+            slug = slugs[pick]
+            msg = self.train_species(slug)
+
+    def train_species(self, slug: str) -> str:
+        training = self.profile["training"].setdefault(slug, {})
+        b = Beast(slug, DRAFT_LEVEL)
+        msg = ""
+        while True:
+            b.train = dict(training)
+            self.head(f"Train {SPECIES[slug]['name']}")
+            ts.tv_print(f"  You have {ts.color(str(self.coins()), 'bright_yellow')} coins.")
+            ts.tv_print(ts.color(f"  {msg}", "bright_green") if msg else "")
+            total = sum(training.values())
+            options = []
+            for key in TRAIN_STEP:
+                pts = training.get(key, 0)
+                cur = {"hp": b.max_hp, "atk": b.atk, "dfn": b.dfn, "spd": b.spd}[key]
+                if pts >= YARD_CAP:
+                    options.append(f"{TRAIN_LABEL[key]:<4} {cur:>3}  maxed ({pts}/{YARD_CAP})")
+                else:
+                    options.append(f"{TRAIN_LABEL[key]:<4} {cur:>3}   {train_price(pts, total) // 2}c   ({pts}/{YARD_CAP})")
+            pick = ts.menu(f"Train {SPECIES[slug]['name']}", options, back="Back")
+            if pick == -1:
+                return f"Trained {SPECIES[slug]['name']}."
+            key = list(TRAIN_STEP)[pick]
+            pts = training.get(key, 0)
+            price = train_price(pts, total) // 2
+            if pts >= YARD_CAP:
+                msg = f"{TRAIN_LABEL[key]} is maxed."
+            elif self.coins() < price:
+                msg = "Not enough coins."
+            else:
+                self.profile["coins"] -= price
+                training[key] = pts + 1
+                save_profile(self.profile)
+                msg = f"{TRAIN_LABEL[key]} went up."
+
+    # ---- the Hall of Fame
+    def hall_of_fame(self) -> str:
+        p = self.profile
+        self.head("Hall of Fame")
+        ts.tv_print(f"  {p['name']} -- {tier_for(p.get('rank_score', 0))}"
+                    f"   (rank score {p.get('rank_score', 0)})")
+        ts.tv_print(f"  Record {p.get('wins', 0)}W {p.get('losses', 0)}L.   Best round:"
+                    f" Free {p.get('best_round_free', 0)}/{RUN_ROUNDS},"
+                    f" Ranked {p.get('best_round_ranked', 0)}/{RUN_ROUNDS}.")
+        ts.tv_print()
+        hist = p.get("history", [])
+        if not hist:
+            ts.tv_print(ts.color("  No runs yet.", "grey"))
+        for h in reversed(hist[-5:]):
+            tag = "CHAMPION" if h["champion"] else ("abandoned" if h["abandoned"] else f"round {h['reached'] + 1}")
+            ts.tv_print(f"  {h['mode']:<6} {tag:<10} {h['squad'][:42]}")
+        ts.tv_print()
+        ts.tv_pause()
+        return ""
 
 
 # --------------------------------------------------------------- entry
 def run() -> None:
     profile = load_profile()
     profile = ensure_character(profile)
-
-    while True:
-        tier = tier_for(profile.get("rank_score", 0))
-        ts.tv_clear(page=PAGE)
-        ts.tv_print(ts.title("T H E   C I R C U I T"))
-        ts.tv_print()
-        ts.tv_print(ts.box([
-            f"  {profile['name']}   —   {tier}",
-            "",
-            f"  Record: {profile.get('wins', 0)}W {profile.get('losses', 0)}L"
-            f"   (rank score {profile.get('rank_score', 0)})",
-            f"  Best round -- Free {profile.get('best_round_free', 0)}/6"
-            f"   Ranked {profile.get('best_round_ranked', 0)}/6",
-        ]))
-        ts.tv_print()
-        pick = ts.menu("The Circuit", ["Free mode", "Ranked mode"], back="Back to the hub")
-        if pick == -1:
-            return
-        ranked = pick == 1
-        squad = draft_squad(ranked)
-        if not squad:
-            continue
-        play_bracket(profile, squad, ranked)
+    District(profile).loop()

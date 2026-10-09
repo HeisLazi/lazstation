@@ -409,8 +409,11 @@ def arena_fight(game, team: list[Beast], title: str, trainer: str) -> str:
             power = "supp" if spec["power"] == 0 else f"pow{spec['power']:>3}"
             tag = (" quick" if spec["priority"] > 0 and spec["power"] > 0 else "")
             col = "grey" if left <= 0 else "bright_cyan"
+            eff = effectiveness(spec["type"], foe.type) if spec["power"] > 0 else 1.0
+            mark = (ts.color(" ▲", "bright_green") if eff >= 2 else
+                    ts.color(" ▼", "bright_red") if eff <= 0.5 else "")
             ts.tv_print(f"   {ts.color(str(i), col)}  {m.ljust(11)} {spec['type'].ljust(5)} "
-                        f"{power} acc{spec['accuracy']:>3} pp{left:>2}/{full:<2}{tag}")
+                        f"{power} acc{spec['accuracy']:>3} pp{left:>2}/{full:<2}{tag}{mark}")
         has_items = bag_has_items(game)
         tail = f"   {ts.color(str(n + 1), 'bright_cyan')}  swap"
         if has_items:
