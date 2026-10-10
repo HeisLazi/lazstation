@@ -119,6 +119,11 @@ def render_cells(data: str, cols: int, rows: int):
                 cx = max(0, cx - (nums[0] if nums else 1))
             elif cmd == "G":
                 cx = max(0, (nums[0] - 1) if nums else 0)
+            elif cmd == "d":                       # vertical position absolute (curses uses it)
+                cy = max(0, (nums[0] - 1) if nums else 0)
+            elif cmd == "X" and 0 <= cy < rows:    # erase N characters, cursor stays
+                for x in range(cx, min(cols, cx + (nums[0] if nums else 1))):
+                    ch[cy][x], fg[cy][x], bg[cy][x], bd[cy][x] = " ", None, state[1], False
             elif cmd == "K" and 0 <= cy < rows:
                 for x in range(cx, cols):          # erase paints the current background
                     ch[cy][x], fg[cy][x], bg[cy][x], bd[cy][x] = " ", None, state[1], False
@@ -130,6 +135,14 @@ def render_cells(data: str, cols: int, rows: int):
             continue
         if c == "\r":
             cx = 0
+            i += 1
+            continue
+        if c == "\x08":                            # backspace: curses moves left with it
+            cx = max(0, cx - 1)
+            i += 1
+            continue
+        if c == "\t":
+            cx = min(cols - 1, (cx // 8 + 1) * 8)
             i += 1
             continue
         if 0 <= cy < rows and 0 <= cx < cols and c.isprintable():

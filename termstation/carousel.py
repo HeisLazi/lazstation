@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import curses
 import math
+import os
 import random
 import sys
 import time
@@ -22,7 +23,7 @@ from .library import Game
 
 sys.path.insert(0, str(paths.SDK_DIR))
 import termstation_fx as fx                              # noqa: E402
-from termstation_bezel import frame_lines, geometry, side_runs  # noqa: E402
+from termstation_bezel import frame_lines, geometry, side_runs, title_bar  # noqa: E402
 
 FPS = 30
 PITCH = 22
@@ -30,8 +31,14 @@ IDLE_AFTER = 45.0     # seconds before the console starts demoing itself
 ATTRACT_EVERY = 3.0   # seconds per cover while it does              # horizontal distance between cover centres
 SLIDE_TIME = 0.20
 
-#: Phosphor themes, cycled with 't'. Each is (chrome, dim, paper, ink, glow).
+#: Themes, cycled with 't'. Each is (chrome, dim, paper, ink, glow). "neo"
+#: (the default) is the modern look -- painted surfaces, no CRT treatment --
+#: and every colour in it is an exact xterm-256 entry, the same indices the
+#: SDK uses, so a game takes over the screen without a colour jump. The rest
+#: are the classic phosphors.
 THEMES = {
+    "neo":    ((95, 175, 255), (95, 95, 135), (228, 228, 228), (148, 148, 148),
+               (135, 215, 255)),
     "amber":  ((255, 176, 64), (150, 96, 30), (236, 226, 205), (120, 112, 100),
                (255, 210, 120)),
     "green":  ((120, 235, 130), (50, 130, 60), (215, 240, 215), (95, 130, 100),
@@ -42,6 +49,10 @@ THEMES = {
                (185, 225, 255)),
 }
 THEME_ORDER = list(THEMES)
+#: Painted surfaces per theme: picture background and title band. The classic
+#: phosphors paint nothing (-1: the terminal's own background).
+SURFACES = {"neo": (fx.rgb(28, 28, 28), fx.rgb(48, 48, 48))}    # 234, 236 -- as in the SDK
+THEME_VERSION = 2          # config written before this predates neo: start it on neo once
 
 AMBER = fx.rgb(255, 176, 64)
 AMBER_DIM = fx.rgb(150, 96, 30)
@@ -49,6 +60,7 @@ CYAN = fx.rgb(120, 220, 230)
 PAPER = fx.rgb(236, 226, 205)
 INK = fx.rgb(120, 112, 100)
 GLOW = fx.rgb(255, 210, 120)
+BG, BAND = -1, -1
 
 
 class Action:
@@ -72,6 +84,23 @@ def _wrap(text: str, width: int) -> list[str]:
                 line = f"{line} {word}".strip()
         out.append(line)
     return [l for l in out if l] or [""]
+
+
+def configured_theme(config: dict | None = None) -> str:
+    """The theme the console starts on. The saved one used to be written but
+    never read back, so every start was amber; now it is read -- except once:
+    a config from before neo existed starts on neo (THEME_VERSION), and from
+    then on the player's choice sticks."""
+    if config is None:
+        try:
+            import json
+            config = json.loads(paths.CONFIG_FILE.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            config = {}
+    theme = config.get("theme", "neo")
+    if config.get("theme_version", 1) < THEME_VERSION:
+        theme = "neo"
+    return theme if theme in THEMES else "neo"
 
 
 def accent_for(game: Game) -> int:
@@ -108,9 +137,11 @@ class Console:
         self.born = time.monotonic()
         self.prev_game: Game | None = None
         self.change_at = 0.0
-        saved = self.load_config().get("compartment", "all")
+        config = self.load_config()
+        saved = config.get("compartment", "all")
         if saved in library.compartment_keys():
             self.compartment = saved
+        self.apply_theme(configured_theme(config))
         self.refresh_library()
 
     def load_config(self) -> dict:
@@ -127,7 +158,7 @@ class Console:
         try:
             paths.CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
             data = self.load_config()
-            data.update(theme=self.theme, fast_boot=self.fast_boot,
+            data.update(theme=self.theme, theme_version=THEME_VERSION, fast_boot=self.fast_boot,
                         profile=self.profile, compartment=self.compartment)
             tmp = paths.CONFIG_FILE.with_suffix(".tmp")
             tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
@@ -138,12 +169,19 @@ class Console:
     def apply_theme(self, name: str) -> None:
         """Re-tint the whole dashboard. Module-level colours are rebound so
         every drawing call picks the new phosphor up without threading a
-        palette through each one."""
-        global AMBER, AMBER_DIM, PAPER, INK, GLOW
+        palette through each one. Games launched from here inherit it via
+        TERMSTATION_THEME, so the console and its games always match."""
+        global AMBER, AMBER_DIM, PAPER, INK, GLOW, BG, BAND
         chrome, dim, paper, ink, glow = THEMES[name]
         AMBER, AMBER_DIM = fx.rgb(*chrome), fx.rgb(*dim)
         PAPER, INK, GLOW = fx.rgb(*paper), fx.rgb(*ink), fx.rgb(*glow)
+        BG, BAND = SURFACES.get(name, (-1, -1))
         self.theme = name
+        os.environ["TERMSTATION_THEME"] = name
+
+    @property
+    def neo(self) -> bool:
+        return self.theme == "neo"
 
     # ------------------------------------------------------------- ambience
     def seed_motes(self, width: int, height: int) -> None:
@@ -245,7 +283,9 @@ class Console:
         if x + w < 0 or x > canvas.w:
             return
 
-        bright = 0.35 + 0.65 * closeness
+        # Neo keeps the neighbours legible (they were fading to near-black on
+        # dark); the classic phosphors keep their deeper falloff.
+        bright = (0.6 + 0.4 * closeness) if self.neo else (0.35 + 0.65 * closeness)
         tone = accent_for(game)
         edge = fx.scale(tone if closeness > 0.55 else AMBER_DIM, bright)
         canvas.fill(x + 1, y + 1, w - 2, h - 2, " ", PAPER)
@@ -265,7 +305,7 @@ class Console:
         if closeness <= 0.9:
             label = game.name[:w + 2]
             canvas.text(cx - len(label) // 2, y + h, label,
-                        fx.scale(INK, 0.5 + 0.5 * closeness))
+                        INK if self.neo else fx.scale(INK, 0.5 + 0.5 * closeness))
 
         if closeness > 0.9:
             # The selected cover breathes: a slow swell of light around it.
@@ -273,7 +313,8 @@ class Console:
 
     def compose(self, width: int, height: int, t: float = 0.0,
                 dt: float = 0.0) -> fx.Canvas:
-        canvas = fx.Canvas(width, height, ambient=0.92)
+        canvas = (fx.Canvas(width, height, ambient=1.0, base_bg=BG) if self.neo
+                  else fx.Canvas(width, height, ambient=0.92))
         games = self.visible
         pulse = 0.5 + 0.5 * math.sin(t * 1.9)
         self.drift(canvas, dt, floor=9)
@@ -379,7 +420,10 @@ class Console:
         top = 12
         panel_h = height - top - 1
         st = self.stats.get(game.slug, {})
-        settle = min(1.0, (t - self.change_at) / 0.3)
+        # One clock: `t` is seconds since power-on but change_at is a raw
+        # monotonic stamp, and mixing them left the panel edge pinned at black
+        # instead of easing into the game's colour.
+        settle = min(1.0, max(0.0, (time.monotonic() - self.change_at) / 0.3))
         edge = fx.mix(fx.scale(tone, 0.3), tone, settle)
 
         canvas.box(0, top, width, panel_h, edge)
@@ -450,7 +494,10 @@ class Console:
         stdscr.erase()
         self.draw_cabinet(stdscr)
         canvas = self.compose(screen.width, screen.height, t, dt)
-        self.crt(canvas, t)
+        if not self.neo:
+            # Scanlines and flicker dim text cell by cell -- part of the
+            # classic phosphors' charm, but neo is about crisp, even text.
+            self.crt(canvas, t)
         canvas.blit(stdscr, self.palette, screen.x, screen.y)
         stdscr.noutrefresh()
         curses.doupdate()
@@ -459,27 +506,51 @@ class Console:
         if not self.screen.framed:
             return
         rows, cols = stdscr.getmaxyx()
-        attr = self.palette.pair(AMBER_DIM)
+        attr = self.palette.pair(AMBER_DIM, BG)
 
-        def edge(y: int, x: int, text: str) -> None:
+        def edge(y: int, x: int, text: str, a: int | None = None) -> None:
+            a = attr if a is None else a
             if y >= rows or x >= cols:
                 return
             try:
                 if x + len(text) < cols:
-                    stdscr.addnstr(y, x, text, len(text), attr)
+                    stdscr.addnstr(y, x, text, len(text), a)
                     return
                 head, tail = text[: cols - x - 1], text[cols - x - 1: cols - x]
                 if head:
-                    stdscr.addnstr(y, x, head, len(head), attr)
+                    stdscr.addnstr(y, x, head, len(head), a)
                 if tail:
-                    stdscr.insstr(y, cols - 1, tail, attr)
+                    stdscr.insstr(y, cols - 1, tail, a)
             except curses.error:
                 pass
 
-        for y, x, text in frame_lines(self.screen, brand.NAME, right="CONSOLE"):
+        if not self.neo:
+            for y, x, text in frame_lines(self.screen, brand.NAME, right="CONSOLE"):
+                edge(y, x, text)
+            for y, x, text in side_runs(self.screen):
+                edge(y, x, text)
+            return
+
+        # Neo: the same cabinet the SDK draws around a game -- thin rounded
+        # lines, a shaded title band, blue LED and brand -- painted all over.
+        top, bar_row, sep, bottom = frame_lines(self.screen, brand.NAME, right="CONSOLE", style="neo")
+        for y, x, text in (top, sep, bottom):
             edge(y, x, text)
-        for y, x, text in side_runs(self.screen):
+        y, ox, cab_w = bar_row[0], self.screen.ox, self.screen.cab_w
+        v = bar_row[2][0]
+        edge(y, ox, v)
+        edge(y, ox + cab_w - 1, v)
+        bar = title_bar(self.screen, brand.NAME, "CONSOLE")
+        cut = len(bar) - len("CONSOLE") - 1
+        edge(y, ox + 1, bar[:2], self.palette.pair(AMBER, BAND) | curses.A_BOLD)
+        edge(y, ox + 3, bar[2:cut], self.palette.pair(fx.rgb(238, 238, 238), BAND) | curses.A_BOLD)
+        edge(y, ox + 1 + cut, bar[cut:], self.palette.pair(AMBER, BAND))
+        pad = self.palette.pair(PAPER, BG)
+        for y, x, text in side_runs(self.screen, style="neo"):
             edge(y, x, text)
+        for y in range(self.screen.oy + 3, self.screen.oy + self.screen.cab_h - 1):
+            edge(y, ox + 1, " ", pad)
+            edge(y, ox + cab_w - 2, " ", pad)
 
     def select(self, target: int) -> None:
         """Aim the carousel. The loop eases toward it; nothing blocks."""
@@ -622,7 +693,7 @@ class Console:
                                   % len(THEME_ORDER)]
                 self.apply_theme(nxt)
                 self.save_config()
-                self.say(f"{nxt} phosphor")
+                self.say("neo theme" if nxt == "neo" else f"{nxt} phosphor")
             elif key in (ord("a"), ord("A")):
                 stdscr.nodelay(False)
                 self.awards_screen(stdscr)

@@ -32,6 +32,14 @@ H, V = "═", "║"
 ML, MR = "╟", "╢"
 HL = "─"
 
+#: Cabinet glyphs per style: corners, edges, the title-bar separator ends and
+#: its rule. "classic" is the double-line CRT set; "neo" is the thin rounded
+#: set of the modern theme. Same geometry either way -- only the ink changes.
+GLYPHS = {
+    "classic": {"tl": TL, "tr": TR, "bl": BL, "br": BR, "h": H, "v": V, "ml": ML, "mr": MR, "hl": HL},
+    "neo": {"tl": "╭", "tr": "╮", "bl": "╰", "br": "╯", "h": "─", "v": "│", "ml": "├", "mr": "┤", "hl": "─"},
+}
+
 
 @dataclass(frozen=True)
 class Screen:
@@ -80,30 +88,39 @@ def inner_size(cols: int | None = None, rows: int | None = None) -> tuple[int, i
     return g.width, g.height
 
 
-def frame_lines(screen: Screen, title: str = "", right: str = "LAZSTATION 2",
-                power: bool = True) -> list[tuple[int, int, str]]:
-    """The bezel as (y, x, text) runs -- rendered by ANSI or curses alike."""
-    if not screen.framed:
-        return []
+def title_bar(screen: Screen, title: str = "", right: str = "LAZSTATION 2",
+              power: bool = True) -> str:
+    """The text between the title row's two edges: LED + title, brand on the right."""
     span = screen.cab_w - 2
     led = "●" if power else "○"
     label = f" {led} {title.upper()}"[: span - len(right) - 2]
-    bar = label.ljust(span - len(right) - 1) + right + " "
+    return (label.ljust(span - len(right) - 1) + right + " ")[:span]
+
+
+def frame_lines(screen: Screen, title: str = "", right: str = "LAZSTATION 2",
+                power: bool = True, style: str = "classic") -> list[tuple[int, int, str]]:
+    """The bezel as (y, x, text) runs -- rendered by ANSI or curses alike."""
+    if not screen.framed:
+        return []
+    g = GLYPHS.get(style, GLYPHS["classic"])
+    span = screen.cab_w - 2
+    bar = title_bar(screen, title, right, power)
     ox, oy = screen.ox, screen.oy
     return [
-        (oy, ox, TL + H * span + TR),
-        (oy + 1, ox, V + bar[:span] + V),
-        (oy + 2, ox, ML + HL * span + MR),
-        (oy + screen.cab_h - 1, ox, BL + H * span + BR),
+        (oy, ox, g["tl"] + g["h"] * span + g["tr"]),
+        (oy + 1, ox, g["v"] + bar + g["v"]),
+        (oy + 2, ox, g["ml"] + g["hl"] * span + g["mr"]),
+        (oy + screen.cab_h - 1, ox, g["bl"] + g["h"] * span + g["br"]),
     ]
 
 
-def side_runs(screen: Screen) -> list[tuple[int, int, str]]:
+def side_runs(screen: Screen, style: str = "classic") -> list[tuple[int, int, str]]:
     """The left and right cabinet edges for every content row."""
     if not screen.framed:
         return []
+    v = GLYPHS.get(style, GLYPHS["classic"])["v"]
     runs = []
     for y in range(screen.oy + 3, screen.oy + screen.cab_h - 1):
-        runs.append((y, screen.ox, V))
-        runs.append((y, screen.ox + screen.cab_w - 1, V))
+        runs.append((y, screen.ox, v))
+        runs.append((y, screen.ox + screen.cab_w - 1, v))
     return runs

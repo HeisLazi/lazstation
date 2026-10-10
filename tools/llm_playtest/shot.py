@@ -22,6 +22,10 @@ ap.add_argument("out")
 ap.add_argument("--save", default=None, help="TERMSTATION_SAVE_DIR for the program (default: a temp dir)")
 ap.add_argument("--cwd", default=os.path.join(REPO, "games", "beastling"))
 ap.add_argument("--wait", type=float, default=0.5, help="seconds to let output settle after each key")
+ap.add_argument("--settle", type=float, default=1.0, help="seconds to wait before the first key")
+ap.add_argument("--env", action="append", default=[], metavar="KEY=VALUE",
+                help="extra environment for the program (repeatable), e.g. XDG_CONFIG_HOME=/tmp/x")
+ap.add_argument("--raw", default=None, help="also save the raw terminal byte stream here (for diffs)")
 argv = sys.argv[1:]
 cmd = []
 if "--" in argv:                       # everything after -- is the program to run
@@ -38,6 +42,7 @@ pid, fd = pty.fork()
 if pid == 0:
     env = dict(os.environ, PYTHONPATH=os.path.join(REPO, "sdk") + os.pathsep + REPO, TERM="xterm-256color",
                TERMSTATION_SAVE_DIR=save, COLUMNS=str(a.cols), LINES=str(a.rows))
+    env.update(kv.split("=", 1) for kv in a.env)
     os.chdir(a.cwd)
     os.execvpe(cmd[0], cmd, env)
 fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", a.rows, a.cols, 0, 0))
@@ -59,10 +64,13 @@ def drain(t):
             raw += c.decode("utf-8", "replace")
 
 
-drain(1.0)
+drain(a.settle)
 for k in a.keys.split(",") if a.keys else []:
     os.write(fd, (k + "\n").encode())
     drain(a.wait)
+if a.raw:
+    with open(a.raw, "w") as f:
+        f.write(raw)
 cells = vt_color.render_cells(raw, a.cols, a.rows)
 vt_color.to_png(cells, a.out)
 with open(a.out.rsplit(".", 1)[0] + ".txt", "w") as f:

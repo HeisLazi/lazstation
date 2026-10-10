@@ -4,11 +4,12 @@ from __future__ import annotations
 import argparse
 import curses
 import json
+import os
 import sys
 import time
 
 from . import boot, brand, library, paths, runner, scaffold
-from .carousel import Console
+from .carousel import Console, configured_theme
 
 VERSION = "1.0.0"
 _C = {"cyan": "\x1b[36m", "grey": "\x1b[90m", "red": "\x1b[31m",
@@ -48,7 +49,7 @@ def run_console(profile: str, skip_boot: bool = False) -> int:
     """Boot the console. Curses is fully torn down around every launch."""
     paths.ensure_dirs()
     if not skip_boot and sys.stdout.isatty():
-        boot.console_boot()
+        boot.console_boot(style="neo" if configured_theme() == "neo" else "classic")
     console = Console(profile)
     while True:
         try:
@@ -64,7 +65,8 @@ def run_console(profile: str, skip_boot: bool = False) -> int:
 
         if action.kind == "launch" and action.game:
             if getattr(action, "boot", True):
-                boot.power_on(action.game, fast=console.fast_boot)
+                boot.power_on(action.game, fast=console.fast_boot,
+                              style="neo" if console.neo else "classic")
             result = runner.launch(action.game, action.profile, action.slot)
             post_game(action.game, result)
             console.refresh_library()
@@ -106,8 +108,11 @@ def cmd_play(args) -> int:
         print(_c(f"  no game matching '{args.slug}'", "red"))
         return 1
     game = matches[0]
+    # No console in the loop, so take the theme from the console's config --
+    # an exported TERMSTATION_THEME still wins.
+    theme = os.environ.setdefault("TERMSTATION_THEME", configured_theme())
     if sys.stdout.isatty() and not args.no_boot:
-        boot.power_on(game)
+        boot.power_on(game, style="neo" if theme == "neo" else "classic")
     result = runner.launch(game, args.profile)
     if not (result.ok or result.interrupted):
         print(_c(f"\n  {game.name} exited {result.exit_code} — {result.log}", "red"))

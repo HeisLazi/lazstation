@@ -37,7 +37,9 @@ def _safe_ask_int(message: str, lo: int | None = None, hi: int | None = None,
         st["row"] = row0
         screen = st["screen"]
         col = screen.x + st["indent"] + 1
-        sys.stdout.write(f"\x1b[{screen.y + row0 + 1};{col}H" + " " * st["stage"])
+        paint = ts.surface()          # neo: blank onto the picture, not through it
+        sys.stdout.write(f"\x1b[{screen.y + row0 + 1};{col}H" + paint + " " * st["stage"]
+                         + ("\x1b[0m" if paint else ""))
         raw = ts.prompt(message + note, "" if default is None else str(default))
         try:
             value = int(raw)

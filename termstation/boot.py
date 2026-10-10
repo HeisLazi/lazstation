@@ -39,12 +39,14 @@ def _ansi(color: int) -> str:
 
 
 def draw_cabinet(title: str = "", power: bool = True, color: int = AMBER,
-                 right: str = brand.SHORT):
+                 right: str = brand.SHORT, style: str = "classic"):
+    """`style` picks the frame glyphs (the theme's: rounded under neo), so the
+    boot hands over to the console and its games without the frame changing."""
     screen = geometry()
     out = ["\x1b[2J\x1b[H", _ansi(color)]
-    for y, x, text in frame_lines(screen, title, right=right, power=power):
+    for y, x, text in frame_lines(screen, title, right=right, power=power, style=style):
         out.append(_at(y, x, text))
-    for y, x, text in side_runs(screen):
+    for y, x, text in side_runs(screen, style=style):
         out.append(_at(y, x, text))
     out.append(RESET)
     _w(out)
@@ -72,15 +74,15 @@ def _fade_in(canvas: fx.Canvas, screen, step: float, frames: int = 12) -> None:
         time.sleep(0.02 * step)
 
 
-def console_boot(fast: bool = False) -> None:
+def console_boot(fast: bool = False, style: str = "classic") -> None:
     """The console starting up: tube, logo, and a short self test."""
     step = 0.0 if fast else 1.0
     screen = geometry()
     sys.stdout.write("\x1b[?25l")
     try:
-        draw_cabinet("", power=False, color=DIMMED)
+        draw_cabinet("", power=False, color=DIMMED, style=style)
         _tube_strike(screen, step)
-        draw_cabinet("", power=True, color=AMBER)
+        draw_cabinet("", power=True, color=AMBER, style=style)
 
         art = brand.logo(screen.width)
         canvas = fx.Canvas(screen.width, screen.height, ambient=0.0)
@@ -125,7 +127,7 @@ def console_boot(fast: bool = False) -> None:
         sys.stdout.flush()
 
 
-def power_on(game, fast: bool = False) -> None:
+def power_on(game, fast: bool = False, style: str = "classic") -> None:
     """A game's own loading screen: its cover, its name, its colour."""
     step = 0.0 if fast else 1.0
     screen = geometry()
@@ -133,9 +135,9 @@ def power_on(game, fast: bool = False) -> None:
     tone = fx.rgb(*library.accent_for(game)) if hasattr(game, "slug") else AMBER
     sys.stdout.write("\x1b[?25l")
     try:
-        draw_cabinet("", power=False, color=DIMMED)
+        draw_cabinet("", power=False, color=DIMMED, style=style)
         _tube_strike(screen, step * 0.6, tone)
-        draw_cabinet(name, power=True, color=tone)
+        draw_cabinet(name, power=True, color=tone, style=style)
 
         art = library.load_cover(game) if hasattr(game, "root") else []
         canvas = fx.Canvas(screen.width, screen.height, ambient=0.0)

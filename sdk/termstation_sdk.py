@@ -136,6 +136,35 @@ _BASIC = {
 }
 
 
+#: Console themes; the launcher hands its pick to games as TERMSTATION_THEME.
+#: "neo" (the default) paints the picture's own background, so text never sits
+#: on a transparent or busy terminal, in crisp high-contrast ink with one blue
+#: accent. The classic phosphors draw on the terminal's own background exactly
+#: as before -- same bytes. Every neo colour is an exact xterm-256 entry: the
+#: curses launcher can only draw those, and identical indices on both sides
+#: mean no colour jump when a game takes over the screen.
+CLASSIC_THEMES = ("amber", "green", "mono", "ice", "classic")
+_NEO = {
+    "black": 234, "white": 255, "paper": 254,
+    "grey": 246, "gray": 246, "ink": 246,
+    "red": 167, "bright_red": 203,
+    "green": 78, "bright_green": 120,
+    "yellow": 179, "bright_yellow": 221, "amber": 75,     # UI accent: LazStation blue
+    "blue": 68, "bright_blue": 111,
+    "magenta": 176, "bright_magenta": 213,
+    "cyan": 80, "bright_cyan": 123,
+}
+#: Neo surfaces: the picture, the title band, cabinet lines, the accent (LED,
+#: brand) and the title text.
+NEO_SURFACE = {"bg": 234, "band": 236, "frame": 60, "accent": 75, "title": 255}
+
+
+def theme() -> str:
+    """The active theme name: "neo" unless a classic phosphor was chosen."""
+    name = os.environ.get("TERMSTATION_THEME", "neo").strip().lower()
+    return name if name in CLASSIC_THEMES else "neo"
+
+
 def _rich() -> bool:
     """Does this terminal do 256 colours?"""
     term = os.environ.get("TERM", "")
@@ -146,14 +175,47 @@ def _tty() -> bool:
     return sys.stdout.isatty() and os.environ.get("NO_COLOR") is None
 
 
+def surface() -> str:
+    """The escape that starts a stretch of picture: neo's background and resting
+    ink. Empty for the classic themes. Games that write raw escapes (blanking a
+    row, say) should lead with this, or their row punches a hole in the picture."""
+    if theme() != "neo" or not _tty():
+        return ""
+    if _rich():
+        return f"\x1b[48;5;{NEO_SURFACE['bg']};38;5;{_NEO['paper']}m"
+    return "\x1b[40;37m"
+
+
+def _span_end() -> str:
+    """End of a neo colour span: bold off and back to the resting ink, while
+    the background stays. A full reset here would blank the background
+    mid-line and leave holes after every coloured word."""
+    return f"\x1b[22;38;5;{_NEO['paper']}m" if _rich() else "\x1b[22;37m"
+
+
 def color(text: str, name: str = "white", bold: bool = False) -> str:
     if not _tty():
         return text
+    if theme() == "neo":
+        code = f"38;5;{_NEO.get(name, _NEO['paper'])}" if _rich() else str(_BASIC.get(name, 37))
+        return f"\x1b[{'1;' if bold else ''}{code}m{text}{_span_end()}"
     if _rich():
         code = _THEME.get(name, _THEME["paper"])
         return f"\x1b[{'1;' if bold else ''}38;5;{code}m{text}{RESET}"
     code = _BASIC.get(name, 37)
     return f"\x1b[{'1;' if bold else ''}{code}m{text}{RESET}"
+
+
+def _restore_terminal() -> None:
+    """Neo spans end in the resting ink, not a full reset -- so on the way out
+    put the terminal back, or the shell prompt inherits the console's colours."""
+    if theme() == "neo" and _tty():
+        sys.stdout.write(RESET)
+        sys.stdout.flush()
+
+
+import atexit as _atexit  # noqa: E402
+_atexit.register(_restore_terminal)
 
 
 def size() -> tuple[int, int]:
@@ -223,7 +285,9 @@ def _seat_cursor() -> None:
     if state["row"] >= screen.height - 2:
         tv_clear()
     col = screen.x + state["indent"] + 1
-    sys.stdout.write(f"\x1b[{screen.y + state['row'] + 1};{col}H")
+    # surface(): under neo the player's typing (and its backspaces) echo onto
+    # the picture's background, not the terminal's.
+    sys.stdout.write(f"\x1b[{screen.y + state['row'] + 1};{col}H{surface()}")
     sys.stdout.flush()
     state["row"] += 1
 
@@ -307,7 +371,7 @@ def menu(heading: str, options: list[str], back: str | None = "Back") -> int:
 
 # ---------------------------------------------------------------- the TV
 
-from termstation_bezel import geometry as _geometry, frame_lines, side_runs  # noqa: E402
+from termstation_bezel import geometry as _geometry, frame_lines, side_runs, title_bar  # noqa: E402
 
 _tv_state = {"active": False, "row": 0, "title": "", "screen": None,
              "stage": 0, "indent": 0}
@@ -333,18 +397,78 @@ def tv(title: str = "") -> "object":
     return screen
 
 
+#: Window title, so a compositor rule can single the console out -- e.g. make
+#: it fully opaque in Hyprland: windowrule = opacity 1.0 override, title:^(LazStation)
+WINDOW_TITLE = "LazStation"
+
+
 def _repaint_frame(screen, title: str) -> None:
     if not _tty():
         return
-    out = ["\x1b[2J\x1b[H"]
+    out = [f"\x1b]2;{WINDOW_TITLE}" + (f" · {title}" if title else "") + "\x07", "\x1b[2J\x1b[H"]
     if screen.framed:
-        for y, x, text in frame_lines(screen, title):
-            out.append(f"\x1b[{y + 1};{x + 1}H{text}")
-        for y, x, text in side_runs(screen):
-            out.append(f"\x1b[{y + 1};{x + 1}H{text}")
+        if theme() == "neo":
+            out.extend(neo_cabinet(screen, title))
+        else:
+            for y, x, text in frame_lines(screen, title):
+                out.append(f"\x1b[{y + 1};{x + 1}H{text}")
+            for y, x, text in side_runs(screen):
+                out.append(f"\x1b[{y + 1};{x + 1}H{text}")
         out.append(f"\x1b[{screen.y + 1};{screen.x + 1}H")
     sys.stdout.write("".join(out))
     sys.stdout.flush()
+
+
+def cabinet_edges(screen) -> str:
+    """The cabinet's side edges and bottom as one escape string, in the active
+    theme -- for curses games whose window refresh scrubs them and redraw them
+    by hand. Classic output is the old double-line glyphs, unchanged."""
+    if not getattr(screen, "framed", False):
+        return ""
+    style = "neo" if theme() == "neo" else "classic"
+    pre = ""
+    if style == "neo" and _tty():          # NO_COLOR keeps the glyphs, drops the colour
+        pre = (f"\x1b[0;48;5;{NEO_SURFACE['bg']};38;5;{NEO_SURFACE['frame']}m" if _rich()
+               else "\x1b[0;40;34m")
+    out = [pre]
+    for y, x, text in side_runs(screen, style=style):
+        out.append(f"\x1b[{y + 1};{x + 1}H{text}")
+    y, x, text = frame_lines(screen, style=style)[-1]
+    out.append(f"\x1b[{y + 1};{x + 1}H{text}")
+    if pre:
+        out.append(RESET)
+    return "".join(out)
+
+
+def neo_cabinet(screen, title: str = "", right: str = "LAZSTATION 2") -> list[str]:
+    """The neo cabinet as escape strings: the whole cabinet painted (so the
+    picture never shows the terminal through it), thin rounded lines, a shaded
+    title band with a blue power LED, the title in white and the brand in blue."""
+    s, rich = NEO_SURFACE, _rich()
+    if rich:
+        line = f"\x1b[0;48;5;{s['bg']};38;5;{s['frame']}m"
+        band = f"\x1b[48;5;{s['band']}m"
+        led = f"\x1b[1;38;5;{s['accent']}m"
+        name = f"\x1b[1;38;5;{s['title']}m"
+        brand = f"\x1b[22;38;5;{s['accent']}m"
+        pad = f"\x1b[48;5;{s['bg']}m"
+    else:
+        line, band, led, name, brand, pad = "\x1b[0;40;34m", "\x1b[40m", "\x1b[1;94m", "\x1b[1;97m", "\x1b[22;94m", "\x1b[40m"
+    top, bar_row, sep, bottom = frame_lines(screen, title, right, style="neo")
+    v = bar_row[2][0]
+    bar = title_bar(screen, title, right)
+    head, tail = bar[: len(bar) - len(right) - 1], bar[len(bar) - len(right) - 1:]
+    ox, cab_w = screen.ox, screen.cab_w
+    out = []
+    for y, x, text in (top, sep, bottom):
+        out.append(f"\x1b[{y + 1};{x + 1}H{line}{text}")
+    y = bar_row[0]
+    out.append(f"\x1b[{y + 1};{ox + 1}H{line}{v}{band}{led}{head[:2]}{name}{head[2:]}{brand}{tail}{line}{v}")
+    for y in range(screen.oy + 3, screen.oy + screen.cab_h - 1):
+        out.append(f"\x1b[{y + 1};{ox + 1}H{line}{v}{pad} ")
+        out.append(f"\x1b[{y + 1};{ox + cab_w - 1}H{pad} {line}{v}")
+    out.append(RESET)
+    return out
 
 
 def tv_clear(page: int = 0) -> None:
@@ -358,9 +482,12 @@ def tv_clear(page: int = 0) -> None:
         clear()
         return
     blank = " " * screen.width
+    fill = surface()                       # neo paints the picture; classic leaves the terminal's
     out = []
     for i in range(screen.height):
-        out.append(f"\x1b[{screen.y + i + 1};{screen.x + 1}H{blank}")
+        out.append(f"\x1b[{screen.y + i + 1};{screen.x + 1}H{fill}{blank}")
+    if fill:
+        out.append(RESET)
     out.append(f"\x1b[{screen.y + 1};{screen.x + 1}H")
     sys.stdout.write("".join(out))
     sys.stdout.flush()
@@ -432,7 +559,7 @@ def tv_print(*parts: object, sep: str = " ") -> None:
         if _tty():
             col = screen.x + _tv_state["indent"] + 1
             sys.stdout.write(
-                f"\x1b[{screen.y + _tv_state['row'] + 1};{col}H{line}\x1b[0m")
+                f"\x1b[{screen.y + _tv_state['row'] + 1};{col}H{surface()}{line}\x1b[0m")
         else:
             sys.stdout.write(line + "\n")
         _tv_state["row"] += 1
@@ -472,11 +599,28 @@ def tv_curses(stdscr, title: str = ""):
 
     if screen.framed:
         attr = curses.A_BOLD
+        style = "neo" if theme() == "neo" else "classic"
+        title_attr = None
         if curses.has_colors():
             attr |= curses.color_pair(0)
-        for y, x, text in frame_lines(screen, title):
+            if style == "neo" and getattr(curses, "COLORS", 0) >= 256:
+                # The top usable pairs: games allocate theirs from 1 upward.
+                # Capped at 255 -- color_pair() packs the number into 8
+                # attribute bits, so a higher pair wraps (it drew the cabinet
+                # top black).
+                try:
+                    top = min(getattr(curses, "COLOR_PAIRS", 256) - 1, 255)
+                    curses.init_pair(top, NEO_SURFACE["frame"], NEO_SURFACE["bg"])
+                    curses.init_pair(top - 1, NEO_SURFACE["title"], NEO_SURFACE["band"])
+                    attr = curses.color_pair(top)
+                    title_attr = curses.color_pair(top - 1) | curses.A_BOLD
+                except (curses.error, ValueError, OverflowError):
+                    pass
+        for y, x, text in frame_lines(screen, title, style=style):
             _put(y, x, text, attr)
-        for y, x, text in side_runs(screen):
+        if title_attr is not None:             # neo: the shaded title band, in white
+            _put(screen.oy + 1, screen.ox + 1, title_bar(screen, title), title_attr)
+        for y, x, text in side_runs(screen, style=style):
             _put(y, x, text, attr)
     stdscr.noutrefresh()
     win = curses.newwin(screen.height, screen.width, screen.y, screen.x)
@@ -484,6 +628,7 @@ def tv_curses(stdscr, title: str = ""):
     return win, screen
 
 
+__all__ += ["theme", "surface", "CLASSIC_THEMES", "cabinet_edges"]
 __all__ += ["tv", "tv_print", "tv_clear", "tv_prompt", "tv_pause", "tv_curses",
             "tv_size"]
 

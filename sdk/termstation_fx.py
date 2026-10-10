@@ -177,18 +177,23 @@ class Palette:
 class Canvas:
     """An off-screen grid of cells: glyph, foreground, background, light."""
 
-    __slots__ = ("w", "h", "ch", "fg", "bg", "lit", "ambient")
+    __slots__ = ("w", "h", "ch", "fg", "bg", "lit", "ambient", "base_bg")
 
-    def __init__(self, w: int, h: int, ambient: float = 1.0) -> None:
+    def __init__(self, w: int, h: int, ambient: float = 1.0, base_bg: int = -1) -> None:
+        """`base_bg` is the canvas's own background: what a cell drawn with no
+        background of its own (bg=-1) gets. The default, -1, is the terminal's
+        background -- the old behaviour. A painted base keeps the picture solid
+        on a transparent terminal."""
         self.w, self.h = w, h
         self.ambient = ambient
+        self.base_bg = base_bg
         self.clear()
 
     def clear(self, glyph: str = " ", fg: int = WHITE, bg: int = -1) -> None:
         n = self.w * self.h
         self.ch = [glyph] * n
         self.fg = [fg] * n
-        self.bg = [bg] * n
+        self.bg = [bg if bg != -1 else self.base_bg] * n
         self.lit = [self.ambient] * n
 
     def inside(self, x: int, y: int) -> bool:
@@ -200,7 +205,7 @@ class Canvas:
         i = y * self.w + x
         self.ch[i] = glyph
         self.fg[i] = fg
-        self.bg[i] = bg
+        self.bg[i] = bg if bg != -1 else self.base_bg
 
     def text(self, x: int, y: int, s: str, fg: int = WHITE, bg: int = -1) -> None:
         for n, glyph in enumerate(s):
@@ -262,7 +267,7 @@ class Canvas:
         """
         h, w = win.getmaxyx()
         sx, sy = shake
-        blank = palette.pair(WHITE, -1)
+        blank = palette.pair(WHITE, self.base_bg)
         for row in range(self.h):
             ty = oy + row
             if ty < 0 or ty >= h:

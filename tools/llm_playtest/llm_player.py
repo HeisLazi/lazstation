@@ -244,7 +244,9 @@ def trim_raw():
     drawing from the session start."""
     global raw, HEAD, CLEAR_SIG
     if CLEAR_SIG is None:
-        m = re.search(r"\x1b\[\d+;\d+H(?= {40,})", raw)
+        # The neo theme paints the picture: its clear puts a colour code between
+        # the cursor move and the blanks, so allow one.
+        m = re.search(r"\x1b\[\d+;\d+H(?:\x1b\[[0-9;]*m)?(?= {40,})", raw)
         if m:
             CLEAR_SIG, HEAD = m.group(0), raw[:m.start()]
     if len(raw) > 300000 and CLEAR_SIG:
@@ -253,13 +255,29 @@ def trim_raw():
             raw = HEAD + raw[cut:]
 
 
+_CHROME = set("─━═│║╭╮╰╯╔╗╚╝├┤╟╢")
+
+
 def screen_text() -> str:
+    """The picture as plain text: cropped to the cabinet's inner columns (found
+    from its top corners, double-line or rounded), minus the title bar and
+    rules. Cropping by column keeps a game's own │ boxes intact."""
     trim_raw()
+    rows = render(raw, COLS, ROWS).splitlines()
+    left = right = None
+    for line in rows:
+        for tl, tr in (("╔", "╗"), ("╭", "╮")):
+            if tl in line and tr in line:
+                left, right = line.index(tl), line.rindex(tr)
+                break
+        if left is not None:
+            break
     lines = []
-    for line in render(raw, COLS, ROWS).splitlines():
-        inner = line.split("║")[1].rstrip() if line.count("║") >= 2 else line.rstrip()
-        if inner.strip() and "LAZSTATION" not in inner and set(inner.strip()) - set("─━"):
-            lines.append(inner.rstrip())
+    for line in rows:
+        inner = (line[left + 1:right] if left is not None else line).rstrip()
+        bare = inner.strip()
+        if bare and "LAZSTATION" not in bare and set(bare) - _CHROME:
+            lines.append(inner)
     return "\n".join(lines)
 
 

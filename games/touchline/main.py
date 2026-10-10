@@ -1751,15 +1751,9 @@ def _restore_bezel_bottom_right(_stdscr, screen) -> None:
     """Keep cabinet edges visible after the game's inner window is refreshed."""
     if not getattr(screen, "framed", False) or not sys.stdout.isatty():
         return
-    right = screen.ox + screen.cab_w - 1
-    bottom = screen.oy + screen.cab_h - 1
-    out = []
-    for y in range(screen.oy + 3, bottom):
-        out.extend((f"\x1b[{y + 1};{screen.ox + 1}H║",
-                    f"\x1b[{y + 1};{right + 1}H║"))
-    out.append(f"\x1b[{bottom + 1};{screen.ox + 1}H"
-               f"╚{'═' * max(0, screen.cab_w - 2)}╝")
-    sys.stdout.write("".join(out))
+    # The SDK draws these in the active theme (rounded under neo, double-line
+    # under the classic phosphors), so the redraw always matches the cabinet.
+    sys.stdout.write(ts.cabinet_edges(screen))
     sys.stdout.flush()
 
 
